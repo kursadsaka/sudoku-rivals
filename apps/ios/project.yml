@@ -18,3 +18,23 @@ targets:
         EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
     dependencies:
       - framework: generated/SudokuFFI.xcframework
+  SudokuRivalsTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - SudokuRivalsTests
+      - path: ../../vectors/boards.json
+        buildPhase: resources
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: SudokuRivals
+schemes:
+  SudokuRivals:
+    build:
+      targets:
+        SudokuRivals: all
+    test:
+      targets:
+        - SudokuRivalsTests
