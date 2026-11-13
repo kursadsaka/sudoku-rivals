@@ -1,6 +1,7 @@
 package com.sudokurivals
 
 import android.os.Bundle
+import android.content.Intent
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -31,17 +32,59 @@ import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
     private lateinit var solo: SoloState
+    private lateinit var live: LiveState
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         solo = SoloState(filesDir)
-        setContent { SoloApp(solo) }
+        live = LiveState(filesDir)
+        live.onHome = { if (solo.game != null) solo.exit() else solo.screen = SoloScreen.Home }
+        if (BuildConfig.DEBUG) intent.getStringExtra("dev_server_url")?.let(live::configureServer)
+        intent.dataString?.let { solo.pause(); live.openInvite(it) }
+        setContent { SoloApp(solo, live) }
+    }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (BuildConfig.DEBUG) intent.getStringExtra("dev_server_url")?.let(live::configureServer)
+        intent.dataString?.let { solo.pause(); live.openInvite(it) }
+    }
+    override fun onStart() {
+        super.onStart()
+        if (::live.isInitialized) live.setForeground(true)
+    }
+    override fun onDestroy() {
+        if (::live.isInitialized) live.close()
+        super.onDestroy()
     }
     override fun onStop() {
         if (::solo.isInitialized) solo.pause()
+        if (::live.isInitialized) live.setForeground(false)
         super.onStop()
     }
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val keyCode = event.keyCode
+        if (::live.isInitialized && live.visible && event.action == KeyEvent.ACTION_DOWN && live.snapshot()?.optString("phase") == "playing" && !live.leaveConfirmation && !live.resetConfirmation) {
+            val n = live.snapshot()!!.getInt("size")
+            val race = live.snapshot()!!.getString("mode") == "race"
+            val digit = when (keyCode) {
+                in KeyEvent.KEYCODE_1..KeyEvent.KEYCODE_9 -> keyCode - KeyEvent.KEYCODE_0
+                in KeyEvent.KEYCODE_NUMPAD_1..KeyEvent.KEYCODE_NUMPAD_9 -> keyCode - KeyEvent.KEYCODE_NUMPAD_0
+                else -> null
+            }
+            if (digit != null && digit <= n) { if (event.repeatCount == 0) live.enter(digit); return true }
+            when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> live.moveSelection(0, -1)
+                KeyEvent.KEYCODE_DPAD_RIGHT -> live.moveSelection(0, 1)
+                KeyEvent.KEYCODE_DPAD_UP -> live.moveSelection(-1, 0)
+                KeyEvent.KEYCODE_DPAD_DOWN -> live.moveSelection(1, 0)
+                KeyEvent.KEYCODE_N -> if (race && event.repeatCount == 0) { live.noteMode = !live.noteMode }
+                KeyEvent.KEYCODE_DEL, KeyEvent.KEYCODE_FORWARD_DEL -> if (race && live.canInput()) live.edit("erase")
+                KeyEvent.KEYCODE_Z -> if (event.isCtrlPressed || event.isMetaPressed) { if (race && live.canInput()) live.edit(if (event.isShiftPressed) "redo" else "undo") } else return super.dispatchKeyEvent(event)
+                KeyEvent.KEYCODE_ESCAPE -> live.goHome()
+                else -> return super.dispatchKeyEvent(event)
+            }
+            return true
+        }
         if (::solo.isInitialized && solo.screen == SoloScreen.Game && solo.hint == null && event.action == KeyEvent.ACTION_DOWN) {
             val digit = when (keyCode) {
                 in KeyEvent.KEYCODE_1..KeyEvent.KEYCODE_9 -> keyCode - KeyEvent.KEYCODE_0
@@ -71,7 +114,7 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-private fun SoloApp(solo: SoloState) {
+private fun SoloApp(solo: SoloState, live: LiveState) {
     val dark = isSystemInDarkTheme()
     val colors = if (dark) darkColorScheme(
         background = Color(0xff111827), surface = Color(0xff111827), onSurface = Color(0xfff9fafb),
@@ -82,6 +125,9 @@ private fun SoloApp(solo: SoloState) {
     )
     MaterialTheme(colorScheme = colors) {
         Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+            if (live.visible) {
+                LiveScreens(live)
+            } else {
             BackHandler(enabled = solo.screen != SoloScreen.Home) {
                 when (solo.screen) {
                     SoloScreen.Game -> solo.pause()
@@ -115,7 +161,7 @@ private fun SoloApp(solo: SoloState) {
                 }, modifier = Modifier.testTag("back")) { Text("Geri") }
                 if (solo.storageError != null) StorageStatus(solo)
                 when (solo.screen) {
-                    SoloScreen.Home -> Home(solo)
+                    SoloScreen.Home -> Home(solo, live)
                     SoloScreen.Setup -> Setup(solo)
                     SoloScreen.Game -> Game(solo)
                     SoloScreen.Paused -> {
@@ -162,12 +208,13 @@ private fun SoloApp(solo: SoloState) {
                 confirmButton = { TextButton(onClick = solo::newGame) { Text("Yeni oyun") } },
                 dismissButton = { TextButton(onClick = { solo.replaceRequested = false }) { Text("Vazgeç") } }
             )
+            }
         }
     }
 }
 
 @Composable
-private fun Home(solo: SoloState) {
+private fun Home(solo: SoloState, live: LiveState) {
     Text("Kendi hızında çöz", style = MaterialTheme.typography.titleLarge)
     Text("6×6 veya 9×9 Sudoku. İnternet gerekmez.")
     Button(onClick = solo::openSetup, modifier = Modifier.fillMaxWidth().testTag("solo-start")) { Text("Tek başına oyna") }
@@ -177,8 +224,7 @@ private fun Home(solo: SoloState) {
             Text(if (solo.slotStatus[solo.size] == "corrupt") "${solo.size}×${solo.size} kaydını tekrar aç" else "${solo.size}×${solo.size} oyununa devam et")
         }
     }
-    Text("Arkadaş maçları bu sürümde henüz hazır değil.", style = MaterialTheme.typography.bodyMedium)
-    OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth().testTag("friend-start")) { Text("Arkadaşınla yarış") }
+    OutlinedButton(onClick = live::open, modifier = Modifier.fillMaxWidth().testTag("friend-start")) { Text(if (live.snapshot() != null && !live.view.optBoolean("voluntarily_left")) "Maçına dön" else "Arkadaşınla yarış") }
     TextButton(onClick = { solo.screen = SoloScreen.Settings }, modifier = Modifier.testTag("settings-open")) { Text("Ayarlar") }
 }
 

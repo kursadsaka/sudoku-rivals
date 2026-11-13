@@ -125,6 +125,22 @@ try:
     launch()
     start_new(6)
     print('Offline 6x6 new game loaded', flush=True)
+    # Rotation and night mode must not rebuild the activity and drop the game.
+    rotation = (shell('settings', 'get', 'system', 'accelerometer_rotation'),
+                shell('settings', 'get', 'system', 'user_rotation'))
+    try:
+        shell('settings', 'put', 'system', 'accelerometer_rotation', '0')
+        shell('settings', 'put', 'system', 'user_rotation', '1')
+        shell('cmd', 'uimode', 'night', 'yes')
+        time.sleep(1)
+        find('game-board')
+    finally:
+        shell('cmd', 'uimode', 'night', 'no')
+        shell('settings', 'put', 'system', 'user_rotation', rotation[1] if rotation[1] != 'null' else '0')
+        shell('settings', 'put', 'system', 'accelerometer_rotation', rotation[0] if rotation[0] != 'null' else '1')
+        time.sleep(1)
+    find('game-board')
+    print('Rotation and night mode kept the open game', flush=True)
     initial = game(6)
     given = next(i for i, v in enumerate(initial['givens']) if v)
     blank = next(i for i, v in enumerate(initial['givens']) if not v)

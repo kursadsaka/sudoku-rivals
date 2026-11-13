@@ -117,6 +117,10 @@ struct Saved {
     reconcile: bool,
     session_lost: bool,
     voluntarily_left: bool,
+    /// An unanswered create/join; replaying its exact body after a cold start
+    /// reclaims the same seat instead of leaving a phantom one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    setup: Option<RequestDescriptor>,
 }
 
 #[derive(Clone)]
@@ -506,6 +510,10 @@ impl MultiplayerClient {
             return Err(ClientError::ReconcileRequired);
         }
         let auth = self.auth.as_ref().ok_or(ClientError::NoSession)?;
+        let superseded_poll = self
+            .pending_http
+            .as_ref()
+            .is_some_and(|p| matches!(p.operation, Operation::Poll) && !p.failed);
         if self.connection == ConnectionState::SessionLost {
             return Err(ClientError::NoSession);
         }
@@ -552,6 +560,10 @@ impl MultiplayerClient {
         };
         let path = format!("/v1/rooms/{}/command", auth.snapshot.room_code);
         let body = serde_json::to_value(&envelope).map_err(|_| ClientError::InvalidCommand)?;
+        // A player action replaces an idle heartbeat; its late response is ignored by id.
+        if superseded_poll {
+            self.pending_http = None;
+        }
         let wire = self.start(Operation::Command, path, body, now)?;
         self.pending_command = Some(PendingCommand {
             envelope,
@@ -987,6 +999,11 @@ impl MultiplayerClient {
             reconcile: self.reconcile_required,
             session_lost: self.connection == ConnectionState::SessionLost,
             voluntarily_left: self.voluntarily_left,
+            setup: self
+                .pending_http
+                .as_ref()
+                .filter(|p| matches!(p.operation, Operation::Create | Operation::Join))
+                .map(|p| p.wire.clone()),
         };
         let json = serde_json::to_string(&saved).map_err(|_| ClientError::InvalidSave)?;
         if json.len() > MAX_SAVE {
@@ -1116,10 +1133,20 @@ impl MultiplayerClient {
         {
             return Err(ClientError::InvalidSave);
         }
+        let setup = match saved.setup {
+            Some(wire) => Some(restore_setup(wire, saved.next_id, saved.pending.is_some())?),
+            None => None,
+        };
         let mut client = Self::new(saved.seed);
         client.voluntarily_left = saved.voluntarily_left;
         client.next_id = saved.next_id;
-        client.needs_resume = saved.auth.is_some();
+        // A pending setup replaces the old session on success, so it never resumes first.
+        client.needs_resume = saved.auth.is_some() && setup.is_none();
+        if let Some(http) = setup {
+            client.pending_http = Some(http);
+            client.connection = ConnectionState::Disconnected;
+            client.retry_at = Some(0);
+        }
         client.auth = saved.auth;
         client.draft = draft;
         client.ack_cells = saved.ack_cells;
@@ -1133,6 +1160,41 @@ impl MultiplayerClient {
     }
 }
 
+fn restore_setup(
+    wire: RequestDescriptor,
+    next_id: u64,
+    command_pending: bool,
+) -> Result<PendingHttp, ClientError> {
+    let operation = match wire.path.strip_prefix("/v1/rooms") {
+        Some("") => Operation::Create,
+        Some(rest)
+            if rest
+                .strip_prefix('/')
+                .and_then(|r| r.strip_suffix("/join"))
+                .is_some_and(code) =>
+        {
+            Operation::Join
+        }
+        _ => return Err(ClientError::InvalidSave),
+    };
+    let body: serde_json::Value = parse(&wire.body).map_err(|_| ClientError::InvalidSave)?;
+    if command_pending
+        || wire.id == 0
+        || wire.id >= next_id
+        || wire.method != "POST"
+        || body["protocol"] != PROTOCOL
+        || !body["guest"].as_str().is_some_and(secret)
+    {
+        return Err(ClientError::InvalidSave);
+    }
+    Ok(PendingHttp {
+        wire,
+        operation,
+        sent_ms: 0,
+        retried: true,
+        failed: true,
+    })
+}
 fn parse<T: serde::de::DeserializeOwned>(json: &str) -> Result<T, ()> {
     if json.len() > MAX_JSON {
         return Err(());

@@ -68,7 +68,7 @@ Eşitleme gönderildikten sonra kullanıcı yeni hücre düzenlerse, eşitlemeni
 
 ## Kaydetme ve doğrulama
 
-Kayıt sürümü 1, üst sınır 1 MiB; action/response JSON üst sınırı 128 KiB. Sırlar kayıtta gereklidir; platform bu metni korumalı, paylaşmamalı ve loglamamalıdır. Debug/Display hata çıktıları sır içermez. Yeni sürüm veya bozuk veri başarı gibi yüklenmez. Pending HTTP callback'i ve saat örnekleri restart'a taşınmaz; belirsiz komut kimliği korunur ve resume ile uzlaştırılır.
+Kayıt sürümü 1, üst sınır 1 MiB; action/response JSON üst sınırı 128 KiB. Sırlar kayıtta gereklidir; platform bu metni korumalı, paylaşmamalı ve loglamamalıdır. Debug/Display hata çıktıları sır içermez. Yeni sürüm veya bozuk veri başarı gibi yüklenmez. Pending HTTP callback'i ve saat örnekleri restart'a taşınmaz; belirsiz komut kimliği korunur ve resume ile uzlaştırılır. İstisna: yanıtı gelmemiş create/join isteği kayıtta opsiyonel `setup` alanında aynen saklanır; yükleme yolu/body/guest'i doğrular ve hemen vadesi gelmiş `retry` olarak kurar, böylece soğuk açılışta aynı guest ile aynı koltuk geri alınır (hayalet koltuk açılmaz). Alan yoksa eski kayıtlar değişmeden yüklenir.
 
 Snapshot güven sınırı: protokol, mod/boyut, kod ve kimlik biçimleri, JS-safe sayılar, generation/sıra, koltuk, tahta uzunluğu/rakamlar, sabit hücreler, zaman/phase/end/result tutarlılığı doğrulanır. Yarışta oyuncu çakışmaları kabul edilir; düelloda çatışmalı sunucu tahtası kabul edilmez. Gönderilen komutun Receipt kimliği, olay/zaman sınırları ve ilgili sayaçları doğrulanır. Deserialize türetmesi tek başına güvenlik kontrolü sayılmaz.
 
@@ -88,3 +88,5 @@ istenir. Ekranlar geri sayımda eski maçın tahtasını sunmaz.
 Adapter, ilk create/join'de kriptografik rastgele 64-hex `guest` gönderir (web `crypto.getRandomValues`, Android `SecureRandom`); mevcut oturum varsa çekirdek onun guest'ini kullanır. Yanıtı kaybolan istek aynı body ile tekrarlandığında sunucu, aynı guest'in lobideki koltuğunu (ad, mod ve boyut aynıysa) aynı Session ile döner; ikinci oda veya hayalet koltuk açılmaz. Ağ hatasıyla düşmüş create/join yerine yenisi başlatılabilir; çekirdek önceki guest'i korur.
 
 Sunucunun reddettiği create/join (4xx) mevcut oturuma, bağlantı durumuna ve kayda dokunmaz; otomatik tekrar planlanmaz, kod `last_error` ile gösterilir. Bitmiş/kapanmış maçtan kalan gönderilmemiş yarış tahtası yeni oda veya rövanşı engellemez; eski maçın hücreleri zaten gönderilemez. Genel `network_failed`, kaybolmuş oturumu yeniden bağlantı denemesine çevirmez.
+
+Oyuncu komutu (`ready`, `move`, `rematch`…) yoldaki bir heartbeat `poll` isteğinin yerini alır; adapter eski transport'u iptal eder, geç gelen poll yanıtı id'si eşleşmediği için yok sayılır. Bu yüzden arayüz düğmeleri `pending_http` ile değil `pending_command` ile kilitlenir; aksi halde saniyelik poll sırasında dokunuşlar sessizce kaybolur.

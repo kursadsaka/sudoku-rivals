@@ -688,3 +688,104 @@ fn generic_offline_signal_keeps_lost_session() {
     let saved: Value = serde_json::from_str(&a.save().unwrap()).unwrap();
     assert_eq!(saved["session_lost"], true);
 }
+
+#[test]
+fn player_command_supersedes_in_flight_poll() {
+    let (mut service, mut a, mut b) = started(Mode::Duel, 6);
+    drive(
+        &mut service,
+        &mut a,
+        json!({"type":"command","command":{"type":"resign"}}),
+        4000,
+    );
+    drive(&mut service, &mut b, json!({"type":"poll"}), 4000);
+    let poll = req(&mut a, json!({"type":"poll"}), 5000);
+    let rematch = req(
+        &mut a,
+        json!({"type":"command","command":{"type":"rematch"}}),
+        5000,
+    );
+    assert_ne!(poll.id, rematch.id);
+    let late = exchange(&mut service, &poll, 5000);
+    assert_eq!(receive(&mut a, &poll, late, 5000)["changed"], false);
+    let response = exchange(&mut service, &rematch, 5000);
+    receive(&mut a, &rematch, response, 5000);
+    drive(
+        &mut service,
+        &mut b,
+        json!({"type":"command","command":{"type":"rematch"}}),
+        5100,
+    );
+    assert_eq!(snapshot(&b, 5100).phase, Phase::Countdown);
+    // A command never replaces another command or a session request.
+    assert!(matches!(
+        try_act(
+            &mut b,
+            json!({"type":"command","command":{"type":"ready","ready":false}}),
+            5100
+        )
+        .and_then(|_| try_act(
+            &mut b,
+            json!({"type":"command","command":{"type":"ready","ready":true}}),
+            5100
+        )),
+        Err(ClientError::Busy)
+    ));
+}
+
+#[test]
+fn cold_restore_replays_lost_create_and_join() {
+    let mut service = Service::default();
+    let mut a = MultiplayerClient::new(1);
+    let create = req(
+        &mut a,
+        json!({"type":"create","name":"A","mode":"race","size":6,"guest":GUEST_C}),
+        0,
+    );
+    let lost = exchange(&mut service, &create, 0);
+    assert_eq!(lost.0, 200);
+    // The process dies before the response arrives; only the opaque save survives.
+    let mut a = MultiplayerClient::load(&a.save().unwrap()).unwrap();
+    assert_eq!(view(&a, 0)["retry_at_ms"], 0);
+    let retry = req(&mut a, json!({"type":"retry"}), 0);
+    assert_eq!(retry, create, "Cold replay must reuse the exact body");
+    let replay = exchange(&mut service, &retry, 0);
+    receive(&mut a, &retry, replay, 0);
+    let code = snapshot(&a, 0).room_code;
+    let first: Value = serde_json::from_str(&lost.1).unwrap();
+    assert_eq!(first["snapshot"]["room_code"], code.as_str());
+    assert!(!a.save().unwrap().contains("\"setup\""));
+
+    let mut b = MultiplayerClient::new(2);
+    let join = req(
+        &mut b,
+        json!({"type":"join","invite":code,"name":"B","guest":"dd".repeat(32)}),
+        10,
+    );
+    assert_eq!(exchange(&mut service, &join, 10).0, 200);
+    let mut b = MultiplayerClient::load(&b.save().unwrap()).unwrap();
+    let retry = req(&mut b, json!({"type":"retry"}), 0);
+    assert_eq!(retry, join);
+    let replay = exchange(&mut service, &retry, 20);
+    receive(&mut b, &retry, replay, 20);
+    assert_eq!(snapshot(&b, 20).room_code, code);
+    drive(&mut service, &mut a, json!({"type":"poll"}), 30);
+    assert_eq!(
+        snapshot(&a, 30).opponent.unwrap().name,
+        "B",
+        "No phantom second seat"
+    );
+
+    // A tampered setup is never sent to an arbitrary path.
+    let mut c = MultiplayerClient::new(3);
+    req(
+        &mut c,
+        json!({"type":"create","name":"C","mode":"duel","size":9,"guest":"ee".repeat(32)}),
+        0,
+    );
+    let forged = c
+        .save()
+        .unwrap()
+        .replace("/v1/rooms", "/v1/rooms/ABCDEF/leave");
+    assert!(MultiplayerClient::load(&forged).is_err());
+}
