@@ -14,5 +14,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.sudokurivals
         GENERATE_INFOPLIST_FILE: YES
         SWIFT_INCLUDE_PATHS: "$(SRCROOT)/generated"
+        # Rust only builds aarch64-apple-ios-sim; Intel simulators are not supported.
+        EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
     dependencies:
       - framework: generated/SudokuFFI.xcframework
