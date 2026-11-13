@@ -1,0 +1,16 @@
+[package]
+name = "sudoku-ffi"
+version = "0.1.0"
+edition = "2021"
+[lib]
+crate-type = ["lib", "cdylib", "staticlib"]
+[dependencies]
+sudoku-core = { path = "../core" }
+uniffi = "0.32"
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["bindgen"]
+[features]
+bindgen = ["uniffi/cli"]

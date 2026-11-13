@@ -1,0 +1,18 @@
+name: SudokuRivals
+options:
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  SudokuRivals:
+    type: application
+    platform: iOS
+    sources:
+      - SudokuRivals
+      - generated/sudoku_ffi.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.sudokurivals
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/generated"
+    dependencies:
+      - framework: generated/SudokuFFI.xcframework
