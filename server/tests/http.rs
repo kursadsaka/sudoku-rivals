@@ -1,0 +1,201 @@
+use serde_json::{json, Value};
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant};
+
+struct Server {
+    address: SocketAddr,
+    stop: Option<mpsc::Sender<()>>,
+    thread: Option<thread::JoinHandle<()>>,
+}
+impl Server {
+    fn start() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+        let (stop, rx) = mpsc::channel();
+        let thread = thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            runtime.block_on(async move {
+                let listener = tokio::net::TcpListener::from_std(listener).unwrap();
+                let app = sudoku_server::http::router(sudoku_server::shared_service());
+                axum::serve(
+                    listener,
+                    app.into_make_service_with_connect_info::<SocketAddr>(),
+                )
+                .with_graceful_shutdown(async move {
+                    let _ = tokio::task::spawn_blocking(move || rx.recv()).await;
+                })
+                .await
+                .unwrap();
+            });
+        });
+        Self {
+            address,
+            stop: Some(stop),
+            thread: Some(thread),
+        }
+    }
+    fn post(&self, path: &str, body: Value) -> (u16, Value) {
+        let body = body.to_string();
+        let mut socket = TcpStream::connect(self.address).unwrap();
+        socket
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let request = format!("POST {path} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", self.address, body.len(), body);
+        socket.write_all(request.as_bytes()).unwrap();
+        let mut response = String::new();
+        socket.read_to_string(&mut response).unwrap();
+        let (headers, body) = response.split_once("\r\n\r\n").unwrap();
+        let status = headers
+            .lines()
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .nth(1)
+            .unwrap()
+            .parse()
+            .unwrap();
+        (status, serde_json::from_str(body).unwrap())
+    }
+}
+impl Drop for Server {
+    fn drop(&mut self) {
+        self.stop.take().unwrap().send(()).unwrap();
+        self.thread.take().unwrap().join().unwrap();
+    }
+}
+fn command(
+    server: &Server,
+    code: &str,
+    token: &Value,
+    snapshot: &Value,
+    command: Value,
+) -> (u16, Value) {
+    server.post(&format!("/v1/rooms/{code}/command"), json!({"protocol":1,"token":token,"generation":snapshot["generation"],"match_id":snapshot["match_id"],"sequence":snapshot["own"]["next_sequence"],"command":command}))
+}
+
+#[test]
+fn real_http_bot_race_auth_versioning_and_snapshot_privacy() {
+    let server = Server::start();
+    let (status, board) = server.post("/validate", json!({"size":6,"cells":vec![0;36]}));
+    assert_eq!(status, 200);
+    assert_eq!(board["valid"], true);
+    let (status, _) = server.post(
+        "/v1/rooms",
+        json!({"protocol":2,"name":"A","mode":"race","size":6}),
+    );
+    assert_eq!(status, 409);
+    let (status, a) = server.post(
+        "/v1/rooms",
+        json!({"protocol":1,"name":"A","mode":"race","size":6}),
+    );
+    assert_eq!(status, 200);
+    let code = a["snapshot"]["room_code"].as_str().unwrap();
+    let (status, b) = server.post(
+        &format!("/v1/rooms/{code}/join"),
+        json!({"protocol":1,"name":"B"}),
+    );
+    assert_eq!(status, 200);
+    let (status, _) = server.post(
+        &format!("/v1/rooms/{code}/state"),
+        json!({"protocol":1,"token":"bad","generation":1}),
+    );
+    assert_eq!(status, 401);
+    let (status, ready_a) = command(
+        &server,
+        code,
+        &a["token"],
+        &a["snapshot"],
+        json!({"type":"ready","ready":true}),
+    );
+    assert_eq!(status, 200);
+    let (status, ready_b) = command(
+        &server,
+        code,
+        &b["token"],
+        &b["snapshot"],
+        json!({"type":"ready","ready":true}),
+    );
+    assert_eq!(status, 200);
+    assert_eq!(ready_b["snapshot"]["phase"], "countdown");
+    thread::sleep(Duration::from_millis(3010));
+    let (_, state) = server.post(
+        &format!("/v1/rooms/{code}/state"),
+        json!({"protocol":1,"token":a["token"],"generation":1}),
+    );
+    assert_eq!(state["phase"], "playing");
+    let cells: Vec<u8> = serde_json::from_value(state["own"]["givens"].clone()).unwrap();
+    let solved = sudoku_core::solve_board(&cells, 6).unwrap().unwrap();
+    let (status, finish) = command(
+        &server,
+        code,
+        &a["token"],
+        &state,
+        json!({"type":"sync","base_version":0,"cells":solved}),
+    );
+    assert_eq!(status, 200);
+    assert_eq!(finish["snapshot"]["result"]["winner"], 0);
+    assert_eq!(finish["snapshot"]["result"]["reason"], "completed");
+    let opponent = finish["snapshot"]["opponent"].as_object().unwrap();
+    for field in [
+        "solution", "cells", "givens", "token", "guest", "combo", "seed",
+    ] {
+        assert!(!opponent.contains_key(field));
+    }
+    assert!(!finish.to_string().contains(b["token"].as_str().unwrap()));
+    let (_, resumed) = server.post(
+        &format!("/v1/rooms/{code}/resume"),
+        json!({"protocol":1,"token":a["token"]}),
+    );
+    assert_eq!(resumed["generation"], 2);
+    let (status, _) = command(
+        &server,
+        code,
+        &a["token"],
+        &ready_a["snapshot"],
+        json!({"type":"resign"}),
+    );
+    assert_eq!(status, 409);
+    for _ in 0..2 {
+        let (status, left) = server.post(
+            &format!("/v1/rooms/{code}/leave"),
+            json!({"protocol":1,"token":a["token"]}),
+        );
+        assert_eq!(status, 200);
+        assert_eq!(left, json!({"protocol":1,"left":true}));
+    }
+    let (status, _) = server.post(
+        &format!("/v1/rooms/{code}/state"),
+        json!({"protocol":1,"token":a["token"],"generation":2}),
+    );
+    assert_eq!(status, 401);
+}
+
+#[test]
+fn local_http_poll_load_is_bounded_and_recorded() {
+    let server = Server::start();
+    let (_, session) = server.post(
+        "/v1/rooms",
+        json!({"protocol":1,"name":"Load","mode":"duel","size":9}),
+    );
+    let code = session["snapshot"]["room_code"].as_str().unwrap();
+    let started = Instant::now();
+    for _ in 0..1000 {
+        let (status, response) = server.post(
+            &format!("/v1/rooms/{code}/state"),
+            json!({"protocol":1,"token":session["token"],"generation":1}),
+        );
+        assert_eq!(status, 200);
+        assert_eq!(response["phase"], "lobby");
+    }
+    eprintln!(
+        "G06 local load: 1000 sequential authenticated HTTP snapshots in {:?}",
+        started.elapsed()
+    );
+}

@@ -1,0 +1,911 @@
+{
+  "schemaVersion": 1,
+  "status": "implementation-defaults-not-visual-brand-approval",
+  "modes": [
+    "solo",
+    "race",
+    "duel"
+  ],
+  "boardSizes": [
+    6,
+    9
+  ],
+  "layout": {
+    "compactOrder": [
+      "navigation",
+      "status",
+      "board",
+      "numbers",
+      "tools",
+      "footer"
+    ],
+    "wideOrder": [
+      "navigation",
+      "status",
+      "board",
+      "numbers",
+      "tools",
+      "footer"
+    ],
+    "wideBoardBeside": [
+      "numbers",
+      "tools"
+    ],
+    "boardAspectRatio": 1,
+    "baseTouchTarget": 48,
+    "minimumTextSize": 16,
+    "minimumWebWidth": 320,
+    "largeText": "scroll-in-document; never clip board or actions",
+    "pausedSolo": "board-not-rendered",
+    "regions": [
+      "navigation",
+      "status",
+      "content",
+      "board",
+      "numbers",
+      "tools",
+      "footer"
+    ]
+  },
+  "tokens": {
+    "spacing": {
+      "xs": 4,
+      "sm": 8,
+      "md": 16,
+      "lg": 24,
+      "xl": 32
+    },
+    "type": {
+      "body": 16,
+      "label": 14,
+      "title": 24,
+      "digit": 24
+    },
+    "light": {
+      "background": "#ffffff",
+      "foreground": "#111827",
+      "muted": "#4b5563",
+      "accent": "#1d4ed8",
+      "onAccent": "#ffffff",
+      "selected": "#dbeafe",
+      "error": "#b91c1c",
+      "given": "#111827",
+      "border": "#6b7280"
+    },
+    "dark": {
+      "background": "#111827",
+      "foreground": "#f9fafb",
+      "muted": "#d1d5db",
+      "accent": "#93c5fd",
+      "onAccent": "#111827",
+      "selected": "#1e3a5f",
+      "error": "#fca5a5",
+      "given": "#f9fafb",
+      "border": "#9ca3af"
+    }
+  },
+  "contrastPairs": [
+    {
+      "foreground": "foreground",
+      "background": "background",
+      "minimum": 4.5
+    },
+    {
+      "foreground": "muted",
+      "background": "background",
+      "minimum": 4.5
+    },
+    {
+      "foreground": "onAccent",
+      "background": "accent",
+      "minimum": 4.5
+    },
+    {
+      "foreground": "foreground",
+      "background": "selected",
+      "minimum": 4.5
+    },
+    {
+      "foreground": "error",
+      "background": "background",
+      "minimum": 4.5
+    },
+    {
+      "foreground": "border",
+      "background": "background",
+      "minimum": 3
+    }
+  ],
+  "platformFreedom": [
+    "system-font",
+    "navigation-chrome",
+    "native-share-sheet",
+    "native-dialog",
+    "native-haptics",
+    "native-transitions"
+  ],
+  "elements": {
+    "app-title": {
+      "role": "heading",
+      "region": "navigation",
+      "textKey": "app.title"
+    },
+    "solo-start": {
+      "role": "button",
+      "region": "content",
+      "textKey": "home.solo"
+    },
+    "friend-start": {
+      "role": "button",
+      "region": "content",
+      "textKey": "home.friends"
+    },
+    "solo-resume": {
+      "role": "button",
+      "region": "content",
+      "textKey": "home.resume"
+    },
+    "settings-open": {
+      "role": "button",
+      "region": "navigation",
+      "textKey": "nav.settings"
+    },
+    "board-size": {
+      "role": "radiogroup",
+      "region": "content",
+      "textKey": "setup.size"
+    },
+    "game-mode": {
+      "role": "radiogroup",
+      "region": "content",
+      "textKey": "setup.mode"
+    },
+    "game-start": {
+      "role": "button",
+      "region": "footer",
+      "textKey": "setup.start"
+    },
+    "back": {
+      "role": "button",
+      "region": "navigation",
+      "textKey": "nav.back"
+    },
+    "game-status": {
+      "role": "status",
+      "region": "status",
+      "textKey": "game.incomplete"
+    },
+    "game-board": {
+      "role": "grid",
+      "region": "board"
+    },
+    "cell-{row}-{column}": {
+      "role": "gridcell",
+      "region": "board",
+      "textKey": "cell.label"
+    },
+    "number-{digit}": {
+      "role": "button",
+      "region": "numbers",
+      "textKey": "digit.label"
+    },
+    "notes-toggle": {
+      "role": "switch",
+      "region": "tools",
+      "textKey": "game.notes"
+    },
+    "erase": {
+      "role": "button",
+      "region": "tools",
+      "textKey": "game.erase"
+    },
+    "undo": {
+      "role": "button",
+      "region": "tools",
+      "textKey": "game.undo"
+    },
+    "redo": {
+      "role": "button",
+      "region": "tools",
+      "textKey": "game.redo"
+    },
+    "hint": {
+      "role": "button",
+      "region": "tools",
+      "textKey": "game.hint"
+    },
+    "pause": {
+      "role": "button",
+      "region": "navigation",
+      "textKey": "game.pause"
+    },
+    "timer": {
+      "role": "timer",
+      "region": "status",
+      "textKey": "game.elapsed"
+    },
+    "connection-status": {
+      "role": "status",
+      "region": "status",
+      "textKey": "connection.connected"
+    },
+    "own-score": {
+      "role": "text",
+      "region": "status",
+      "textKey": "game.score"
+    },
+    "opponent-score": {
+      "role": "text",
+      "region": "status",
+      "textKey": "game.opponentScore"
+    },
+    "combo": {
+      "role": "text",
+      "region": "status",
+      "textKey": "game.combo"
+    },
+    "opponent-progress": {
+      "role": "progressbar",
+      "region": "status",
+      "textKey": "game.progress"
+    },
+    "input-lock": {
+      "role": "status",
+      "region": "status",
+      "textKey": "game.lock"
+    },
+    "resign": {
+      "role": "button",
+      "region": "navigation",
+      "textKey": "confirm.resign"
+    },
+    "resume": {
+      "role": "button",
+      "region": "content",
+      "textKey": "game.resume"
+    },
+    "save-exit": {
+      "role": "button",
+      "region": "footer",
+      "textKey": "game.exit"
+    },
+    "room-code": {
+      "role": "textbox",
+      "region": "content",
+      "textKey": "lobby.code"
+    },
+    "room-create": {
+      "role": "button",
+      "region": "footer",
+      "textKey": "lobby.create"
+    },
+    "room-join": {
+      "role": "button",
+      "region": "footer",
+      "textKey": "lobby.join"
+    },
+    "invite-share": {
+      "role": "button",
+      "region": "content",
+      "textKey": "lobby.share"
+    },
+    "ready-toggle": {
+      "role": "switch",
+      "region": "footer",
+      "textKey": "lobby.ready"
+    },
+    "players": {
+      "role": "list",
+      "region": "content"
+    },
+    "result-heading": {
+      "role": "heading",
+      "region": "content",
+      "textKey": "result.win"
+    },
+    "result-details": {
+      "role": "text",
+      "region": "content"
+    },
+    "rematch": {
+      "role": "button",
+      "region": "footer",
+      "textKey": "result.rematch"
+    },
+    "home": {
+      "role": "button",
+      "region": "footer",
+      "textKey": "nav.home"
+    },
+    "retry": {
+      "role": "button",
+      "region": "footer",
+      "textKey": "error.retry"
+    },
+    "error-message": {
+      "role": "alert",
+      "region": "content",
+      "textKey": "error.network"
+    },
+    "storage-status": {
+      "role": "status",
+      "region": "content",
+      "textKey": "settings.storage"
+    },
+    "sound-toggle": {
+      "role": "switch",
+      "region": "content",
+      "textKey": "settings.sound"
+    },
+    "haptics-toggle": {
+      "role": "switch",
+      "region": "content",
+      "textKey": "settings.haptics"
+    },
+    "motion-toggle": {
+      "role": "switch",
+      "region": "content",
+      "textKey": "settings.motion"
+    },
+    "language": {
+      "role": "combobox",
+      "region": "content",
+      "textKey": "settings.language"
+    }
+  },
+  "screens": [
+    {
+      "id": "home",
+      "elements": [
+        "app-title",
+        "solo-start",
+        "friend-start",
+        "solo-resume",
+        "settings-open",
+        "storage-status"
+      ],
+      "states": [
+        "empty",
+        "saved",
+        "corrupt-save",
+        "offline"
+      ],
+      "transitions": {
+        "solo-start": "solo-setup",
+        "friend-start": "friend-setup",
+        "solo-resume": "solo-game",
+        "settings-open": "settings"
+      }
+    },
+    {
+      "id": "solo-setup",
+      "elements": [
+        "back",
+        "app-title",
+        "board-size",
+        "game-start"
+      ],
+      "states": [
+        "ready",
+        "replacing-save",
+        "starting",
+        "failed"
+      ],
+      "transitions": {
+        "back": "home",
+        "game-start": "solo-game"
+      }
+    },
+    {
+      "id": "friend-setup",
+      "elements": [
+        "back",
+        "app-title",
+        "board-size",
+        "game-mode",
+        "room-create",
+        "room-code",
+        "room-join"
+      ],
+      "states": [
+        "ready",
+        "creating",
+        "joining",
+        "invalid-code",
+        "full-room",
+        "network-error"
+      ],
+      "transitions": {
+        "back": "home",
+        "room-create": "lobby",
+        "room-join": "lobby"
+      }
+    },
+    {
+      "id": "lobby",
+      "elements": [
+        "back",
+        "app-title",
+        "connection-status",
+        "room-code",
+        "invite-share",
+        "players",
+        "ready-toggle"
+      ],
+      "states": [
+        "waiting",
+        "paired",
+        "ready",
+        "countdown",
+        "disconnected",
+        "reconnecting",
+        "expired",
+        "full-room"
+      ],
+      "transitions": {
+        "back": "home",
+        "start-race": "race-game",
+        "start-duel": "duel-game",
+        "expired": "error"
+      }
+    },
+    {
+      "id": "solo-game",
+      "elements": [
+        "back",
+        "app-title",
+        "pause",
+        "game-status",
+        "timer",
+        "game-board",
+        "cell-{row}-{column}",
+        "number-{digit}",
+        "notes-toggle",
+        "erase",
+        "undo",
+        "redo",
+        "hint",
+        "storage-status"
+      ],
+      "states": [
+        "playing",
+        "saved",
+        "save-error",
+        "conflict",
+        "complete"
+      ],
+      "transitions": {
+        "pause": "solo-paused",
+        "complete": "solo-result",
+        "back": "home",
+        "save-error": "solo-game"
+      }
+    },
+    {
+      "id": "solo-paused",
+      "elements": [
+        "app-title",
+        "resume",
+        "save-exit",
+        "storage-status"
+      ],
+      "states": [
+        "paused",
+        "save-error"
+      ],
+      "transitions": {
+        "resume": "solo-game",
+        "save-exit": "home"
+      }
+    },
+    {
+      "id": "solo-result",
+      "elements": [
+        "app-title",
+        "result-heading",
+        "result-details",
+        "home"
+      ],
+      "states": [
+        "complete",
+        "saved",
+        "save-error"
+      ],
+      "transitions": {
+        "home": "home"
+      }
+    },
+    {
+      "id": "race-game",
+      "elements": [
+        "back",
+        "app-title",
+        "connection-status",
+        "timer",
+        "game-status",
+        "opponent-progress",
+        "game-board",
+        "cell-{row}-{column}",
+        "number-{digit}",
+        "notes-toggle",
+        "erase",
+        "undo",
+        "redo",
+        "resign"
+      ],
+      "states": [
+        "countdown",
+        "playing",
+        "conflict",
+        "verifying",
+        "incorrect-board",
+        "disconnected",
+        "reconnecting",
+        "reconciling",
+        "result"
+      ],
+      "transitions": {
+        "result": "match-result",
+        "resign-confirmed": "match-result",
+        "reconnect": "race-game"
+      }
+    },
+    {
+      "id": "duel-game",
+      "elements": [
+        "back",
+        "app-title",
+        "connection-status",
+        "timer",
+        "own-score",
+        "opponent-score",
+        "combo",
+        "game-status",
+        "game-board",
+        "cell-{row}-{column}",
+        "number-{digit}",
+        "input-lock",
+        "resign"
+      ],
+      "states": [
+        "countdown",
+        "playing",
+        "move-pending",
+        "locked",
+        "disconnected",
+        "reconnecting",
+        "result"
+      ],
+      "transitions": {
+        "result": "match-result",
+        "resign-confirmed": "match-result",
+        "reconnect": "duel-game"
+      }
+    },
+    {
+      "id": "match-result",
+      "elements": [
+        "app-title",
+        "connection-status",
+        "result-heading",
+        "result-details",
+        "rematch",
+        "home"
+      ],
+      "states": [
+        "win",
+        "loss",
+        "draw",
+        "no-contest",
+        "rematch-waiting",
+        "rematch-starting",
+        "disconnected"
+      ],
+      "transitions": {
+        "rematch-accepted": "lobby",
+        "home": "home"
+      }
+    },
+    {
+      "id": "error",
+      "elements": [
+        "app-title",
+        "error-message",
+        "retry",
+        "home"
+      ],
+      "states": [
+        "network",
+        "room-full",
+        "room-missing",
+        "corrupt-save",
+        "storage"
+      ],
+      "transitions": {
+        "retry": "home",
+        "home": "home"
+      }
+    },
+    {
+      "id": "settings",
+      "elements": [
+        "back",
+        "app-title",
+        "sound-toggle",
+        "haptics-toggle",
+        "motion-toggle",
+        "language",
+        "storage-status"
+      ],
+      "states": [
+        "ready",
+        "save-error"
+      ],
+      "transitions": {
+        "back": "home"
+      }
+    }
+  ],
+  "strings": {
+    "app.title": {
+      "tr": "Sudoku Rivals",
+      "en": "Sudoku Rivals"
+    },
+    "home.solo": {
+      "tr": "Tek başına oyna",
+      "en": "Play solo"
+    },
+    "home.friends": {
+      "tr": "Arkadaşınla yarış",
+      "en": "Play with a friend"
+    },
+    "home.resume": {
+      "tr": "Oyuna devam et",
+      "en": "Resume game"
+    },
+    "setup.size": {
+      "tr": "Tahta boyutu",
+      "en": "Board size"
+    },
+    "setup.mode": {
+      "tr": "Oyun modu",
+      "en": "Game mode"
+    },
+    "setup.start": {
+      "tr": "Oyunu başlat",
+      "en": "Start game"
+    },
+    "mode.solo": {
+      "tr": "Tek başına",
+      "en": "Solo"
+    },
+    "mode.race": {
+      "tr": "Klasik yarış",
+      "en": "Classic race"
+    },
+    "mode.duel": {
+      "tr": "90 saniye düello",
+      "en": "90-second duel"
+    },
+    "game.pause": {
+      "tr": "Duraklat",
+      "en": "Pause"
+    },
+    "game.resume": {
+      "tr": "Devam et",
+      "en": "Resume"
+    },
+    "game.exit": {
+      "tr": "Kaydedip çık",
+      "en": "Save and exit"
+    },
+    "game.erase": {
+      "tr": "Sil",
+      "en": "Erase"
+    },
+    "game.notes": {
+      "tr": "Kalem",
+      "en": "Notes"
+    },
+    "game.undo": {
+      "tr": "Geri al",
+      "en": "Undo"
+    },
+    "game.redo": {
+      "tr": "Yinele",
+      "en": "Redo"
+    },
+    "game.hint": {
+      "tr": "İpucu",
+      "en": "Hint"
+    },
+    "game.elapsed": {
+      "tr": "Geçen süre: {time}",
+      "en": "Elapsed: {time}"
+    },
+    "game.remaining": {
+      "tr": "Kalan süre: {time}",
+      "en": "Remaining: {time}"
+    },
+    "game.score": {
+      "tr": "Puanın: {score}",
+      "en": "Your score: {score}"
+    },
+    "game.opponentScore": {
+      "tr": "Rakip: {score}",
+      "en": "Opponent: {score}"
+    },
+    "game.combo": {
+      "tr": "Seri: {combo}",
+      "en": "Streak: {combo}"
+    },
+    "game.progress": {
+      "tr": "Rakibin doldurduğu hücreler: %{percent}",
+      "en": "Opponent filled: {percent}%"
+    },
+    "game.lock": {
+      "tr": "Giriş kilidi: {seconds} saniye",
+      "en": "Input locked: {seconds} seconds"
+    },
+    "game.conflict": {
+      "tr": "Tahtada çakışma var",
+      "en": "The board has conflicts"
+    },
+    "game.incomplete": {
+      "tr": "Oyun devam ediyor",
+      "en": "Game in progress"
+    },
+    "game.complete": {
+      "tr": "Sudoku tamamlandı",
+      "en": "Sudoku complete"
+    },
+    "game.given": {
+      "tr": "verilen",
+      "en": "given"
+    },
+    "game.editable": {
+      "tr": "girilebilir",
+      "en": "editable"
+    },
+    "game.empty": {
+      "tr": "boş",
+      "en": "empty"
+    },
+    "cell.label": {
+      "tr": "Satır {row}, sütun {column}, {kind}, {value}, notlar: {notes}{conflict}",
+      "en": "Row {row}, column {column}, {kind}, {value}, notes: {notes}{conflict}"
+    },
+    "digit.label": {
+      "tr": "{digit} yaz",
+      "en": "Enter {digit}"
+    },
+    "lobby.code": {
+      "tr": "Oda kodu",
+      "en": "Room code"
+    },
+    "lobby.join": {
+      "tr": "Katıl",
+      "en": "Join"
+    },
+    "lobby.create": {
+      "tr": "Oda kur",
+      "en": "Create room"
+    },
+    "lobby.share": {
+      "tr": "Daveti paylaş",
+      "en": "Share invite"
+    },
+    "lobby.ready": {
+      "tr": "Hazırım",
+      "en": "Ready"
+    },
+    "lobby.waiting": {
+      "tr": "Arkadaşın bekleniyor",
+      "en": "Waiting for your friend"
+    },
+    "lobby.countdown": {
+      "tr": "Maç {seconds} saniye sonra başlayacak",
+      "en": "Match starts in {seconds} seconds"
+    },
+    "connection.offlineSolo": {
+      "tr": "Çevrimdışı oynayabilirsin",
+      "en": "You can play offline"
+    },
+    "connection.reconnecting": {
+      "tr": "Yeniden bağlanılıyor",
+      "en": "Reconnecting"
+    },
+    "connection.connected": {
+      "tr": "Bağlandı",
+      "en": "Connected"
+    },
+    "result.win": {
+      "tr": "Maçı kazandın",
+      "en": "You won"
+    },
+    "result.loss": {
+      "tr": "Rakibin kazandı",
+      "en": "Your opponent won"
+    },
+    "result.draw": {
+      "tr": "Berabere",
+      "en": "Draw"
+    },
+    "result.noContest": {
+      "tr": "Maç sonuçsuz bitti",
+      "en": "Match ended without a result"
+    },
+    "result.rematch": {
+      "tr": "Rövanş iste",
+      "en": "Request rematch"
+    },
+    "nav.home": {
+      "tr": "Ana sayfa",
+      "en": "Home"
+    },
+    "nav.back": {
+      "tr": "Geri",
+      "en": "Back"
+    },
+    "nav.settings": {
+      "tr": "Ayarlar",
+      "en": "Settings"
+    },
+    "confirm.replace": {
+      "tr": "Yeni oyun bu boyuttaki kaydının yerini alacak. Devam edilsin mi?",
+      "en": "A new game will replace the saved game of this size. Continue?"
+    },
+    "confirm.resign": {
+      "tr": "Ayrılırsan maçı kaybedersin. Ayrılmak istiyor musun?",
+      "en": "Leaving forfeits the match. Leave?"
+    },
+    "error.save": {
+      "tr": "Oyun kaydedilemedi. Açık oyunun korunuyor; tekrar deneyebilirsin.",
+      "en": "Could not save. Your open game is preserved; you can retry."
+    },
+    "error.corruptSave": {
+      "tr": "Kayıt açılamadı. Kaydı silmeden yeni bir oyun başlatabilir veya tekrar deneyebilirsin.",
+      "en": "Could not open the save. You can start another game without deleting it, or retry."
+    },
+    "error.roomFull": {
+      "tr": "Oda dolu",
+      "en": "Room is full"
+    },
+    "error.roomMissing": {
+      "tr": "Oda bulunamadı veya kapandı",
+      "en": "Room not found or closed"
+    },
+    "error.network": {
+      "tr": "Sunucuya ulaşılamıyor",
+      "en": "Cannot reach the server"
+    },
+    "error.retry": {
+      "tr": "Tekrar dene",
+      "en": "Retry"
+    },
+    "error.hintUnavailable": {
+      "tr": "Bu konumda açıklanabilir bir ipucu bulunamadı",
+      "en": "No explainable hint found here"
+    },
+    "settings.sound": {
+      "tr": "Ses",
+      "en": "Sound"
+    },
+    "settings.haptics": {
+      "tr": "Titreşim",
+      "en": "Haptics"
+    },
+    "settings.motion": {
+      "tr": "Hareketi azalt",
+      "en": "Reduce motion"
+    },
+    "settings.language": {
+      "tr": "Dil",
+      "en": "Language"
+    },
+    "settings.storage": {
+      "tr": "Yerel kayıtlar",
+      "en": "Local saves"
+    }
+  }
+}

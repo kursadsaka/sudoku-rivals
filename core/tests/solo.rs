@@ -45,9 +45,9 @@ fn fixture_games_protect_givens_and_complete_in_both_sizes() {
         assert_eq!(game.values(), solution);
         let saved = game.save().unwrap();
         assert_eq!(SoloGame::load(&saved).unwrap(), game);
-        assert!(game.apply(Undo).unwrap());
+        assert!(game.apply(Undo {}).unwrap());
         assert!(!game.is_complete());
-        assert!(game.apply(Redo).unwrap());
+        assert!(game.apply(Redo {}).unwrap());
         assert!(game.is_complete());
         let bad = serde_json::from_value(f["invalidDuplicate"].clone()).unwrap();
         assert_eq!(SoloGame::new(size, bad), Err(SoloError::InvalidBoard));
@@ -85,8 +85,8 @@ fn isolated_row_column_and_box_conflicts_and_shape_errors() {
 fn notes_erase_history_branching_and_atomic_errors() {
     for size in [6, 9] {
         let mut game = SoloGame::new(size, vec![0; size as usize * size as usize]).unwrap();
-        assert!(!game.apply(Undo).unwrap());
-        assert!(!game.apply(Redo).unwrap());
+        assert!(!game.apply(Undo {}).unwrap());
+        assert!(!game.apply(Redo {}).unwrap());
         for value in [1, size] {
             game.apply(ToggleNote { index: 0, value }).unwrap();
         }
@@ -119,7 +119,7 @@ fn notes_erase_history_branching_and_atomic_errors() {
         game.apply(Set { index: 1, value: 1 }).unwrap();
         assert!(!game.is_valid()); // Conflicts remain editable and serializable.
         assert_eq!(SoloGame::load(&game.save().unwrap()).unwrap(), game);
-        game.apply(Undo).unwrap();
+        game.apply(Undo {}).unwrap();
         assert!(game.is_valid());
         let before = game.clone();
         assert!(!game.apply(Erase { index: 1 }).unwrap());
@@ -128,14 +128,14 @@ fn notes_erase_history_branching_and_atomic_errors() {
         game.apply(Set { index: 1, value: 2 }).unwrap();
         assert!(!game.can_redo());
         game.apply(Erase { index: 0 }).unwrap();
-        game.apply(Undo).unwrap();
+        game.apply(Undo {}).unwrap();
         assert_eq!(game.values()[0], 1);
-        game.apply(Undo).unwrap();
-        game.apply(Undo).unwrap();
+        game.apply(Undo {}).unwrap();
+        game.apply(Undo {}).unwrap();
         assert_eq!(game.notes(0).unwrap(), vec![size]);
         game.apply(Erase { index: 0 }).unwrap();
         assert!(game.notes(0).unwrap().is_empty());
-        game.apply(Undo).unwrap();
+        game.apply(Undo {}).unwrap();
         assert_eq!(game.notes(0).unwrap(), vec![size]);
         assert!(game.notes(u32::MAX).is_err());
     }
@@ -146,7 +146,7 @@ fn corrupt_saves_never_create_unsafe_state() {
     let mut game = SoloGame::new(6, vec![0; 36]).unwrap();
     game.apply(Set { index: 0, value: 1 }).unwrap();
     game.apply(ToggleNote { index: 1, value: 6 }).unwrap();
-    game.apply(Undo).unwrap();
+    game.apply(Undo {}).unwrap();
     let saved = game.save().unwrap();
     let original: Value = serde_json::from_str(&saved).unwrap();
     for (path, replacement) in [
@@ -189,7 +189,7 @@ fn corrupt_saves_never_create_unsafe_state() {
         r#"{"type":"erase","index":1,"extra":1}"#,
         r#"{"type":"hint"}"#,
     ] {
-        assert!(game.apply_json(cmd).is_err());
+        assert_eq!(game.apply_json(cmd), Err(SoloError::InvalidCommand));
         assert_eq!(game, before);
     }
     assert_eq!(SoloGame::load(&saved).unwrap(), game);
@@ -206,13 +206,40 @@ fn bounded_history_remains_loadable_after_rollover_and_replay() {
         .unwrap();
     }
     for _ in 0..4096 {
-        assert!(game.apply(Undo).unwrap());
+        assert!(game.apply(Undo {}).unwrap());
     }
     assert!(!game.can_undo());
     assert_eq!(SoloGame::load(&game.save().unwrap()).unwrap(), game);
     for _ in 0..4096 {
-        assert!(game.apply(Redo).unwrap());
+        assert!(game.apply(Redo {}).unwrap());
     }
     assert!(!game.can_redo());
     assert_eq!(SoloGame::load(&game.save().unwrap()).unwrap(), game);
+}
+
+#[test]
+fn future_saves_and_malformed_commands_have_distinct_errors() {
+    let mut game = SoloGame::new(6, vec![0; 36]).unwrap();
+    let original = game.save().unwrap();
+    for version in [2, 300] {
+        let mut saved: Value = serde_json::from_str(&original).unwrap();
+        saved["version"] = json!(version);
+        saved["timer"] = json!(5);
+        assert_eq!(
+            SoloGame::load(&saved.to_string()),
+            Err(SoloError::UnsupportedVersion)
+        );
+    }
+    for command in [
+        r#"{"type":"undo","index":4}"#,
+        r#"{"type":"redo","unexpected":true}"#,
+        "{",
+    ] {
+        assert_eq!(game.apply_json(command), Err(SoloError::InvalidCommand));
+        assert_eq!(game.save().unwrap(), original);
+    }
+    assert_eq!(
+        game.apply_json(&" ".repeat(1025)),
+        Err(SoloError::InvalidCommand)
+    );
 }

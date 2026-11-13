@@ -14,6 +14,7 @@ pub enum SoloError {
     GivenCell,
     FilledCell,
     InvalidSave,
+    InvalidCommand,
     UnsupportedVersion,
 }
 impl fmt::Display for SoloError {
@@ -31,8 +32,8 @@ pub enum SoloCommand {
     Set { index: u32, value: u8 },
     ToggleNote { index: u32, value: u8 },
     Erase { index: u32 },
-    Undo,
-    Redo,
+    Undo {},
+    Redo {},
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -143,7 +144,7 @@ impl SoloGame {
     /// Notes in peer cells are never changed automatically.
     pub fn apply(&mut self, command: SoloCommand) -> Result<bool, SoloError> {
         let (index, after) = match command {
-            SoloCommand::Undo => {
+            SoloCommand::Undo {} => {
                 if let Some(edit) = self.undo.pop() {
                     self.cells[edit.index as usize] = edit.before;
                     self.redo.push(edit);
@@ -151,7 +152,7 @@ impl SoloGame {
                 }
                 return Ok(false);
             }
-            SoloCommand::Redo => {
+            SoloCommand::Redo {} => {
                 if let Some(edit) = self.redo.pop() {
                     self.cells[edit.index as usize] = edit.after;
                     self.undo.push(edit);
@@ -203,10 +204,24 @@ impl SoloGame {
     /// JSON command boundary shared by Swift, Kotlin and WASM adapters.
     pub fn apply_json(&mut self, command: &str) -> Result<bool, SoloError> {
         if command.len() > 1024 {
-            return Err(SoloError::InvalidSave);
+            return Err(SoloError::InvalidCommand);
         }
-        let command = serde_json::from_str(command).map_err(|_| SoloError::InvalidSave)?;
+        let command = serde_json::from_str(command).map_err(|_| SoloError::InvalidCommand)?;
         self.apply(command)
+    }
+
+    /// Visible conflicts only; no solution information is consulted.
+    pub fn conflicts(&self) -> Vec<u32> {
+        crate::conflicting_cells(&self.values(), self.size).unwrap_or_default()
+    }
+
+    /// An advisory single-step explanation; this does not alter the saved game.
+    pub fn hint(&self) -> Result<Option<crate::LogicalHint>, crate::PuzzleError> {
+        crate::find_logical_hint(&self.values(), self.size)
+    }
+
+    pub fn hint_json(&self) -> Result<String, crate::PuzzleError> {
+        serde_json::to_string(&self.hint()?).map_err(|_| crate::PuzzleError::InvalidBoard)
     }
 
     fn editable(&self, index: u32) -> Result<(), SoloError> {
@@ -226,6 +241,14 @@ impl SoloGame {
     pub fn load(json: &str) -> Result<Self, SoloError> {
         if json.len() > MAX_SAVE_BYTES {
             return Err(SoloError::InvalidSave);
+        }
+        #[derive(Deserialize)]
+        struct Version {
+            version: u64,
+        }
+        let version: Version = serde_json::from_str(json).map_err(|_| SoloError::InvalidSave)?;
+        if version.version != VERSION as u64 {
+            return Err(SoloError::UnsupportedVersion);
         }
         let saved: SavedGame = serde_json::from_str(json).map_err(|_| SoloError::InvalidSave)?;
         Self::try_from(saved)
