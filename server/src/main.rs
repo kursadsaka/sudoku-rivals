@@ -1,6 +1,11 @@
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await?;
+    let port = std::env::var("SUDOKU_PORT")
+        .ok()
+        .map(|value| value.parse::<u16>())
+        .transpose()?
+        .unwrap_or(3000);
+    let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
     let app = sudoku_server::http::router(sudoku_server::shared_service());
     axum::serve(
         listener,

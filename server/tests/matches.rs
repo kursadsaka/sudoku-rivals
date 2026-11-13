@@ -182,7 +182,7 @@ fn race_has_no_tie_window_or_wrong_board_lock() {
 }
 
 #[test]
-fn duel_deadline_uses_admitted_time_not_client_time_or_processing_delay() {
+fn duel_deadline_uses_explicit_admission_times() {
     for size in [6, 9] {
         let (mut service, mut a, _) = started(Mode::Duel, size);
         // State polls keep the seat connected. Admission happened at 92.999;
@@ -191,7 +191,6 @@ fn duel_deadline_uses_admitted_time_not_client_time_or_processing_delay() {
             a.state(&mut service, t);
         }
         let cmd = next_move(&a);
-        std::thread::sleep(std::time::Duration::from_millis(2));
         let receipt = a.send(&mut service, cmd, 92_999);
         assert_eq!(receipt.score, 10);
         let cmd = next_move(&a);
@@ -542,11 +541,20 @@ fn invalid_inputs_givens_and_noop_versions_never_change_the_board() {
         let mut given_changed = original.clone();
         let given = given_changed.iter().position(|&v| v != 0).unwrap();
         given_changed[given] = 0;
-        for bad in [
-            vec![],
-            vec![0; size as usize * size as usize + 1],
-            given_changed,
-        ] {
+        for bad in [vec![], vec![0; size as usize * size as usize + 1]] {
+            assert!(matches!(
+                service.command(
+                    &a.snapshot.room_code,
+                    &a.envelope(Command::Sync {
+                        base_version: 0,
+                        cells: bad
+                    }),
+                    4000
+                ),
+                Err(Error::InvalidInput)
+            ));
+        }
+        for bad in [given_changed] {
             assert_eq!(
                 a.send(
                     &mut service,
@@ -657,4 +665,115 @@ fn explicit_lobby_exit_releases_guest_and_seat_and_cancels_countdown() {
         .create("a", Some(guest), "A".into(), Mode::Race, 6, 100)
         .is_ok());
     assert!(service.join("c", &code, None, "C".into(), 100).is_ok());
+}
+
+#[test]
+fn cancelled_countdowns_never_reveal_the_puzzle() {
+    for mode in [Mode::Race, Mode::Duel] {
+        for size in [6, 9] {
+            let mut service = Service::default();
+            let mut a: Bot = service
+                .create("a", None, "A".into(), mode, size, 0)
+                .unwrap()
+                .into();
+            let mut b: Bot = service
+                .join("b", &a.snapshot.room_code, None, "B".into(), 0)
+                .unwrap()
+                .into();
+            a.send(&mut service, Command::Ready { ready: true }, 0);
+            b.send(&mut service, Command::Ready { ready: true }, 0);
+            assert_eq!(b.snapshot.phase, Phase::Countdown);
+            assert!(b.snapshot.own.givens.is_empty());
+            assert!(b.snapshot.own.cells.is_empty());
+            a.state(&mut service, 0);
+            assert!(a.snapshot.own.givens.is_empty());
+            a.send(&mut service, Command::Ready { ready: false }, 100);
+            a.send(&mut service, Command::Ready { ready: true }, 1000);
+            assert!(a.snapshot.own.givens.is_empty());
+            a.send(&mut service, Command::Disconnect, 1001);
+            a.snapshot = service
+                .resume(&a.snapshot.room_code, &a.token, 1002)
+                .unwrap();
+            a.send(&mut service, Command::Ready { ready: true }, 1003);
+            assert!(a.snapshot.own.givens.is_empty());
+            a.state(&mut service, 4003);
+            assert_eq!(a.snapshot.own.cells.len(), (size as usize).pow(2));
+        }
+    }
+}
+
+#[test]
+fn one_seat_cannot_spend_the_other_seats_receipt_budget_or_erase_a_win() {
+    let (mut service, mut a, mut b) = started(Mode::Race, 6);
+    for _ in 1..8192 {
+        assert_eq!(
+            b.send(&mut service, Command::Ready { ready: true }, 4000)
+                .code,
+            Code::InvalidState
+        );
+    }
+    assert!(matches!(
+        service.command(
+            &b.snapshot.room_code,
+            &b.envelope(Command::Ready { ready: true }),
+            4000
+        ),
+        Err(Error::Capacity)
+    ));
+    a.state(&mut service, 4000);
+    assert_eq!(a.snapshot.phase, Phase::Playing);
+    let cells = solution(&a);
+    a.send(
+        &mut service,
+        Command::Sync {
+            base_version: 0,
+            cells,
+        },
+        4000,
+    );
+    assert_eq!(a.snapshot.result.as_ref().unwrap().winner, Some(0));
+    assert_eq!(
+        a.snapshot.result.as_ref().unwrap().reason,
+        EndReason::Completed
+    );
+}
+
+#[test]
+fn oversized_payloads_are_not_retained_as_receipts_even_in_a_lobby() {
+    let mut service = Service::default();
+    let mut a: Bot = service
+        .create("a", None, "A".into(), Mode::Race, 9, 0)
+        .unwrap()
+        .into();
+    let bad = a.envelope(Command::Sync {
+        base_version: 0,
+        cells: vec![0; 8000],
+    });
+    for _ in 0..1000 {
+        assert!(matches!(
+            service.command(&a.snapshot.room_code, &bad, 0),
+            Err(Error::InvalidInput)
+        ));
+    }
+    a.state(&mut service, 0);
+    assert_eq!(a.snapshot.own.next_sequence, 1);
+}
+
+#[test]
+fn loopback_test_matrix_does_not_share_a_five_room_ceiling() {
+    let mut service = Service::default();
+    for _ in 0..12 {
+        service
+            .create("127.0.0.1", None, "Local".into(), Mode::Race, 6, 0)
+            .unwrap();
+    }
+    for _ in 0..5 {
+        service
+            .create("192.0.2.1", None, "Remote".into(), Mode::Race, 6, 0)
+            .unwrap();
+    }
+    assert!(matches!(
+        service.create("192.0.2.1", None, "Remote".into(), Mode::Race, 6, 0),
+        Err(Error::RateLimited)
+    ));
 }

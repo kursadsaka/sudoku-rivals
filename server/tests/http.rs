@@ -41,6 +41,31 @@ impl Server {
             thread: Some(thread),
         }
     }
+    fn get(&self, path: &str) -> (u16, String, String) {
+        let mut socket = TcpStream::connect(self.address).unwrap();
+        socket
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        write!(
+            socket,
+            "GET {path} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
+            self.address
+        )
+        .unwrap();
+        let mut response = String::new();
+        socket.read_to_string(&mut response).unwrap();
+        let (headers, body) = response.split_once("\r\n\r\n").unwrap();
+        let status = headers
+            .lines()
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .nth(1)
+            .unwrap()
+            .parse()
+            .unwrap();
+        (status, headers.to_owned(), body.to_owned())
+    }
     fn post(&self, path: &str, body: Value) -> (u16, Value) {
         let body = body.to_string();
         let mut socket = TcpStream::connect(self.address).unwrap();
@@ -198,4 +223,42 @@ fn local_http_poll_load_is_bounded_and_recorded() {
         "G06 local load: 1000 sequential authenticated HTTP snapshots in {:?}",
         started.elapsed()
     );
+}
+
+#[test]
+fn web_and_invites_use_one_origin_without_exposing_repository_files() {
+    let server = Server::start();
+    let (status, _, health) = server.get("/health");
+    assert_eq!(status, 200);
+    assert_eq!(
+        serde_json::from_str::<Value>(&health).unwrap(),
+        json!({"protocol":1,"status":"ok"})
+    );
+    let (status, headers, html) = server.get("/");
+    assert_eq!(status, 200);
+    assert!(headers
+        .to_ascii_lowercase()
+        .contains("content-type: text/html"));
+    assert!(headers
+        .to_ascii_lowercase()
+        .contains("x-content-type-options: nosniff"));
+    assert!(html.contains("Sudoku Rivals"));
+    let (status, _, invite) = server.get("/r/ABC234");
+    assert_eq!(status, 200);
+    assert_eq!(html, invite);
+    let (status, headers, script) = server.get("/main.js");
+    assert_eq!(status, 200);
+    assert!(headers.to_ascii_lowercase().contains("text/javascript"));
+    assert!(script.contains("sudoku_wasm.js"));
+    for path in [
+        "/.env",
+        "/Cargo.toml",
+        "/../Cargo.toml",
+        "/%2e%2e/Cargo.toml",
+        "/pkg/../../core/src/lib.rs",
+        "/core/src/lib.rs",
+        "/v1/private",
+    ] {
+        assert_eq!(server.get(path).0, 404, "{path}");
+    }
 }

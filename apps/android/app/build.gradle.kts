@@ -2,9 +2,13 @@ plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id(
 android {
     namespace = "com.sudokurivals"
     compileSdk = 35
-    defaultConfig { applicationId = "com.sudokurivals"; minSdk = 26; targetSdk = 35; versionCode = 1; versionName = "0.1" }
+    defaultConfig {
+        applicationId = "com.sudokurivals"; minSdk = 26; targetSdk = 35; versionCode = 1; versionName = "0.1"
+        val serverUrl = providers.gradleProperty("sudokuMatchServerUrl").orElse("").get()
+        buildConfigField("String", "MATCH_SERVER_URL", "\"" + serverUrl.replace("\\", "\\\\").replace("\"", "\\\"") + "\"")
+    }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
 }
 dependencies {
     implementation("androidx.activity:activity-compose:1.10.0")

@@ -90,3 +90,66 @@ pub fn solo_hint(saved: String) -> Result<String, SoloError> {
             reason: error.to_string(),
         })
 }
+
+#[derive(Debug, uniffi::Error)]
+pub enum ClientError {
+    InvalidInput { reason: String },
+    Unavailable,
+}
+impl std::fmt::Display for ClientError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidInput { reason } => f.write_str(reason),
+            Self::Unavailable => f.write_str("Unavailable"),
+        }
+    }
+}
+impl std::error::Error for ClientError {}
+impl From<sudoku_core::multiplayer::ClientError> for ClientError {
+    fn from(error: sudoku_core::multiplayer::ClientError) -> Self {
+        Self::InvalidInput {
+            reason: error.to_string(),
+        }
+    }
+}
+
+/// Platform I/O executes the returned descriptors. Never log request bodies or
+/// opaque saves: they carry seat credentials. view() contains only presentation.
+#[derive(uniffi::Object)]
+pub struct MultiplayerClient {
+    inner: std::sync::Mutex<sudoku_core::multiplayer::MultiplayerClient>,
+}
+
+#[uniffi::export]
+impl MultiplayerClient {
+    #[uniffi::constructor]
+    pub fn new(seed: u32) -> std::sync::Arc<Self> {
+        std::sync::Arc::new(Self {
+            inner: std::sync::Mutex::new(sudoku_core::multiplayer::MultiplayerClient::new(seed)),
+        })
+    }
+
+    #[uniffi::constructor]
+    pub fn restore(saved: String) -> Result<std::sync::Arc<Self>, ClientError> {
+        Ok(std::sync::Arc::new(Self {
+            inner: std::sync::Mutex::new(sudoku_core::multiplayer::MultiplayerClient::load(
+                &saved,
+            )?),
+        }))
+    }
+
+    pub fn dispatch(&self, action: String, now_ms: u64) -> Result<String, ClientError> {
+        let mut client = self.inner.lock().map_err(|_| ClientError::Unavailable)?;
+        Ok(client.dispatch_json(&action, now_ms)?)
+    }
+
+    pub fn view(&self, now_ms: u64) -> Result<String, ClientError> {
+        let client = self.inner.lock().map_err(|_| ClientError::Unavailable)?;
+        Ok(client.view_json(now_ms)?)
+    }
+
+    pub fn save(&self) -> Result<String, ClientError> {
+        let client = self.inner.lock().map_err(|_| ClientError::Unavailable)?;
+        Ok(client.save()?)
+    }
+}

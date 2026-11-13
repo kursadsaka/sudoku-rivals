@@ -1,5 +1,6 @@
-import init, * as core from './pkg/sudoku_wasm.js';
-import { SoloSession, readSavedGames, formatTime } from './session.js';
+import { LiveScreens } from '/live.js';
+import init, * as core from '/pkg/sudoku_wasm.js';
+import { SoloSession, readSavedGames, formatTime } from '/session.js';
 
 const text = {
   tr: {
@@ -17,7 +18,7 @@ const text = {
     hintHidden:'{unit} içinde {value} yalnızca {row}. satır, {column}. sütuna yerleşebilir.', row:'{number}. satır', column:'{number}. sütun', box:'{number}. kutu',
     inProgress:'Oyun devam ediyor', conflict:'Çakışan hücreleri kontrol et.', saved:'Bu cihazda kaydedildi', savingFailed:'Oyun kaydedilemedi. Açık oyunun korunuyor.', retry:'Tekrar dene',
     corrupt:'{size} kaydı açılamadı. Kaydın korunuyor; tekrar deneyebilir veya farklı boyutta oynayabilirsin.', storageUnavailable:'Yerel kayıtlara erişilemiyor. Bu oturumda oynayabilirsin; kalıcı kayıt garanti edilemiyor.',
-    cell:'Satır {row}, sütun {column}, {kind}, {value}, notlar: {notes}{conflict}', given:'verilen', editable:'girilebilir', empty:'boş', noNotes:'yok', cellConflict:', çakışma var',
+    cell:'Satır {row}, sütun {column}, {kind}, {value}, notlar: {notes}{conflict}', given:'verilen', locked:'kilitli', editable:'girilebilir', empty:'boş', noNotes:'yok', cellConflict:', çakışma var',
     enterDigit:'{digit} yaz', selected:'{row}. satır · {column}. sütun', givenSelected:'Verilen hücre · değiştirilemez', chooseCell:'Tahtadan bir hücre seç.', notesList:'Notlar: {notes}',
     keyHelp:'Klavye: oklar ile gezin · 1–{size} sayı · N kalem · Delete sil · Ctrl/⌘ Z geri al',
     resultTitle:'Tahta tamamlandı.', resultIntro:'Her satır, sütun ve kutu yerli yerinde.', newGame:'Yeni oyun', offlinePreparing:'Çevrimdışı kullanım hazırlanıyor', offlineReady:'Çevrimdışı oynamaya hazır', offlineUnavailable:'Çevrimdışı açılış henüz hazır değil',
@@ -40,7 +41,7 @@ const text = {
     hintHidden:'In {unit}, {value} can only go in row {row}, column {column}.', row:'row {number}', column:'column {number}', box:'box {number}',
     inProgress:'Game in progress', conflict:'Check the conflicting cells.', saved:'Saved on this device', savingFailed:'Could not save. Your open game is preserved.', retry:'Retry',
     corrupt:'The {size} save could not be opened. It is preserved; you can retry or play the other size.', storageUnavailable:'Local saves are unavailable. You can play this session, but saving cannot be guaranteed.',
-    cell:'Row {row}, column {column}, {kind}, {value}, notes: {notes}{conflict}', given:'given', editable:'editable', empty:'empty', noNotes:'none', cellConflict:', conflict',
+    cell:'Row {row}, column {column}, {kind}, {value}, notes: {notes}{conflict}', given:'given', locked:'locked', editable:'editable', empty:'empty', noNotes:'none', cellConflict:', conflict',
     enterDigit:'Enter {digit}', selected:'Row {row} · Column {column}', givenSelected:'Given cell · cannot be changed', chooseCell:'Choose a cell on the board.', notesList:'Notes: {notes}',
     keyHelp:'Keyboard: arrows to move · 1–{size} enter · N notes · Delete erase · Ctrl/⌘ Z undo',
     resultTitle:'Board complete.', resultIntro:'Every row, column and box is in its place.', newGame:'New game', offlinePreparing:'Preparing offline play', offlineReady:'Ready to play offline', offlineUnavailable:'Offline opening is not ready yet',
@@ -76,6 +77,7 @@ const announcer = document.querySelector('#announcer');
 const offline = document.querySelector('#offline-status');
 const settingsButton = document.querySelector('#settings-button');
 let session;
+let live;
 let screen = 'home';
 let selectedSize = 6;
 let homeNotice = '';
@@ -114,6 +116,7 @@ function renderHome() {
       <button class="mode-card" data-action="friends" data-testid="friend-start"><span class="mode-icon">${svg('friends')}</span><span class="mode-title">${t('friends')}</span><span class="mode-description">${t('friendsDescription')}</span><span class="arrow" aria-hidden="true">↗</span></button>
     </div>
     ${readySaves.length ? `<p class="section-label">${t('continue')}</p><div class="resume-list" data-testid="solo-resume">${readySaves.map(slot => `<button class="resume-card" data-action="restore" data-size="${slot.size}" data-testid="solo-resume-${slot.size}"><span><strong>${slot.size}×${slot.size}</strong><small>${slot.complete ? t('completed') : t('savedGame')} · ${formatTime(slot.saved.elapsedMs)}</small></span><span>${slot.complete ? t('completed') : t('resume')} →</span></button>`).join('')}</div>` : ''}
+    ${live?.view()?.snapshot && !live.view().voluntarily_left ? `<button class="resume-card live-resume" data-action="live-resume" data-testid="live-resume"><span>${preferences.language==='tr'?'Maçına dön':'Return to your match'}</span><span>→</span></button>`:''}
     ${problems.map(slot => `<p class="notice error" data-testid="storage-status" role="alert">${escape(slot.status === 'corrupt' ? t('corrupt',{size:`${slot.size}×${slot.size}`}) : t('storageUnavailable'))} <button data-action="refresh-saves">${t('retry')}</button></p>`).join('')}
   </section>`;
 }
@@ -129,22 +132,22 @@ function cellLabel(index, board, conflicts) {
   const cell = board.cells[index];
   const notes = Array.from({length:board.size},(_,digit) => digit + 1).filter(digit => cell.notes & (1 << (digit - 1)));
   return t('cell',{row:Math.floor(index / board.size) + 1,column:index % board.size + 1,
-    kind:t(board.givens[index] ? 'given':'editable'),value:cell.value || t('empty'),
+    kind:t(board.givens[index] ? 'given':board.locked?.[index] ? 'locked':'editable'),value:cell.value || t('empty'),
     notes:notes.length ? notes.join(', ') : t('noNotes'),conflict:conflicts.has(index) ? t('cellConflict') : ''});
 }
-function renderBoard(board, conflicts) {
+function renderBoard(board, conflicts, selected = session.selected) {
   const size = board.size;
   const boxRows = size === 6 ? 2 : 3;
-  const selectedRow = Math.floor(session.selected / size);
-  const selectedColumn = session.selected % size;
-  const selectedValue = board.cells[session.selected].value;
+  const selectedRow = Math.floor(selected / size);
+  const selectedColumn = selected % size;
+  const selectedValue = board.cells[selected].value;
   return `<div class="board" role="grid" aria-label="${size}×${size} Sudoku" aria-rowcount="${size}" aria-colcount="${size}" data-testid="game-board" style="--size:${size}">${Array.from({length:size},(_,row) => `<div class="board-row" role="row">${Array.from({length:size},(_,column) => {
     const index = row * size + column;
     const cell = board.cells[index];
     const related = row === selectedRow || column === selectedColumn || (Math.floor(row / boxRows) === Math.floor(selectedRow / boxRows) && Math.floor(column / 3) === Math.floor(selectedColumn / 3));
-    const classes = ['cell',board.givens[index] ? 'given':'',related ? 'related':'',selectedValue && cell.value === selectedValue ? 'same':'',index === session.selected ? 'selected':'',conflicts.has(index) ? 'conflicting':'',column % 3 === 2 ? 'box-right':'',row % boxRows === boxRows - 1 ? 'box-bottom':'',column === size - 1 ? 'last-column':'',row === size - 1 ? 'last-row':''].filter(Boolean).join(' ');
+    const classes = ['cell',board.givens[index] ? 'given':'',related ? 'related':'',selectedValue && cell.value === selectedValue ? 'same':'',index === selected ? 'selected':'',conflicts.has(index) ? 'conflicting':'',column % 3 === 2 ? 'box-right':'',row % boxRows === boxRows - 1 ? 'box-bottom':'',column === size - 1 ? 'last-column':'',row === size - 1 ? 'last-row':''].filter(Boolean).join(' ');
     const notes = `<span class="cell-notes" aria-hidden="true">${Array.from({length:size},(_,v) => `<span>${cell.notes & (1 << v) ? v + 1 : ''}</span>`).join('')}</span>`;
-    return `<button class="${classes}" role="gridcell" aria-rowindex="${row + 1}" aria-colindex="${column + 1}" aria-selected="${index === session.selected}" aria-readonly="${Boolean(board.givens[index])}" ${conflicts.has(index) ? 'aria-invalid="true"' : ''} tabindex="${index === session.selected ? 0 : -1}" data-action="select" data-index="${index}" data-testid="cell-${row + 1}-${column + 1}" aria-label="${escape(cellLabel(index,board,conflicts))}">${cell.value ? `<span aria-hidden="true">${cell.value}</span>` : cell.notes ? notes : ''}${conflicts.has(index) ? '<span class="conflict-mark" aria-hidden="true">!</span>' : ''}</button>`;
+    return `<button class="${classes}" role="gridcell" aria-rowindex="${row + 1}" aria-colindex="${column + 1}" aria-selected="${index === selected}" aria-readonly="${Boolean(board.givens[index] || board.locked?.[index])}" ${conflicts.has(index) ? 'aria-invalid="true"' : ''} tabindex="${index === selected ? 0 : -1}" data-action="select" data-index="${index}" data-testid="cell-${row + 1}-${column + 1}" aria-label="${escape(cellLabel(index,board,conflicts))}">${cell.value ? `<span aria-hidden="true">${cell.value}</span>` : cell.notes ? notes : ''}${conflicts.has(index) ? '<span class="conflict-mark" aria-hidden="true">!</span>' : ''}</button>`;
   }).join('')}</div>`).join('')}</div>`;
 }
 function renderHint() {
@@ -197,13 +200,14 @@ function renderSettings() {
 }
 function render(focusCell = false) {
   applyPreferences();
-  settingsButton.hidden = ['solo-game','solo-paused'].includes(screen);
+  settingsButton.hidden = ['solo-game','solo-paused','live'].includes(screen);
   if (screen === 'home') renderHome();
   else if (screen === 'solo-setup') renderSetup();
   else if (screen === 'solo-game') renderGame(focusCell);
   else if (screen === 'solo-paused') renderPaused();
   else if (screen === 'solo-result') renderResult();
   else if (screen === 'settings') renderSettings();
+  else if (screen === 'live') live.render();
 }
 function applyCommand(command) {
   hint = null;
@@ -249,7 +253,7 @@ async function handleAction(button) {
     return navigate('solo-setup');
   }
   if (action === 'discard-exit') { if (discardOpenGame()) navigate('home'); return; }
-  if (action === 'friends') { homeNotice = t('friendsPending'); renderHome(); return announce(homeNotice); }
+  if (action === 'friends' || action === 'live-resume') { screen='live';live.enter();focusContent();return; }
   if (action === 'refresh-saves') return render();
   if (action === 'settings-back') return navigate(settingsReturn);
   if (action === 'start') {
@@ -305,9 +309,13 @@ async function handleAction(button) {
 
 content.addEventListener('click',event => {
   const button = event.target.closest('[data-action]');
-  if (ready && button && !button.disabled) handleAction(button);
+  if (!ready || !button || button.disabled) return;
+  if (screen==='live') live.handle(button.dataset.action,button);
+  else handleAction(button);
 });
+content.addEventListener('input',event => { if(screen==='live' && event.target.dataset.liveField) live.input(event.target.dataset.liveField,event.target.value); });
 content.addEventListener('change',event => {
+  if(screen==='live' && event.target.dataset.liveField) {live.input(event.target.dataset.liveField,event.target.value);return;}
   if (event.target.name === 'size') selectedSize = Number(event.target.value);
   if (event.target.id === 'language-select' || event.target.id === 'motion-toggle') {
     if (event.target.id === 'language-select') preferences.language = event.target.value;
@@ -320,6 +328,7 @@ content.addEventListener('change',event => {
   }
 });
 content.addEventListener('keydown',event => {
+  if(screen==='live') {live.keydown(event);return;}
   if (screen !== 'solo-game' || !event.target.closest('[role="grid"]')) return;
   const size = session.board.size;
   let index = session.selected;
@@ -348,11 +357,14 @@ settingsButton.addEventListener('click',() => {
   settingsNotice = '';
   navigate('settings');
 });
-document.querySelector('#brand-home').addEventListener('click',event => { event.preventDefault(); if (ready) goHome(); });
+document.querySelector('#brand-home').addEventListener('click',event => { event.preventDefault(); if (ready) {if(screen==='live')live.handle('live-home',event.target);else goHome();} });
 document.addEventListener('visibilitychange',() => {
   if (document.hidden && ready && screen === 'solo-game') { session.pause(); navigate('solo-paused'); }
 });
-window.addEventListener('pagehide',() => { if (session?.game) session.pause(); });
+window.addEventListener('pagehide',() => { if (session?.game) session.pause();live?.persist(); });
+// Best effort only: a not-yet-due resume is retried by tick(), so it must not show an error.
+window.addEventListener('online',()=>{ if(screen==='live' && live?.view()?.snapshot)live.transport?.dispatch({type:'resume'},{quiet:true}); });
+setInterval(()=>live?.tick(),250);
 setInterval(() => {
   if (screen === 'solo-game' && session?.running) {
     const timer = content.querySelector('[data-testid="timer"]');
@@ -365,14 +377,17 @@ applyPreferences();
 try {
   await init();
   session = new SoloSession(core,storage);
+  live = new LiveScreens({engine:core,storage,content,renderBoard,svg,escape,language:()=>preferences.language,announce,
+    onUpdate:()=>{if(screen==='live')render();},onHome:()=>{screen='home';history.replaceState({},'', '/');render();focusContent();}});
   ready = true;
-  render();
+  if(location.pathname.startsWith('/r/')) {screen='live';live.enter(location.pathname);}
+  else render();
 } catch {
   content.innerHTML = `<section class="panel"><h1>Sudoku Rivals</h1><p class="notice error" role="alert">${t('loadFailed')}</p><button class="primary-button" id="reload">${t('loadAgain')}</button></section>`;
   document.querySelector('#reload').addEventListener('click',() => location.reload());
 }
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js').then(() => navigator.serviceWorker.ready).then(() => {
+  navigator.serviceWorker.register('/sw.js').then(() => navigator.serviceWorker.ready).then(() => {
     offlineState = 'offlineReady';
     offline.textContent = t(offlineState);
   }).catch(() => { offlineState = 'offlineUnavailable'; offline.textContent = t(offlineState); });

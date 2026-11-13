@@ -4,9 +4,9 @@ Durum: yerel uygulama ve otomatik test. Puanlar, süre eşikleri ve boş hücre 
 
 ## Çalıştırma ve sınır
 
-`cargo run --locked -p sudoku-server`; yalnız `127.0.0.1:3000`. Mevcut `POST /validate` aynen korunur. Ek protokol HTTP JSON'dur; WebSocket gerekmez. Taşıma adapteri her platformda HTTP isteğini gerçekleştirir, ortak DTO'lar `core/src/protocol.rs` içindedir. CORS genişletmesi, TLS, dağıtım ve kalıcı veritabanı eklenmedi. Web istemcisi bu API'ye aynı origin üzerinden eriştirilmelidir; staging düzeni G16 işidir.
+`cargo run --locked -p sudoku-server`; varsayılan `127.0.0.1:3000`. Bağımsız test sunucusu için `SUDOKU_PORT=3001` seçilebilir; adres her zaman loopback kalır. Mevcut `POST /validate` aynen korunur. Ek protokol HTTP JSON'dur; WebSocket gerekmez. Taşıma adapteri her platformda HTTP isteğini gerçekleştirir, ortak DTO'lar `core/src/protocol.rs` içindedir. CORS genişletmesi, TLS, dağıtım ve kalıcı veritabanı eklenmedi. Web istemcisi bu API'ye aynı origin üzerinden eriştirilmelidir; staging düzeni G16 işidir.
 
-`Service` bir monotonik saat akışıyla sınanabilir durum makinesidir. HTTP adapteri tek mutex altında `Instant` saatinden milisaniye ve oda olay sırası atar. **Yetkili varış noktası**, JSON isteğinin bu sıraya kabul edildiği andır; soketin ilk byte'ının gelişi değildir. İşleme aynı sırada senkron ilerler; bir zaman aşımı daha önce kabul edilmiş hamleyi geçemez. İstemci zaman damgası kabul edilmez. Aynı milisaniyede ilk olay önce işlenir.
+`Service` bir monotonik saat akışıyla sınanabilir durum makinesidir. HTTP adapteri kısa bir giriş kilidi altında `Instant` saatini kaydederek isteği en fazla 256 öğelik FIFO kuyruğa ekler. Ayrı bir sahip iş parçacığı maç durumunu bu sırada işler; bulmaca üretimi giriş kilidini tutmaz. Kuyruk doluysa kabul edilmemiş istek `capacity` alır. **Yetkili varış noktası**, JSON isteğinin bu sıraya kabul edildiği andır; soketin ilk byte'ının gelişi değildir. İşleme aynı sırada senkron ilerler; bir zaman aşımı daha önce kabul edilmiş hamleyi geçemez. İstemci zaman damgası kabul edilmez. Aynı milisaniyede ilk olay önce işlenir.
 
 ## İstekler
 
@@ -52,11 +52,11 @@ Yeni maçın kimliği, bulmaca tohumu, işlem sıraları, skorları ve tahtalar�
 - `result`: yalnız bitmiş maçta `{winner: 0|1|null, reason, at_ms}`; başka durumda null. `both_disconnected` ve `resource_limit` sonuçlarında `winner:null` bir galibiyet veya yenilgi değildir. `time` ve eşit ölçütlerde null beraberliktir.
 - `end_ms` yalnız düelloda `start_ms + 90000`; yarışın süre sınırı yoktur.
 
-`cells/givens` lobide boştur; geri sayım başında iki tarafa açılır. Bu, istemcinin çözümü başka programla çıkarmasını engellemez. Otomatik çözücü hilesi kabul edilen sınırdır; otomatik yaptırım eklenmez.
+`cells/givens` lobi ve geri sayımda boştur; ancak `playing` başladığında iki tarafa açılır. İptal edilen geri sayım bulmacayı önceden görme veya çözme imkânı vermez. Bu, istemcinin çözümü başka programla çıkarmasını engellemez. Otomatik çözücü hilesi kabul edilen sınırdır; otomatik yaptırım eklenmez.
 
 ## İşlem tekrarı ve kayıp yanıt
 
-`sequence`, koltuk ve maç başına 1'den başlayan tam artan sayıdır; kaynak `own.next_sequence`. Yeni kabul veya ret, bu sıranın tek sonucunu oluşturur. Aynı maç/koltuk/sıra ve aynı komut tekrarlandığında **aynı dondurulmuş Receipt** döner; skor, yanlış, kilit ve hız kotası ikinci kez değişmez. Snapshot güncel olabilir. Farklı içerikli aynı sıra `sequence_conflict`, sıra boşluğu `sequence_gap` verir; yeni işleme geçmeden durum eşitlenir.
+`sequence`, koltuk ve maç başına 1'den başlayan tam artan sayıdır; kaynak `own.next_sequence`. Kabul edilen komut veya kayıt altına alınan oyun kuralı reddi, bu sıranın tek sonucunu oluşturur. Yapısal olarak yanlış uzunlukta `sync` kuyruğa ulaştıktan sonra `invalid_input` alır; Receipt veya yeni sıra tüketmez. Aynı sıra daha önce kayıtlıysa önce içeriği karşılaştırılır. Aynı maç/koltuk/sıra ve aynı komut tekrarlandığında **aynı dondurulmuş Receipt** döner; skor, yanlış, kilit ve hız kotası ikinci kez değişmez. Snapshot güncel olabilir. Farklı içerikli aynı sıra `sequence_conflict`, sıra boşluğu `sequence_gap` verir; yeni işleme geçmeden durum eşitlenir.
 
 `Receipt`: `match_id, at_ms, event_order, sequence, code, board_version, board_id, score, combo, wrong, locked_until_ms`. Bir rövanşı başlatan Receipt eski maç kimliğini taşır, beraberindeki Snapshot yeni maça ait olabilir. Eski maça ait saklı Receipt'ler oda ömrü boyunca tekrar dönebilir. İstemci yeni maçın sıra sayacına eski Receipt'in sayacını uygulamamalıdır.
 
@@ -85,7 +85,7 @@ JSON protokol hataları `{protocol:1,error:"..."}`: 401 `unauthorized`; 404 `roo
 
 Komut Receipt kodları: `ok, wrong, not_correct, no_change, not_started, match_over, wrong_mode, invalid_board, invalid_cell, invalid_value, given_cell, filled_cell, stale_board, stale_version, locked, rate_limited, disconnected, invalid_state`. Bunlar HTTP başarısından ayrı oyun sonuçlarıdır; ret de bir sıra tüketir.
 
-Tek süreçte en fazla 128 oda/tombstone; oda başına geçmiş maçlar dahil 16384 Receipt. Teknik Receipt sınırına gelen oynanan maç sonuçsuz kapanır (`resource_limit`); eski Receipt'ler sessizce atılmaz. Oda açma aynı IP'den 10 dakikada en çok 5, katılım denemesi 10 dakikada 10 (yalnız yanlış kodlar değil, bütün join istekleri). Bu yerel sınırlar üretim güvenliği veya dağıtık yük kapasitesi kanıtı değildir.
+Tek süreçte en fazla 128 oda/tombstone; geçmiş maçlar dahil her koltuk konumu en fazla 8192 Receipt tutar (oda toplamı en fazla 16384). Kotasını dolduran yalnız o koltuk `capacity` alır; rakibinin kazanma hakkı veya maç sonucu silinmez. Eski Receipt'ler sessizce atılmaz. Yanlış uzunlukta `sync` dizileri Receipt olarak saklanmaz; saklanan komut dizileri en fazla size² bayttır. Oda açma aynı loopback IP'den 10 dakikada en çok 128, katılım 256 (bütün join istekleri); loopback dışındaki IP'ler için 5/10 sınırı korunur. Yerel test istemcilerinin aynı 127.0.0.1 IP'sini paylaşması bu şekilde hesaba katılır. Bu yerel sınırlar üretim güvenliği veya dağıtık yük kapasitesi kanıtı değildir.
 
 ## Test kanıtı
 
@@ -93,7 +93,7 @@ Tek süreçte en fazla 128 oda/tombstone; oda başına geçmiş maçlar dahil 16
 
 - İki mod × iki boyutta tam bot maçları; aynı maç/sonuç.
 - 80 ms aralıklı iki bitişte ilk kazanan; yanlış tam tahtanın kilitsiz düzeltilmesi.
-- 89.999/90.000 saniye sınırı; işleme bekletilse de kabul zamanının kullanılması.
+- Service testlerinde 89.999/90.000 ms göreli süre sınırı. Ayrı giriş kuyruğu testinde, gerçek saat son sınırı geçene kadar işçi bloke edilir; önceden kuyruğa kabul edilmiş hamle özgün damgasıyla puan alır. HTTP endpointleri ayrıca gerçek loopback istekleriyle sınanır; Service'e verilen sabit zaman tek başına ağ gecikmesi kanıtı sayılmaz.
 - Kayıp yanlış yanıtının 50 tekrarı; içerik değiştirme, sıra boşluğu, eski nesil.
 - 40 yerel düzenleme sonrası tek eşitleme; eski sürümde veri korunması.
 - Aynı anda kopma sürelerinin bitmesi, kesin sınırda resume ve restartta sonuç uydurmama.
@@ -113,3 +113,14 @@ the room. It does not shift seat indices. A syntactically valid but absent token
 or room is acknowledged identically, making retries harmless without revealing
 credential existence. A removed token can no longer poll/resume/command.
 This is separate from a temporary `disconnect`, which reserves a seat.
+
+## Local web origin
+
+The loopback server also serves the allowlisted public web build at `/`, and
+`/r/CODE` returns the same entry HTML. API and assets share an origin; no broad
+CORS policy is enabled. `/health` returns `{status:"ok",protocol:1}`. Known build
+assets are loaded from this checkout's `apps/web`; arbitrary URI paths are never
+joined to a filesystem path. Missing built assets return 503. This checkout-based
+asset location is local development only; G16 packaging must provide deployed
+assets explicitly. No saved games, credentials, source files or dotfiles are
+served. Static responses carry their MIME type, `nosniff` and revalidation headers.
