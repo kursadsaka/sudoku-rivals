@@ -1,7 +1,10 @@
 name: SudokuRivals
 options:
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "17.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
 targets:
   SudokuRivals:
     type: application
@@ -13,8 +16,44 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.sudokurivals
         GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_CFBundleDisplayName: Sudoku Rivals
         SWIFT_INCLUDE_PATHS: "$(SRCROOT)/generated"
         # Rust only builds aarch64-apple-ios-sim; Intel simulators are not supported.
         EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
     dependencies:
       - framework: generated/SudokuFFI.xcframework
+  # Logic tests run inside the app host so they call the real Rust core.
+  SudokuRivalsTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [SudokuRivalsTests]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.sudokurivals.tests
+        EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
+    dependencies:
+      - target: SudokuRivals
+  SudokuRivalsUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [SudokuRivalsUITests]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.sudokurivals.uitests
+        EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
+    dependencies:
+      - target: SudokuRivals
+schemes:
+  SudokuRivals:
+    build:
+      targets:
+        SudokuRivals: all
+    test:
+      config: Debug
+      targets:
+        - SudokuRivalsTests
+        - SudokuRivalsUITests
