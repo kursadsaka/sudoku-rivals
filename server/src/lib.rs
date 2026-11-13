@@ -3,7 +3,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io::Read;
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::Instant;
 
 const COUNTDOWN_MS: u64 = 3_000;
@@ -292,10 +292,7 @@ impl Room {
     }
     fn snapshot(&self, seat_index: usize, now: u64) -> Snapshot {
         let own = self.seats[seat_index].as_ref().unwrap();
-        let shown = matches!(
-            self.phase,
-            Phase::Countdown | Phase::Playing | Phase::Finished
-        );
+        let shown = matches!(self.phase, Phase::Playing | Phase::Finished);
         let givens = if shown {
             self.puzzles
                 .get(own.board_id as usize)
@@ -420,15 +417,6 @@ impl Room {
                     return Code::InvalidState;
                 }
                 self.seats[index].as_mut().unwrap().rematch = true;
-                if self
-                    .seats
-                    .iter()
-                    .all(|s| s.as_ref().is_some_and(|s| s.rematch && s.connected))
-                {
-                    // The response to this command is kept in the old match's receipts
-                    // by the caller; new match receipts are installed afterward.
-                    return Code::Ok;
-                }
                 return Code::Ok;
             }
             Command::Lobby => {
@@ -605,17 +593,12 @@ impl Room {
             }
             return Err(Error::StaleMatch);
         }
-        let total = self
-            .seats
+        let used_by_seat = self
+            .archived
             .iter()
-            .flatten()
-            .map(|s| s.receipts.len())
+            .map(|(_, receipts)| receipts[index].1.len())
             .sum::<usize>()
-            + self
-                .archived
-                .iter()
-                .map(|(_, rs)| rs[0].1.len() + rs[1].1.len())
-                .sum::<usize>();
+            + self.seats[index].as_ref().unwrap().receipts.len();
         let seat = self.seats[index].as_mut().unwrap();
         if let Some(stored) = seat.receipts.get(receipt_index) {
             if stored.command != envelope.command {
@@ -629,9 +612,14 @@ impl Room {
         if envelope.sequence != seat.receipts.len() as u64 + 1 {
             return Err(Error::SequenceGap);
         }
-        if total >= MAX_RECEIPTS {
-            self.finish(None, EndReason::ResourceLimit, now);
+        // A seat can exhaust only its own budget, never erase an opponent's win.
+        if used_by_seat >= MAX_RECEIPTS / 2 {
             return Err(Error::Capacity);
+        }
+        // Bound retained command payloads before even a rejected attempt is saved.
+        if matches!(&envelope.command, Command::Sync { cells, .. } if cells.len() != (self.size as usize).pow(2))
+        {
+            return Err(Error::InvalidInput);
         }
         let code = if !seat.connected {
             Code::Disconnected
@@ -761,9 +749,8 @@ fn valid_secret(token: &str) -> bool {
     token.len() == 64 && token.bytes().all(|c| c.is_ascii_hexdigit())
 }
 
-/// Timestamped events are admitted under this single lock. That admission point
-/// defines arrival/order; work is then processed synchronously in the same order.
-/// Timers never overtake an already admitted command.
+/// Deterministic match state, owned by the ingress queue's single worker.
+/// Every operation uses its registered monotonic timestamp in queue order.
 pub struct Service {
     rooms: HashMap<String, Room>,
     create_attempts: HashMap<String, VecDeque<u64>>,
@@ -827,6 +814,32 @@ impl Service {
             None => random_hex(),
         }
     }
+    /// A lost create/join response is retried with the same 256-bit guest
+    /// secret; an unchanged lobby seat is returned instead of a second seat.
+    fn replay(
+        &self,
+        guest: &str,
+        name: &str,
+        wanted: impl Fn(&Room, usize) -> bool,
+        now: u64,
+    ) -> Option<Session> {
+        self.rooms.values().find_map(|room| {
+            let index = room
+                .seats
+                .iter()
+                .position(|s| s.as_ref().is_some_and(|s| s.guest == guest))?;
+            let seat = room.seats[index].as_ref()?;
+            (room.phase == Phase::Lobby && seat.name == name && wanted(room, index)).then(|| {
+                Session {
+                    protocol: PROTOCOL,
+                    guest: seat.guest.clone(),
+                    token: seat.token.clone(),
+                    invite_path: format!("/r/{}", room.code),
+                    snapshot: room.snapshot(index, now),
+                }
+            })
+        })
+    }
     fn occupied(&self, guest: &str) -> bool {
         self.rooms.values().any(|room| {
             matches!(room.phase, Phase::Lobby | Phase::Countdown | Phase::Playing)
@@ -843,7 +856,15 @@ impl Service {
         now: u64,
     ) -> Result<Session, Error> {
         self.advance(now)?;
-        Self::limit(&mut self.create_attempts, peer, now, 5)?;
+        let max = if peer
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
+        {
+            MAX_ROOMS
+        } else {
+            5
+        };
+        Self::limit(&mut self.create_attempts, peer, now, max)?;
         if !valid_name(&name) || ![6, 9].contains(&size) {
             return Err(Error::InvalidInput);
         }
@@ -851,6 +872,14 @@ impl Service {
             return Err(Error::Capacity);
         }
         let guest = self.guest(guest)?;
+        if let Some(session) = self.replay(
+            &guest,
+            &name,
+            |room, index| index == 0 && room.mode == mode && room.size == size,
+            now,
+        ) {
+            return Ok(session);
+        }
         if self.occupied(&guest) {
             return Err(Error::InvalidInput);
         }
@@ -885,12 +914,23 @@ impl Service {
         now: u64,
     ) -> Result<Session, Error> {
         self.advance(now)?;
-        Self::limit(&mut self.join_attempts, peer, now, 10)?;
+        let max = if peer
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
+        {
+            MAX_ROOMS * 2
+        } else {
+            10
+        };
+        Self::limit(&mut self.join_attempts, peer, now, max)?;
         if !valid_name(&name) {
             return Err(Error::InvalidInput);
         }
         let code = normalized_code(code)?;
         let guest = self.guest(guest)?;
+        if let Some(session) = self.replay(&guest, &name, |room, _| room.code == code, now) {
+            return Ok(session);
+        }
         if self.occupied(&guest) {
             return Err(Error::InvalidInput);
         }
@@ -1007,9 +1047,181 @@ impl Service {
     }
 }
 
-pub type SharedService = Arc<Mutex<(Service, Instant)>>;
+type Job = Box<dyn FnOnce(&mut Service) + Send>;
+struct Ingress {
+    queue: mpsc::SyncSender<Job>,
+    epoch: Instant,
+}
+
+/// Admission holds only a short queue lock. Puzzle generation and state work
+/// run on one owner thread, so slow rooms cannot delay other arrivals' stamps.
+#[derive(Clone)]
+pub struct SharedService {
+    ingress: Arc<Mutex<Ingress>>,
+}
+impl SharedService {
+    fn start(service: Service, epoch: Instant) -> Self {
+        let (queue, receiver) = mpsc::sync_channel::<Job>(256);
+        std::thread::spawn(move || {
+            let mut service = service;
+            for job in receiver {
+                job(&mut service);
+            }
+        });
+        Self {
+            ingress: Arc::new(Mutex::new(Ingress { queue, epoch })),
+        }
+    }
+    fn enqueue<T: Send + 'static>(
+        &self,
+        operation: impl FnOnce(&mut Service, u64) -> Result<T, Error> + Send + 'static,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<T, Error>>, Error> {
+        let (reply, response) = tokio::sync::oneshot::channel();
+        let ingress = self.ingress.lock().map_err(|_| Error::Internal)?;
+        let at = ingress.epoch.elapsed().as_millis().min(u64::MAX as u128) as u64;
+        ingress
+            .queue
+            .try_send(Box::new(move |service| {
+                let _ = reply.send(operation(service, at));
+            }))
+            .map_err(|error| match error {
+                mpsc::TrySendError::Full(_) => Error::Capacity,
+                mpsc::TrySendError::Disconnected(_) => Error::Internal,
+            })?;
+        Ok(response)
+    }
+    pub async fn call<T: Send + 'static>(
+        &self,
+        operation: impl FnOnce(&mut Service, u64) -> Result<T, Error> + Send + 'static,
+    ) -> Result<T, Error> {
+        self.enqueue(operation)?
+            .await
+            .map_err(|_| Error::Internal)?
+    }
+}
 pub fn shared_service() -> SharedService {
-    Arc::new(Mutex::new((Service::default(), Instant::now())))
+    SharedService::start(Service::default(), Instant::now())
 }
 
 pub mod http;
+
+#[cfg(test)]
+mod ingress_tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn ingress_backpressure_rejects_before_admission_without_closing_state() {
+        let shared = shared_service();
+        let (entered, started) = mpsc::channel();
+        let (release, wait) = mpsc::channel();
+        let first = shared
+            .enqueue(move |_, at| {
+                entered.send(()).unwrap();
+                wait.recv().unwrap();
+                Ok(at)
+            })
+            .unwrap();
+        started.recv_timeout(Duration::from_secs(3)).unwrap();
+        let mut queued = Vec::new();
+        for _ in 0..256 {
+            queued.push(shared.enqueue(|_, at| Ok(at)).unwrap());
+        }
+        assert!(matches!(
+            shared.enqueue(|_, _| Ok(())),
+            Err(Error::Capacity)
+        ));
+        release.send(()).unwrap();
+        let mut previous = first.await.unwrap().unwrap();
+        for response in queued {
+            let at = response.await.unwrap().unwrap();
+            assert!(at >= previous);
+            previous = at;
+        }
+        assert!(shared.call(|_, _| Ok(())).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn queued_commands_keep_their_ingress_time_while_another_job_is_blocked() {
+        let mut service = Service::default();
+        let a = service
+            .create("a", None, "A".into(), Mode::Duel, 6, 0)
+            .unwrap();
+        let b = service
+            .join("b", &a.snapshot.room_code, None, "B".into(), 0)
+            .unwrap();
+        for session in [&a, &b] {
+            service
+                .command(
+                    &a.snapshot.room_code,
+                    &Envelope {
+                        protocol: PROTOCOL,
+                        token: session.token.clone(),
+                        generation: 1,
+                        match_id: a.snapshot.match_id.clone(),
+                        sequence: 1,
+                        command: Command::Ready { ready: true },
+                    },
+                    0,
+                )
+                .unwrap();
+        }
+        for at in (3000..92_000).step_by(10_000) {
+            service
+                .state(&a.snapshot.room_code, &a.token, 1, at)
+                .unwrap();
+        }
+        let snapshot = service
+            .state(&a.snapshot.room_code, &a.token, 1, 92_000)
+            .unwrap();
+        let cells = sudoku_core::solve_board(&snapshot.own.givens, 6)
+            .unwrap()
+            .unwrap();
+        // Keep the actor occupied across the real deadline, while the next
+        // request is registered independently in its short ingress critical section.
+        let shared = SharedService::start(service, Instant::now() - Duration::from_millis(92_000));
+        let (entered, is_entered) = mpsc::channel();
+        let (release, wait) = mpsc::channel();
+        let blocked = shared
+            .enqueue(move |_, at| {
+                entered.send(()).unwrap();
+                wait.recv().unwrap();
+                Ok(at)
+            })
+            .unwrap();
+        is_entered.recv_timeout(Duration::from_secs(3)).unwrap();
+        let index = snapshot.own.cells.iter().position(|&v| v == 0).unwrap();
+        let code = a.snapshot.room_code;
+        let token = a.token;
+        let envelope = Envelope {
+            protocol: PROTOCOL,
+            token: token.clone(),
+            generation: 1,
+            match_id: a.snapshot.match_id,
+            sequence: 2,
+            command: Command::Move {
+                board_id: 0,
+                index: index as u32,
+                value: cells[index],
+            },
+        };
+        let room = code.clone();
+        let queued = shared
+            .enqueue(move |service, at| service.command(&room, &envelope, at))
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(1100));
+        release.send(()).unwrap();
+        blocked.await.unwrap().unwrap();
+        let accepted = queued.await.unwrap().unwrap();
+        assert!(accepted.receipt.at_ms < 93_000);
+        assert_eq!(accepted.receipt.code, Code::Ok);
+        assert_eq!(accepted.receipt.score, 10);
+        let final_state = shared
+            .call(move |service, at| service.state(&code, &token, 1, at))
+            .await
+            .unwrap();
+        assert!(final_state.server_ms >= 93_000);
+        assert_eq!(final_state.phase, Phase::Finished);
+        assert_eq!(final_state.own.score, 10);
+    }
+}

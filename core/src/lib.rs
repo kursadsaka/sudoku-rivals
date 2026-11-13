@@ -1,3 +1,4 @@
+pub mod multiplayer;
 pub mod protocol;
 
 mod puzzle;

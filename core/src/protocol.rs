@@ -60,7 +60,6 @@ pub enum Code {
     RateLimited,
     Disconnected,
     InvalidState,
-    ReceiptLimit,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Receipt {
