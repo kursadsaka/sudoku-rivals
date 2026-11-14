@@ -461,7 +461,8 @@ final class LiveSession {
             self.activeId = nil
             self.task = nil
             guard let (data, status) = outcome, data.count <= 131_072 else {
-                self.message = L10n.t("live.error.unreachable")
+                // Only a race keeps offline edits; duel input is disabled while disconnected.
+                self.message = L10n.t(self.view.race != nil ? "live.error.unreachableRace" : "live.error.unreachable")
                 self.dispatch(["type": "network_failed", "request_id": request.id], quiet: true)
                 return
             }

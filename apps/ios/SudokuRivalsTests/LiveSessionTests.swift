@@ -256,6 +256,7 @@ struct LiveServerTests {
 
         hostFault.offline = true
         try await pump([host, guest]) { host.view.connection != "connected" }
+        #expect(host.message == L10n.t("live.error.unreachableRace"))
         for index in blanks.prefix(4) {
             host.selected = index
             host.enter(solution[index])
@@ -295,6 +296,13 @@ struct LiveServerTests {
         let givens = try #require(host.snapshot?.own.givens)
         let solution = try #require(solve(givens, size: 6))
         let blank = try #require(givens.firstIndex(of: 0))
+        // Duel input stops while offline, so the message must not promise kept race edits.
+        hostFault.offline = true
+        try await pump([host, guest]) { host.view.connection != "connected" }
+        #expect(host.message == L10n.t("live.error.unreachable"))
+        #expect(!host.canInput())
+        hostFault.offline = false
+        try await pump([host, guest]) { host.view.connection == "connected" && host.canInput() }
         host.selected = blank
         hostFault.dropNextCommand = "move"
         host.enter(solution[blank] % 6 + 1)

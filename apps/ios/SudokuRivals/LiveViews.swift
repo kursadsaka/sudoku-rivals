@@ -73,7 +73,7 @@ struct LiveScreen: View {
                     ConnectionStatus(connection: view.connection)
                     Text(L10n.t("lost.title")).font(.title2.bold()).accessibilityAddTraits(.isHeader)
                         .accessibilityIdentifier("result-heading")
-                    Text(L10n.t("lost.detail")).accessibilityIdentifier("result-details")
+                    Text(L10n.t(snapshot.mode == "race" ? "lost.detailRace" : "lost.detail")).accessibilityIdentifier("result-details")
                     PrimaryButton(title: L10n.t("lost.reset"), id: "live-recover") { live.requestReset() }
                     SecondaryButton(title: L10n.t("nav.home"), id: "home") { live.goHome() }
                 }
@@ -375,18 +375,21 @@ struct LiveResultView: View {
             Text(L10n.t(title)).font(.title.bold()).accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("result-heading")
             ConnectionStatus(connection: live.view.connection)
-            Text(snapshot.mode == "duel"
-                 ? L10n.t("result.duelScore", ["own": own.score, "opponent": opponent?.score ?? 0])
-                 : L10n.t("result.raceDone"))
+            // An empty seat (friend left) has no score to show; never print a fake 0.
+            Text(snapshot.mode != "duel" ? L10n.t("result.raceDone")
+                 : opponent.map { L10n.t("result.duelScore", ["own": own.score, "opponent": $0.score ?? 0]) }
+                    ?? L10n.t("result.ownScore", ["own": own.score]))
                 .accessibilityIdentifier("result-details")
             Text(L10n.t("reason.\(reason ?? "completed")"))
-            if own.rematch {
+            if opponent == nil {
+                Text(L10n.t("rematch.opponentLeft"))
+            } else if own.rematch {
                 Text(L10n.t("rematch.mine"))
             } else if opponent?.rematch == true {
                 Text(L10n.t("rematch.theirs"))
             }
             PrimaryButton(title: L10n.t("rematch.ask"), id: "rematch") { live.command("rematch") }
-                .disabled(own.rematch || live.view.pendingCommand || live.view.connection != "connected")
+                .disabled(opponent == nil || own.rematch || live.view.pendingCommand || live.view.connection != "connected")
             SecondaryButton(title: L10n.t("nav.home"), id: "home") { live.goHome() }
         }
         .onAppear { announce(L10n.t(title)) }
