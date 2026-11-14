@@ -250,6 +250,48 @@ final class LiveUITests: XCTestCase {
         try await exists("room-create")
     }
 
+    func testExpiredRaceResultCanPreserveSaveAndCreateNewRoom() async throws {
+        try await recoverKnownResultAndCreateNewRoom(mode: "race")
+    }
+
+    func testExpiredDuelResultCanPreserveSaveAndCreateNewRoom() async throws {
+        try await recoverKnownResultAndCreateNewRoom(mode: "duel")
+    }
+
+    func recoverKnownResultAndCreateNewRoom(mode: String) async throws {
+        launch(reset: true)
+        try await appHosts(mode: mode, size: 6)
+        _ = try await startMatch(size: 6)
+        let oldCode = try XCTUnwrap(bot.snapshot?.roomCode)
+        bot.command("resign")
+        try await label("result-heading") { $0 == "You won the match" }
+        XCTAssertFalse(el("live-recover").exists, "connected results should keep the normal rematch flow")
+        // Restart produces the same terminal session loss as expiry/resume 410.
+        try await harness("restart")
+        try await label("connection-status", timeout: 30) { $0.contains("Cannot return to the session") }
+        XCTAssertEqual(el("result-heading").label, "You won the match")
+        XCTAssertFalse(el("rematch").isEnabled)
+        app.terminate()
+        launch(reset: false)
+        try await label("result-heading") { $0 == "You won the match" }
+        try await tap("live-recover")
+        let cancel = app.alerts.buttons["Cancel"].firstMatch
+        try await until(5, "reset cancellation") { cancel.exists }
+        cancel.tap()
+        XCTAssertEqual(el("result-heading").label, "You won the match")
+        try await tap("live-recover")
+        let confirm = app.alerts.buttons["New session"].firstMatch
+        try await until(5, "reset confirmation") { confirm.exists }
+        confirm.tap()
+        try await exists("room-create")
+        try await tap("room-create")
+        try await until(15, "new room after preserved result") {
+            let code = self.el("room-code").value as? String
+            return code?.count == 6 && code != oldCode
+        }
+        try await leaveToHome()
+    }
+
     func screenshot(_ name: String) -> XCTAttachment {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name

@@ -390,6 +390,9 @@ struct LiveResultView: View {
             }
             PrimaryButton(title: L10n.t("rematch.ask"), id: "rematch") { live.command("rematch") }
                 .disabled(opponent == nil || own.rematch || live.view.pendingCommand || live.view.connection != "connected")
+            if live.view.connection == "session_lost" {
+                PrimaryButton(title: L10n.t("lost.reset"), id: "live-recover") { live.requestReset() }
+            }
             SecondaryButton(title: L10n.t("nav.home"), id: "home") { live.goHome() }
         }
         .onAppear { announce(L10n.t(title)) }

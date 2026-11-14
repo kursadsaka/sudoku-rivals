@@ -505,6 +505,29 @@ struct LiveServerTests {
     }
 
     @Test(arguments: ["race", "duel"])
+    func coldRestoreReplaysAcceptedLeaveAndReturnsHome(mode: String) async throws {
+        let (host, guest, fault, _) = try await startMatch(mode: mode, size: 6)
+        let path = "/v1/rooms/\(try #require(host.snapshot?.roomCode))/leave"
+        fault.dropNextPath = path
+        host.confirmLeave()
+        try await waitFor { fault.dropNextPath == nil && host.view.retryAtMs != nil }
+        host.setForeground(false)
+        let mark = fault.calls.count
+        let restored = LiveSession(store: host.store, origin: origin, transport: fault.transport)
+        var homes = 0
+        restored.onHome = { homes += 1 }
+        #expect(restored.view.pendingLeave)
+        restored.open()
+        try await pump([restored, guest]) { restored.view.voluntarilyLeft }
+        #expect(homes == 1 && !restored.visible && !restored.view.pendingLeave)
+        let replay = Array(fault.calls.dropFirst(mark))
+        #expect(replay.count == 1 && replay[0].path == path)
+        #expect(replay[0].body == fault.calls[mark - 1].body)
+        guest.confirmLeave()
+        try await pump([guest]) { guest.view.voluntarilyLeft }
+    }
+
+    @Test(arguments: ["race", "duel"])
     func verifiedResultSurvivesExpiryPollAndResume(mode: String) async throws {
         let (host, guest, hostFault, guestFault) = try await startMatch(mode: mode, size: 6)
         host.command("resign")
@@ -514,14 +537,23 @@ struct LiveServerTests {
         hostFault.expireRoom = true
         try await pump([host]) { host.view.connection == "session_lost" }
         #expect(host.snapshot == known)
+        host.setForeground(false)
         let restored = LiveSession(store: host.store, origin: origin, transport: hostFault.transport)
         #expect(restored.snapshot == known && restored.view.connection == "session_lost")
+        let originalRecord = try Data(contentsOf: host.store.url)
+        restored.requestReset()
+        #expect(restored.resetConfirmation && restored.snapshot == known)
+        restored.confirmReset()
+        #expect(restored.snapshot == nil && !restored.protectedSave)
+        let copies = try FileManager.default.contentsOfDirectory(at: host.store.directory, includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.hasPrefix("live-session-recovery-") }
+        #expect(copies.count == 1)
+        #expect(try Data(contentsOf: #require(copies.first)) == originalRecord)
         guestFault.expireRoom = true
         guest.setForeground(false)
         guest.setForeground(true)
         try await pump([guest]) { guest.view.connection == "session_lost" }
         #expect(guest.snapshot?.phase == "finished" && guest.snapshot?.result == guestResult)
-        host.setForeground(false)
         guest.setForeground(false)
     }
 

@@ -62,6 +62,7 @@ struct LiveView: Decodable, Equatable {
     var lastReceipt: Receipt?
     var lastError: String?
     var pendingCommand: Bool
+    var pendingLeave: Bool
     var pendingHttp: Bool
     var reconcileRequired: Bool
     var retryAtMs: UInt64?
@@ -80,7 +81,7 @@ extension LiveView {
     }
 
     static let idle = LiveView(connection: "disconnected", snapshot: nil, race: nil, lastReceipt: nil, lastError: nil,
-                               pendingCommand: false, pendingHttp: false, reconcileRequired: false, retryAtMs: nil,
+                               pendingCommand: false, pendingLeave: false, pendingHttp: false, reconcileRequired: false, retryAtMs: nil,
                                pollDue: false, estimatedServerMs: nil, remainingMs: nil, lockedRemainingMs: nil,
                                voluntarilyLeft: false)
 }
@@ -209,8 +210,9 @@ final class LiveSession {
             }
         }
         refresh()
-        visible = view.snapshot != nil && !view.voluntarilyLeft
-        resumeRequired = visible && view.connection != "session_lost"
+        leaving = view.pendingLeave
+        visible = view.pendingHttp || (view.snapshot != nil && !view.voluntarilyLeft)
+        resumeRequired = visible && !view.pendingHttp && view.connection != "session_lost"
     }
 
     // MARK: Derived state

@@ -146,7 +146,7 @@ def leave(proxy):
     until(lambda: flags()['voluntarily_left'], 15, 'leave not acknowledged')
     node('friend-start', True)
 
-def scenario_c(proxy):
+def scenario_c(proxy, cold=False):
     say('--- C: leave reaches server, response lost, app backgrounded and reopened')
     assert flags()['phase'] == 'lobby'
     mark = len(proxy.calls)
@@ -154,7 +154,11 @@ def scenario_c(proxy):
     tap('back'); tap('leave-confirm')
     until(lambda: any(c.get('response') == 'dropped' for c in proxy.calls[mark:]), 10, 'leave never reached the proxy')
     time.sleep(1.0)
-    shell('input', 'keyevent', 'KEYCODE_HOME'); time.sleep(1.5)
+    if cold:
+        assert saved().get('leave'), 'pending leave must be durable before process death'
+        shell('am', 'force-stop', PKG)
+    else:
+        shell('input', 'keyevent', 'KEYCODE_HOME'); time.sleep(1.5)
     proxy.offline = False
     launch()
     until(lambda: flags()['voluntarily_left'], 20, 'leave must retry after foregrounding')
@@ -163,7 +167,7 @@ def scenario_c(proxy):
     leaves = [c for c in calls if c['path'].endswith('/leave')]
     assert len(leaves) >= 2 and all(c['hash'] == leaves[0]['hash'] for c in leaves)
     assert not any(c['path'].endswith('/resume') for c in calls), 'departed seat was resumed'
-    say('PASS lost leave/background recovered to Home without resume')
+    say('PASS lost leave recovered to Home without resume:', 'process death' if cold else 'background')
     return True
 
 def post(path, body):
@@ -199,11 +203,22 @@ def expiry_result(proxy, mode):
     shell('am', 'force-stop', PKG); launch()
     assert node('result-heading').attrib.get('text') == heading, 'cold restore lost verified result'
     proxy.expire_room = False
-    tap('home', True)
-    shell('am', 'force-stop', PKG)
-    shell('run-as', PKG, 'rm', '-f', 'files/live-session.json')
-    launch()
-    say('PASS verified result survives controlled expiry and cold restore:', mode)
+    def backups():
+        return {name for name in adb('exec-out', 'run-as', PKG, 'ls', 'files').decode().splitlines()
+                if name.startswith('live-session-recovery-') and name.endswith('.json')}
+    before = backups()
+    tap('live-recover', True)
+    original = adb('exec-out', 'run-as', PKG, 'cat', 'files/live-session.json')
+    tap('live-reset-confirm', True)
+    node('room-create', True)  # Confirmation completes only after atomic preservation and reset.
+    copies = backups() - before
+    assert len(copies) == 1, 'expected one committed result backup; got '+str(len(copies))
+    copied = adb('exec-out', 'run-as', PKG, 'cat', 'files/'+copies.pop())
+    assert copied == original, 'reset backup differs from the record present at confirmation'
+    tap('room-create', True)
+    until(lambda: flags()['phase'] == 'lobby' and flags()['room'] != code and not flags()['voluntarily_left'], 15)
+    leave(proxy)
+    say('PASS verified result survives expiry/cold restore; UI preserves record and creates a new room:', mode)
 
 assert shell('getprop', 'ro.kernel.qemu') == '1', 'Only run on a disposable emulator.'
 with socket.socket() as probe: assert probe.connect_ex(('127.0.0.1', args.server_port)) != 0, 'server port in use'
@@ -233,7 +248,7 @@ try:
     shell('run-as', PKG, 'rm', '-f', 'files/live-session.json')
     launch()
     results['A_fresh'] = scenario_a(proxy, 'fresh client')
-    leave(proxy)
+    results['C_cold'] = scenario_c(proxy, cold=True)
     for mode in ['race', 'duel']: expiry_result(proxy, mode)
     assert all(results.values())
 finally:

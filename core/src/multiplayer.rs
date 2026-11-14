@@ -121,6 +121,9 @@ struct Saved {
     /// reclaims the same seat instead of leaving a phantom one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     setup: Option<RequestDescriptor>,
+    /// An explicit exit is idempotent and must outlive its transport/process.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    leave: Option<RequestDescriptor>,
 }
 
 #[derive(Clone)]
@@ -949,6 +952,7 @@ impl MultiplayerClient {
             last_error: Option<&'a Error>,
             pending_command: bool,
             pending_http: bool,
+            pending_leave: bool,
             reconcile_required: bool,
             retry_at_ms: Option<u64>,
             poll_due: bool,
@@ -1002,6 +1006,10 @@ impl MultiplayerClient {
             last_error: self.last_error.as_ref(),
             pending_command: self.pending_command.is_some(),
             pending_http: self.pending_http.is_some(),
+            pending_leave: self
+                .pending_http
+                .as_ref()
+                .is_some_and(|p| matches!(p.operation, Operation::Leave)),
             reconcile_required: self.reconcile_required,
             retry_at_ms: self.retry_at,
             poll_due: self.auth.is_some()
@@ -1041,6 +1049,11 @@ impl MultiplayerClient {
             reconcile: self.reconcile_required,
             session_lost: self.connection == ConnectionState::SessionLost,
             voluntarily_left: self.voluntarily_left,
+            leave: self
+                .pending_http
+                .as_ref()
+                .filter(|p| matches!(p.operation, Operation::Leave))
+                .map(|p| p.wire.clone()),
             setup: self
                 .pending_http
                 .as_ref()
@@ -1179,12 +1192,37 @@ impl MultiplayerClient {
             Some(wire) => Some(restore_setup(wire, saved.next_id, saved.pending.is_some())?),
             None => None,
         };
+        let leave = match saved.leave {
+            Some(wire) => {
+                let auth = saved.auth.as_ref().ok_or(ClientError::InvalidSave)?;
+                let expected =
+                    serde_json::json!({"protocol": PROTOCOL, "token": auth.token}).to_string();
+                if setup.is_some()
+                    || wire.id == 0
+                    || wire.id >= saved.next_id
+                    || wire.method != "POST"
+                    || wire.path != format!("/v1/rooms/{}/leave", auth.snapshot.room_code)
+                    || wire.body != expected
+                {
+                    return Err(ClientError::InvalidSave);
+                }
+                Some(PendingHttp {
+                    wire,
+                    operation: Operation::Leave,
+                    sent_ms: 0,
+                    retried: true,
+                    failed: true,
+                })
+            }
+            None => None,
+        };
+        let has_leave = leave.is_some();
         let mut client = Self::new(saved.seed);
         client.voluntarily_left = saved.voluntarily_left;
         client.next_id = saved.next_id;
-        // A pending setup replaces the old session on success, so it never resumes first.
-        client.needs_resume = saved.auth.is_some() && setup.is_none();
-        if let Some(http) = setup {
+        // Setup and explicit exit must finish their exact replay before any resume.
+        client.needs_resume = saved.auth.is_some() && setup.is_none() && !has_leave;
+        if let Some(http) = setup.or(leave) {
             client.pending_http = Some(http);
             client.connection = ConnectionState::Disconnected;
             client.retry_at = Some(0);
@@ -1195,7 +1233,7 @@ impl MultiplayerClient {
         client.ack_version = saved.ack_version;
         client.pending_command = saved.pending;
         client.reconcile_required = saved.reconcile;
-        if saved.session_lost {
+        if saved.session_lost && !has_leave {
             client.connection = ConnectionState::SessionLost;
         }
         Ok(client)

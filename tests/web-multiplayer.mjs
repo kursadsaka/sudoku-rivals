@@ -301,3 +301,28 @@ if(process.argv.includes('--http')){
   } finally {globalThis.document=oldDocument;globalThis.window=oldWindow;}
 }
 console.log('G14 departed-room and verified-result regressions passed');
+
+// An accepted leave with a lost response is still a leave after process death.
+{
+  let time=0,first=true,left=0;
+  const stored=new Storage(),bodies=[];
+  const options={now:()=>time,origin:'http://localhost',fetcher:async(url,options)=>{
+    if(url.endsWith('/v1/rooms'))return response(session);
+    assert(url.endsWith('/leave'),'Cold leave must never resume');
+    bodies.push(options.body);
+    if(first){first=false;throw Error('accepted but response lost');}
+    return response({protocol:1,left:true});
+  }};
+  const original=new MultiplayerTransport(core,stored,options);
+  original.dispatch({type:'create',guest:session.guest,name:'A',mode:'race',size:6});await until(()=>original.active.size===0);
+  original.dispatch({type:'leave'});await until(()=>original.active.size===0);
+  original.stop();
+  const restored=new MultiplayerTransport(core,stored,{...options,onLeft:()=>left++});
+  assert.equal(restored.view().pending_leave,true);
+  restored.tick();await until(()=>restored.active.size===0);
+  assert.equal(restored.view().voluntarily_left,true);
+  assert.equal(left,1);
+  assert.equal(bodies.length,2);assert.equal(bodies[0],bodies[1]);
+  restored.stop();
+}
+console.log('Web cold leave: exact durable replay and Home callback passed');

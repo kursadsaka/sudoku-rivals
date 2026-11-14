@@ -1100,3 +1100,83 @@ fn rejected_setup_retry_keeps_recovery_of_a_room_not_left() {
     assert_eq!(view(&a, at + 1)["connection"], "connected");
     assert_eq!(snapshot(&a, at + 1).match_id, old.match_id);
 }
+
+#[test]
+fn pending_leave_survives_process_death_before_or_after_server_acceptance() {
+    for mode in [Mode::Race, Mode::Duel] {
+        for processed in [false, true] {
+            let (mut service, mut a, mut b) = started(mode, 6);
+            if !processed {
+                // Leaving supersedes an uncertain command too; never replay both.
+                req(
+                    &mut a,
+                    json!({"type":"command","command":{"type":"resign"}}),
+                    3999,
+                );
+            }
+            let leave = req(&mut a, json!({"type":"leave"}), 4000);
+            if processed {
+                assert_eq!(exchange(&mut service, &leave, 4000).0, 200);
+            }
+            let mut restored = MultiplayerClient::load(&a.save().unwrap()).unwrap();
+            assert_eq!(view(&restored, 0)["pending_leave"], true);
+            assert_eq!(
+                try_act(&mut restored, json!({"type":"resume"}), 0),
+                Err(ClientError::Busy)
+            );
+            let retry = req(&mut restored, json!({"type":"retry"}), 0);
+            assert_eq!(retry, leave);
+            let answer = exchange(&mut service, &retry, 4100);
+            receive(&mut restored, &retry, answer, 1);
+            assert_eq!(view(&restored, 1)["voluntarily_left"], true);
+            assert_eq!(view(&restored, 1)["pending_leave"], false);
+            assert_eq!(view(&restored, 1)["pending_command"], false);
+            let saved: Value = serde_json::from_str(&restored.save().unwrap()).unwrap();
+            assert!(saved.get("leave").is_none());
+            drive(&mut service, &mut b, json!({"type":"poll"}), 4101);
+            assert_eq!(view(&b, 4101)["snapshot"]["result"]["winner"], 1);
+            assert_eq!(
+                view(&b, 4101)["snapshot"]["result"]["at_ms"],
+                if processed { 4000 } else { 4100 }
+            );
+        }
+    }
+}
+
+#[test]
+fn saved_leave_is_bound_to_authenticated_room_and_exact_body() {
+    let (_, mut a, _) = started(Mode::Race, 6);
+    req(&mut a, json!({"type":"leave"}), 4000);
+    let raw: Value = serde_json::from_str(&a.save().unwrap()).unwrap();
+    for (field, value) in [
+        ("id", json!(0)),
+        ("id", raw["next_id"].clone()),
+        ("method", json!("GET")),
+        ("path", json!("/v1/rooms/222222/leave")),
+        ("body", json!("{}")),
+        (
+            "body",
+            json!({"protocol":1,"token":"f".repeat(64)})
+                .to_string()
+                .into(),
+        ),
+    ] {
+        let mut bad = raw.clone();
+        bad["leave"][field] = value;
+        assert!(
+            MultiplayerClient::load(&bad.to_string()).is_err(),
+            "accepted invalid {field}"
+        );
+    }
+    let mut no_auth = raw.clone();
+    no_auth["auth"] = Value::Null;
+    assert!(MultiplayerClient::load(&no_auth.to_string()).is_err());
+    let mut mixed = raw.clone();
+    mixed["setup"] = raw["leave"].clone();
+    assert!(MultiplayerClient::load(&mixed.to_string()).is_err());
+    // Leaving is also available from a lost-session result screen.
+    let mut lost = raw;
+    lost["session_lost"] = json!(true);
+    let mut restored = MultiplayerClient::load(&lost.to_string()).unwrap();
+    assert!(try_act(&mut restored, json!({"type":"retry"}), 0).is_ok());
+}

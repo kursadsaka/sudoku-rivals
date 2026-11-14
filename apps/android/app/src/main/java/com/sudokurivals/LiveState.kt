@@ -140,6 +140,7 @@ internal class LiveState(directory: File) {
             }
         }
         refresh()
+        leaving = view.optBoolean("pending_leave")
         visible = view.optBoolean("pending_http") || (snapshot() != null && !view.optBoolean("voluntarily_left"))
         resumeRequired = visible && !view.optBoolean("pending_http") && view.optString("connection") != "session_lost"
     }
