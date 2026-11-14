@@ -458,6 +458,10 @@ impl MultiplayerClient {
             body: body.to_string(),
         };
         self.next_id += 1;
+        // A new setup owns recovery, just as it does after loading a saved setup.
+        if matches!(operation, Operation::Create | Operation::Join) {
+            self.needs_resume = false;
+        }
         self.pending_http = Some(PendingHttp {
             wire: wire.clone(),
             operation,
