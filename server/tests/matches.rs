@@ -777,3 +777,44 @@ fn loopback_test_matrix_does_not_share_a_five_room_ceiling() {
         Err(Error::RateLimited)
     ));
 }
+
+#[test]
+fn queued_rematches_start_on_resume_once_and_keep_old_receipts() {
+    for mode in [Mode::Race, Mode::Duel] {
+        let (mut service, mut a, mut b) = started(mode, 6);
+        a.send(&mut service, Command::Resign, 4000);
+        b.state(&mut service, 4000);
+        let old_match = a.snapshot.match_id.clone();
+        b.send(&mut service, Command::Rematch, 4001);
+        b.send(&mut service, Command::Disconnect, 4002);
+        a.state(&mut service, 4002);
+        let request = a.envelope(Command::Rematch);
+        let receipt = a.send(&mut service, Command::Rematch, 4003);
+        assert_eq!(receipt.code, Code::Ok);
+        assert_eq!(a.snapshot.phase, Phase::Finished);
+        assert_eq!(a.snapshot.match_id, old_match);
+        assert!(a.snapshot.own.rematch && a.snapshot.opponent.as_ref().unwrap().rematch);
+        b.snapshot = service
+            .resume(&b.snapshot.room_code, &b.token, 4004)
+            .unwrap();
+        a.state(&mut service, 4004);
+        assert_ne!(a.snapshot.match_id, old_match);
+        assert_eq!(a.snapshot.match_id, b.snapshot.match_id);
+        assert_eq!(a.snapshot.phase, Phase::Countdown);
+        assert_eq!(a.snapshot.start_ms, Some(7004));
+        assert!(!a.snapshot.own.rematch && !b.snapshot.own.rematch);
+        let new_match = a.snapshot.match_id.clone();
+        // Repeated resume and late commands from the old match must not restart it.
+        b.snapshot = service
+            .resume(&b.snapshot.room_code, &b.token, 4005)
+            .unwrap();
+        let replay = service
+            .command(&a.snapshot.room_code, &request, 4006)
+            .unwrap();
+        assert_eq!(replay.receipt, receipt);
+        assert_eq!(replay.snapshot.match_id, new_match);
+        assert_eq!(b.snapshot.start_ms, Some(7004));
+        a.state(&mut service, 7004);
+        assert_eq!(a.snapshot.phase, Phase::Playing);
+    }
+}

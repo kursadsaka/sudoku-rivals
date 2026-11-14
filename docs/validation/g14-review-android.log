@@ -1,0 +1,7 @@
+Android ↔ WASM HTTP race 6x6: full match/rematch/leave passed
+Android ↔ WASM HTTP race 9x9: full match/rematch/leave passed
+Android duel 6x6: verified final score survives departure and cold restore
+Android ↔ WASM HTTP duel 9x9: full match/rematch/leave passed
+Android race: disconnect and unrecoverable-session copy passed
+Android duel: disconnect and unrecoverable-session copy passed
+Android multiplayer passed: two modes/two sizes, deep links, exact lost-response retry, 40 offline edits/single sync, cold restart, explicit reconciliation, failed-save retry, corrupt-record preservation, 90-second timer, mutual rematch, missing-opponent score/rematch, verified-result preservation, mode-specific failure copy, explicit leave and server restart

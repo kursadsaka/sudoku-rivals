@@ -789,3 +789,208 @@ fn cold_restore_replays_lost_create_and_join() {
         .replace("/v1/rooms", "/v1/rooms/ABCDEF/leave");
     assert!(MultiplayerClient::load(&forged).is_err());
 }
+
+#[test]
+fn terminal_loss_clears_retry_and_cannot_be_resumed() {
+    for mode in [Mode::Race, Mode::Duel] {
+        for error in [Error::RoomMissing, Error::RoomClosed, Error::Unauthorized] {
+            let (_, mut a, _) = started(mode, 6);
+            let poll = req(&mut a, json!({"type":"poll"}), 4000);
+            act(
+                &mut a,
+                json!({"type":"network_failed","request_id":poll.id}),
+                4001,
+            );
+            assert!(!view(&a, 4001)["retry_at_ms"].is_null());
+            let retry_at = view(&a, 4001)["retry_at_ms"].as_u64().unwrap();
+            let retry = req(&mut a, json!({"type":"retry"}), retry_at);
+            receive(
+                &mut a,
+                &retry,
+                (404, json!({"protocol":1,"error":error}).to_string()),
+                retry_at,
+            );
+            let saved = a.save().unwrap();
+            for mut client in [a, MultiplayerClient::load(&saved).unwrap()] {
+                assert_eq!(view(&client, retry_at)["connection"], "session_lost");
+                assert!(view(&client, retry_at)["retry_at_ms"].is_null());
+                for time in [retry_at, retry_at + 250, retry_at + 10_000] {
+                    for action in ["retry", "resume", "poll"] {
+                        assert!(matches!(
+                            try_act(&mut client, json!({"type":action}), time),
+                            Err(ClientError::NoSession)
+                        ));
+                    }
+                    act(&mut client, json!({"type":"network_failed"}), time);
+                    assert_eq!(client.save().unwrap(), saved);
+                    assert_eq!(view(&client, time)["connection"], "session_lost");
+                }
+                // A terminal old room must not prevent an explicitly requested new session.
+                let wire = req(
+                    &mut client,
+                    json!({"type":"create","name":"New","mode":mode,"size":6}),
+                    retry_at + 10_001,
+                );
+                assert_eq!(wire.path, "/v1/rooms");
+            }
+        }
+    }
+}
+
+#[test]
+fn pending_setup_survives_old_session_resume_before_and_after_network_failure() {
+    for mode in [Mode::Race, Mode::Duel] {
+        for join in [false, true] {
+            for lost in [false, true] {
+                let (mut service, mut a, _) = started(mode, 6);
+                if lost {
+                    let poll = req(&mut a, json!({"type":"poll"}), 4000);
+                    receive(
+                        &mut a,
+                        &poll,
+                        (
+                            404,
+                            json!({"protocol":1,"error":"room_missing"}).to_string(),
+                        ),
+                        4000,
+                    );
+                    service = Service::default();
+                } else {
+                    drive(&mut service, &mut a, json!({"type":"leave"}), 4000);
+                }
+                let target = service
+                    .create("target", None, "Target".into(), mode, 6, 4001)
+                    .unwrap();
+                let action = if join {
+                    json!({"type":"join","name":"New","invite":target.snapshot.room_code})
+                } else {
+                    json!({"type":"create","name":"New","mode":mode,"size":6})
+                };
+                let setup = req(&mut a, action, 4002);
+                // The server accepted it, but the client lost the response.
+                let accepted = exchange(&mut service, &setup, 4002);
+                assert_eq!(accepted.0, 200);
+                for time in [4003, 10000] {
+                    if time == 10000 {
+                        act(
+                            &mut a,
+                            json!({"type":"network_failed","request_id":setup.id}),
+                            4004,
+                        );
+                    }
+                    let saved = a.save().unwrap();
+                    for mut client in [a.clone(), MultiplayerClient::load(&saved).unwrap()] {
+                        assert!(matches!(
+                            try_act(&mut client, json!({"type":"resume"}), time),
+                            Err(ClientError::Busy)
+                        ));
+                        assert_eq!(client.save().unwrap(), saved);
+                        let retry = req(&mut client, json!({"type":"retry"}), 10001);
+                        assert!(retry == setup, "Setup descriptor changed");
+                        let response = if time == 4003 {
+                            accepted.clone()
+                        } else {
+                            exchange(&mut service, &retry, 10001)
+                        };
+                        assert_eq!(response.0, 200);
+                        let expected: Value = serde_json::from_str(&accepted.1).unwrap();
+                        let actual: Value = serde_json::from_str(&response.1).unwrap();
+                        for key in ["guest", "token"] {
+                            assert!(actual[key] == expected[key], "Setup seat changed");
+                        }
+                        assert!(
+                            actual["snapshot"]["match_id"] == expected["snapshot"]["match_id"],
+                            "Setup room changed"
+                        );
+                        receive(&mut client, &retry, response, 10001);
+                        assert_eq!(view(&client, 10001)["connection"], "connected");
+                        assert_eq!(view(&client, 10001)["snapshot"]["own"]["name"], "New");
+                        assert_eq!(view(&client, 10001)["voluntarily_left"], false);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn finished_disconnected_setup_retries_identically_live_and_restored() {
+    for mode in [Mode::Race, Mode::Duel] {
+        for join in [false, true] {
+            let (mut service, mut client, _) = started(mode, 6);
+            drive(
+                &mut service,
+                &mut client,
+                json!({"type":"command","command":{"type":"resign"}}),
+                4000,
+            );
+            drive(
+                &mut service,
+                &mut client,
+                json!({"type":"command","command":{"type":"disconnect"}}),
+                4001,
+            );
+            let old = snapshot(&client, 4001);
+            assert_eq!(old.phase, Phase::Finished);
+            assert!(!old.own.connected);
+            assert!(matches!(
+                try_act(&mut client, json!({"type":"poll"}), 4002),
+                Err(ClientError::ResumeRequired)
+            ));
+
+            let action = if join {
+                let target = service
+                    .create("target", None, "Target".into(), mode, 6, 4002)
+                    .unwrap();
+                json!({"type":"join","name":"New","invite":target.snapshot.room_code})
+            } else {
+                json!({"type":"create","name":"New","mode":mode,"size":6})
+            };
+            let setup = req(&mut client, action, 4003);
+            let accepted = exchange(&mut service, &setup, 4003);
+            assert_eq!(accepted.0, 200);
+            let expected: Value = serde_json::from_str(&accepted.1).unwrap();
+            // The server accepted the new seat but its response never reached this client.
+            act(
+                &mut client,
+                json!({"type":"network_failed","request_id":setup.id}),
+                4004,
+            );
+            let saved = client.save().unwrap();
+            let mut recovered_saves = vec![];
+            for mut copy in [client, MultiplayerClient::load(&saved).unwrap()] {
+                assert!(matches!(
+                    try_act(&mut copy, json!({"type":"resume"}), 10000),
+                    Err(ClientError::Busy)
+                ));
+                assert!(
+                    copy.save().unwrap() == saved,
+                    "Resume changed the pending setup"
+                );
+                let retry = req(&mut copy, json!({"type":"retry"}), 10001);
+                assert!(retry == setup, "Retry changed the setup descriptor");
+                let response = exchange(&mut service, &retry, 10001);
+                assert_eq!(response.0, 200);
+                let actual: Value = serde_json::from_str(&response.1).unwrap();
+                for key in ["guest", "token"] {
+                    assert!(
+                        actual[key] == expected[key],
+                        "Retry changed the new seat credential"
+                    );
+                }
+                receive(&mut copy, &retry, response, 10001);
+                let current = view(&copy, 10001);
+                assert_eq!(current["connection"], "connected");
+                assert!(!current["pending_http"].as_bool().unwrap());
+                assert!(current["snapshot"]["match_id"] == expected["snapshot"]["match_id"]);
+                assert_ne!(snapshot(&copy, 10001).match_id, old.match_id);
+                assert_eq!(current["snapshot"]["own"]["name"], "New");
+                recovered_saves.push(copy.save().unwrap());
+            }
+            assert!(
+                recovered_saves[0] == recovered_saves[1],
+                "Live and cold recovery diverged"
+            );
+        }
+    }
+}

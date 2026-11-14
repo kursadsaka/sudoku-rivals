@@ -73,6 +73,16 @@ private class LiveStore(directory: File) {
 /** HTTP/storage adapter only. The Rust object owns game, sequence, retry and clock state. */
 internal class LiveState(directory: File) {
     private val store = LiveStore(directory)
+    // Presentation-only cache: no protocol or opaque Rust-save changes.
+    private val scoreFile = AtomicFile(File(directory, "live-result-score.json"))
+    private var savedResultScore = runCatching {
+        val bytes = scoreFile.openRead().use { input -> ByteArray(1024).let { buffer ->
+            val count = input.read(buffer)
+            require(count > 0 && input.read() == -1)
+            String(buffer, 0, count, Charsets.UTF_8)
+        } }
+        JSONObject(bytes).let { it.getString("match_id") to it.getLong("score").also { score -> require(score >= 0) } }
+    }.getOrNull()
     private val random = SecureRandom()
     private fun secureGuest() = ByteArray(32).also { random.nextBytes(it) }.joinToString("") { "%02x".format(it.toInt() and 255) }
     private var guest = secureGuest()
@@ -130,12 +140,36 @@ internal class LiveState(directory: File) {
             }
         }
         refresh()
-        visible = snapshot() != null && !view.optBoolean("voluntarily_left")
-        resumeRequired = visible && view.optString("connection") != "session_lost"
+        visible = view.optBoolean("pending_http") || (snapshot() != null && !view.optBoolean("voluntarily_left"))
+        resumeRequired = visible && !view.optBoolean("pending_http") && view.optString("connection") != "session_lost"
     }
 
     private fun now() = SystemClock.elapsedRealtime().toULong()
-    private fun refresh() { view = JSONObject(client.view(now())) }
+    private fun refresh() {
+        view = JSONObject(client.view(now()))
+        val s = snapshot() ?: return
+        if (s.optString("phase") != "finished" || s.optString("mode") != "duel" || s.optJSONObject("result") == null) return
+        val score = (s.optJSONObject("opponent")?.opt("score") as? Number)?.toLong() ?: return
+        val next = s.getString("match_id") to score
+        if (next == savedResultScore) return
+        var stream: FileOutputStream? = null
+        try {
+            stream = scoreFile.startWrite()
+            stream.write(JSONObject().put("match_id", next.first).put("score", next.second).toString().toByteArray(Charsets.UTF_8))
+            scoreFile.finishWrite(stream)
+        } catch (_: Exception) {
+            scoreFile.failWrite(stream)
+        }
+        savedResultScore = next
+    }
+    fun opponentScore(): Long? {
+        val s = snapshot() ?: return null
+        val current = (s.optJSONObject("opponent")?.opt("score") as? Number)?.toLong()
+        if (current != null) return current
+        return savedResultScore?.takeIf {
+            s.optString("phase") == "finished" && s.optString("mode") == "duel" && it.first == s.optString("match_id")
+        }?.second
+    }
     fun snapshot(): JSONObject? = view.optJSONObject("snapshot")
     fun isConfigured() = runCatching { normalizeOrigin(origin) }.isSuccess
     fun open() { visible = true; foreground = true; tick() }
@@ -145,8 +179,11 @@ internal class LiveState(directory: File) {
         inviteReceived = true
         visible = true
         foreground = true
-        message = if (snapshot() != null && !view.optBoolean("voluntarily_left"))
-            "Yeni davete katılmadan önce mevcut odadan ayrılmalısın." else null
+        message = when {
+            view.optString("connection") == "session_lost" -> "Bu oturuma dönülemiyor. Yeni davete katılmak için kaydı koruyup yeni oturum aç."
+            snapshot() != null && !view.optBoolean("voluntarily_left") -> "Yeni davete katılmadan önce mevcut odadan ayrılmalısın."
+            else -> null
+        }
         tick()
     }
     fun setForeground(active: Boolean) {
@@ -154,7 +191,7 @@ internal class LiveState(directory: File) {
         if (!active) {
             if (snapshot() != null && !view.optBoolean("voluntarily_left") && view.optString("connection") != "session_lost") resumeRequired = true
             cancelTransport()
-            if (!view.optBoolean("voluntarily_left") && (snapshot() != null || view.optBoolean("pending_http"))) dispatch(JSONObject().put("type", "network_failed"), quiet = true)
+            if (view.optBoolean("pending_http") || (!view.optBoolean("voluntarily_left") && snapshot() != null)) dispatch(JSONObject().put("type", "network_failed"), quiet = true)
             persist()
         } else if (visible) {
             if (!resumeRequired && !storageError) {
@@ -241,12 +278,12 @@ internal class LiveState(directory: File) {
     }
     fun create() {
         if (!isConfigured()) { message = "Canlı oyun sunucusu henüz yapılandırılmadı."; return }
-        dispatch(JSONObject().put("type", "create").put("guest", guest).put("name", name).put("mode", mode).put("size", size))
+        if (dispatch(JSONObject().put("type", "create").put("guest", guest).put("name", name).put("mode", mode).put("size", size))) resumeRequired = false
     }
     fun join() {
         if (!isConfigured()) { message = "Canlı oyun sunucusu henüz yapılandırılmadı."; return }
         val raw = if (invite.isNotBlank()) invite else pendingInvite.orEmpty()
-        dispatch(JSONObject().put("type", "join").put("guest", guest).put("invite", raw).put("name", name))
+        if (dispatch(JSONObject().put("type", "join").put("guest", guest).put("invite", raw).put("name", name))) resumeRequired = false
     }
     fun command(type: String, ready: Boolean? = null) {
         val command = JSONObject().put("type", type)
@@ -406,7 +443,12 @@ internal class LiveState(directory: File) {
                     if (!destroyed && transportEpoch == epoch && activeId == id) {
                         activeId = null
                         connection = null
-                        message = "Sunucuya ulaşılamıyor. Yerel yarış değişikliklerin korunuyor."
+                        message = when {
+                            snapshot()?.optString("phase") != "playing" -> "Sunucuya ulaşılamıyor. Yeniden bağlanılacak."
+                            snapshot()?.optString("mode") == "race" -> "Sunucuya ulaşılamıyor. Yerel yarış değişikliklerin korunuyor."
+                            snapshot()?.optString("mode") == "duel" -> "Sunucuya ulaşılamıyor. Yeniden bağlanılacak; düello hamleleri ve sonuç sunucu onayı bekliyor."
+                            else -> "Sunucuya ulaşılamıyor. Yeniden bağlanılacak."
+                        }
                         dispatch(JSONObject().put("type", "network_failed").put("request_id", id), quiet = true)
                     }
                 }
@@ -414,8 +456,9 @@ internal class LiveState(directory: File) {
         }
     }
     fun tick() {
-        if (!foreground || destroyed || protectedSave || !visible || view.optBoolean("voluntarily_left")) return
+        if (!foreground || destroyed || protectedSave || !visible) return
         refresh()
+        if (!view.optBoolean("pending_http") && (view.optBoolean("voluntarily_left") || view.optString("connection") == "session_lost")) return
         val time = SystemClock.elapsedRealtime()
         val retryAt = if (view.isNull("retry_at_ms")) null else view.optLong("retry_at_ms")
         if (activeId != null || deferredRequest != null || storageError) return
@@ -449,7 +492,7 @@ internal class LiveState(directory: File) {
     }
     private fun safeServerMessage(raw: String): String = when (runCatching { JSONObject(raw).optString("error") }.getOrNull()) {
         "room_full" -> "Oda dolu. Başka bir davet kullanabilirsin."
-        "room_missing", "room_closed" -> "Oda kapandı veya sunucu yeniden başladı. Maç sonucu kurtarılamadı; kazanan ilan edilmedi."
+        "room_missing", "room_closed" -> "Oda kapandı veya sunucu yeniden başladı. Bu oturumla odaya dönülemiyor."
         "unauthorized" -> "Bu oturumla odaya dönülemiyor. Yerel kayıt korunuyor."
         "rate_limited", "capacity" -> "Sunucu şu anda yeni işlem kabul etmiyor. Biraz bekleyip tekrar dene."
         "stale_generation", "stale_match", "sequence_gap", "sequence_conflict" -> "Oturum eşitleniyor. Yerel değişikliklerin korunuyor."

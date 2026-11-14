@@ -495,3 +495,25 @@ fn lobby_and_countdown_poll_fast_enough_to_observe_the_three_second_start() {
     assert_eq!(view(&client, 4500)["poll_due"], true);
     assert!(view(&client, 7000)["snapshot"]["result"].is_null());
 }
+
+#[test]
+fn missing_duel_opponent_score_is_rejected_before_presentation() {
+    let (mut client, snapshot) = playing(Mode::Duel, 6);
+    let wire = request(&mut client, json!({"type":"poll"}), 3001);
+    let before = client.save().unwrap();
+    for missing in [true, false] {
+        let mut body = serde_json::to_value(&snapshot).unwrap();
+        if missing {
+            body["opponent"].as_object_mut().unwrap().remove("score");
+        } else {
+            body["opponent"]["score"] = Value::Null;
+        }
+        let action =
+            json!({"type":"receive","request_id":wire.id,"status":200,"response":body.to_string()});
+        assert!(matches!(
+            client.dispatch_json(&action.to_string(), 3001),
+            Err(ClientError::InvalidSnapshot)
+        ));
+        assert_eq!(client.save().unwrap(), before);
+    }
+}

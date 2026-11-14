@@ -23,6 +23,7 @@ import xml.etree.ElementTree as ET
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--adb', required=True)
+parser.add_argument('--trace', action='store_true', help='Log UI actions without session data')
 parser.add_argument('--serial', default='emulator-5554')
 parser.add_argument('--server-bin', default='/tmp/sudoku-shared-target/debug/sudoku-server')
 parser.add_argument('--server-port', type=int, default=3001)
@@ -44,6 +45,7 @@ def adb(*parts, data=None, check=True):
 def shell(*parts): return adb('shell', *parts).decode().strip()
 def stop(): shell('am', 'force-stop', PKG)
 def launch(inject=True):
+    if args.trace: print(f'[{time.monotonic():.3f}] launch Android', flush=True)
     parts=['am','start','-W','-n',PKG+'/.MainActivity']
     if inject: parts += ['--es','dev_server_url',ANDROID_ORIGIN]
     shell(*parts)
@@ -53,7 +55,7 @@ def write(name, data): adb('shell', '-T', 'run-as', PKG, 'tee', 'files/' + name,
 
 def private_files():
     return [name for name in adb('exec-out', 'run-as', PKG, 'ls', '-1p', 'files', check=False).decode().splitlines()
-            if re.fullmatch(r'(?:live-session|solo-[\w.-]+)[\w.-]*', name)]
+            if re.fullmatch(r'(?:live-session|live-result-score|solo-[\w.-]+)[\w.-]*', name)]
 
 
 def saved_client():
@@ -92,6 +94,7 @@ def node(tag, scroll=False):
 
 
 def tap(tag, scroll=False):
+    if args.trace: print(f'[{time.monotonic():.3f}] tap {tag}', flush=True)
     item = node(tag, scroll)
     for _ in range(10):
         if item.attrib.get('enabled') == 'true': break
@@ -143,20 +146,22 @@ class FaultProxy(http.server.ThreadingHTTPServer):
     daemon_threads = True
     offline = False
     drop_next_move = False
+    drop_next_setup = False
+    dropped_setup_room = None
     calls = []
 
 
 class ProxyHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *_): pass
     def do_POST(self):
-        if self.server.offline:
-            self.close_connection = True
-            return
         body = self.rfile.read(int(self.headers.get('Content-Length', '0')))
         parsed = json.loads(body)
         command = parsed.get('command', {})
         entry = {'path': self.path, 'type': command.get('type'), 'hash': hashlib.sha256(body).hexdigest()}
         self.server.calls.append(entry)
+        if self.server.offline:
+            self.close_connection = True
+            return
         try:
             request = urllib.request.Request(UPSTREAM + self.path, body, {'Content-Type': 'application/json'}, method='POST')
             try:
@@ -164,6 +169,15 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
                     status, content = response.status, response.read(131073)
             except urllib.error.HTTPError as error:
                 status, content = error.code, error.read(131073)
+            entry['status'] = status
+            if status >= 400:
+                entry['error'] = json.loads(content).get('error')
+            if self.server.drop_next_setup and self.path == '/v1/rooms' and status == 200:
+                self.server.drop_next_setup = False
+                self.server.dropped_setup_room = json.loads(content)['snapshot']['room_code']
+                self.server.offline = True
+                self.close_connection = True
+                return
             if self.server.drop_next_move and command.get('type') == 'move':
                 self.server.drop_next_move = False
                 self.close_connection = True
@@ -186,14 +200,14 @@ const {MultiplayerTransport}=await import(process.argv[4]);
 class MemoryStorage {map=new Map();getItem(k){return this.map.get(k)??null;}setItem(k,v){this.map.set(k,v);}}
 const adapter=new MultiplayerTransport(core,new MemoryStorage(),{origin:process.argv[5],onError:()=>{}});
 const guest=Array.from(crypto.getRandomValues(new Uint8Array(32)),v=>v.toString(16).padStart(2,'0')).join('');
-let busy=false;
-const timer=setInterval(()=>{if(!busy)adapter.tick();},100);
+let busy=false,paused=false;
+const timer=setInterval(()=>{if(!busy&&!paused)adapter.tick();},100);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function settle(){const end=performance.now()+15000;while(adapter.active.size){if(performance.now()>end)throw Error('timeout');await sleep(10);}}
 let chain=Promise.resolve();
 readline.createInterface({input:process.stdin}).on('line',line=>{
  chain=chain.then(async()=>{busy=true;try{
-  const message=JSON.parse(line);await settle();
+  const message=JSON.parse(line);paused=Boolean(message.pause);await settle();
   if(message.op==='stop'){clearInterval(timer);adapter.stop();process.stdout.write('{"ok":true}\n');process.exit(0);}
   if(message.action&&['create','join'].includes(message.action.type))message.action.guest=guest;
   if(message.action&&!adapter.dispatch(message.action))throw Error('action rejected');
@@ -208,8 +222,8 @@ class Bot:
         self.process = subprocess.Popen(['node', str(script), (ROOT/'apps/web/pkg/sudoku_wasm.js').as_uri(),
             str(ROOT/'apps/web/pkg/sudoku_wasm_bg.wasm'), (ROOT/'apps/web/live.js').as_uri(), UPSTREAM],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
-    def call(self, action=None):
-        self.process.stdin.write(json.dumps({'action': action}) + '\n'); self.process.stdin.flush()
+    def call(self, action=None, pause=False):
+        self.process.stdin.write(json.dumps({'action': action, 'pause': pause}) + '\n'); self.process.stdin.flush()
         result = json.loads(self.process.stdout.readline())
         assert result.get('ok'), 'WASM bot operation failed'
         return result['view']
@@ -290,7 +304,7 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
     try:
         stop()
         for name in private_files():
-            if name.startswith('live-session'): shell('run-as', PKG, 'rm', '-f', 'files/'+name)
+            if name.startswith(('live-session', 'live-result-score')): shell('run-as', PKG, 'rm', '-f', 'files/'+name)
         shell('cmd', 'connectivity', 'airplane-mode', 'disable')
         server = server_start()
         proxy = FaultProxy(('127.0.0.1', args.proxy_port), ProxyHandler)
@@ -300,6 +314,8 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
             for size in [6, 9]:
                 bot = Bot(script); bots.append(bot)
                 tap('friend-start', True)
+                if app_snapshot() and not saved_client().get('voluntarily_left'):
+                    tap('live-recover', True); tap('live-reset-confirm', True)
                 if size == 9:
                     partner = bot.call({'type': 'create', 'name': 'WebBot', 'mode': mode, 'size': size})
                     code = partner['snapshot']['room_code']
@@ -373,6 +389,10 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
                         time.sleep(2.1)
                         shell('input','keyevent','KEYCODE_'+str(solution[blank]))
                         until(lambda: app_snapshot()['own']['score'] == 10, 10, 'Native duel correct move not acknowledged')
+                        partner = bot.call()['snapshot']
+                        partner_solution = solve(partner['own']['givens'], size)
+                        partner_blank = next(i for i,v in enumerate(partner['own']['givens']) if v == 0)
+                        bot.call({'type':'command','command':{'type':'move','board_id':partner['own']['board_id'],'index':partner_blank,'value':partner_solution[partner_blank]}})
                         bot.call({'type':'command','command':{'type':'resign'}})
                         until(lambda: app_snapshot()['phase'] == 'finished', 10)
                         assert app_snapshot()['result']['winner'] == app_snapshot()['own']['seat']
@@ -387,24 +407,107 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
                         until(lambda: app_snapshot()['phase'] == 'finished', 100, '90-second duel did not finish authoritatively')
                         assert app_snapshot()['result']['reason'] == 'time' and app_snapshot()['result']['winner'] is None
                 node('result-heading', True)
+                if mode == 'duel' and size == 6:
+                    assert 'Rakip: 10' in node('result-details', True).attrib.get('text', '')
+                    bot.call({'type':'leave'})
+                    until(lambda: app_snapshot()['opponent'] is None)
+                    assert 'Rakip: 10' in node('result-details', True).attrib.get('text', ''), 'Verified final score lost on departure'
+                    stop(); launch()
+                    until(lambda: app_snapshot()['opponent'] is None and app_snapshot()['phase'] == 'finished')
+                    assert 'Rakip: 10' in node('result-details', True).attrib.get('text', ''), 'Final score lost on cold restore'
+                    assert node('rematch', True).attrib.get('enabled') == 'false'
+                    leave_native()
+                    bot.close()
+                    print('Android duel 6x6: verified final score survives departure and cold restore', flush=True)
+                    continue
+                if mode == 'duel':
+                    bot.call({'type':'command','command':{'type':'rematch'}})
+                    bot.call({'type':'command','command':{'type':'disconnect'}}, pause=True)
+                    until(lambda: app_snapshot()['opponent']['connected'] is False)
+                    assert node('rematch', True).attrib.get('enabled') == 'true', 'Cannot queue rematch during temporary opponent disconnect'
+                    assert 'bağlantısı kesildi' in node('rematch-status', True).attrib.get('text', '')
                 old_match = app_snapshot()['match_id']
                 tap('rematch', True)
-                bot.call({'type':'command','command':{'type':'rematch'}})
+                if mode == 'duel':
+                    until(lambda: app_snapshot()['own']['rematch'])
+                    assert app_snapshot()['match_id'] == old_match, 'Rematch started with disconnected opponent'
+                    bot.call({'type':'resume'})
+                else:
+                    bot.call({'type':'command','command':{'type':'rematch'}})
                 until(lambda: app_snapshot()['match_id'] != old_match, 12, 'Mutual rematch did not create a new match')
-                leave_native()
+                ready_match(bot)
+                # Leaving removes the seat, including its score. Never invent zero or offer rematch.
                 bot.call({'type':'leave'})
+                until(lambda: app_snapshot()['phase'] == 'finished' and app_snapshot()['opponent'] is None)
+                assert app_snapshot()['result']['winner'] == app_snapshot()['own']['seat']
+                assert 'kazandın' in node('result-heading', True).attrib.get('text', '')
+                assert node('rematch', True).attrib.get('enabled') == 'false', 'Rematch offered without an opponent'
+                if mode == 'duel':
+                    assert 'Skor mevcut değil' in node('result-details', True).attrib.get('text', ''), 'Missing opponent score invented'
+                # A later room loss must not hide an already verified result.
+                if size == 9:
+                    server_stop(server)
+                    server = server_start()
+                    until(lambda: 'dönülemiyor' in node('connection-status', True).attrib.get('text', ''), 20)
+                    assert 'kazandın' in node('result-heading', True).attrib.get('text', '')
+                    assert 'kazanan ilan edilmedi' not in node('live-message', True).attrib.get('text', ''), 'Room-loss banner contradicts verified result'
+                    assert node('rematch', True).attrib.get('enabled') == 'false'
+                    tap('home', True)
+                    node('friend-start', True)
+                else:
+                    leave_native()
                 bot.close()
+                if mode == 'race' and size == 6:
+                    # After acknowledged leave, a lost new-room response must retry by itself.
+                    tap('friend-start', True)
+                    start = len(proxy.calls)
+                    proxy.drop_next_setup = True
+                    tap('room-create', True)
+                    until(lambda: saved_client().get('setup') is not None and proxy.offline)
+                    until(lambda: 'Yeniden bağlanılacak' in node('live-message', True).attrib.get('text', ''))
+                    body = saved_client()['setup']['body'].encode()
+                    expected_hash = hashlib.sha256(body).hexdigest()
+                    shell('input','keyevent','KEYCODE_HOME'); launch()
+                    until(lambda: sum(c['path'] == '/v1/rooms' for c in proxy.calls[start:]) >= 2,
+                          15, 'New setup did not retry after background/foreground')
+                    stop(); launch()
+                    node('room-create', True)  # Pending setup returns to setup automatically, not home.
+                    proxy.offline = False
+                    until(lambda: not saved_client().get('voluntarily_left') and app_snapshot()['room_code'] == proxy.dropped_setup_room,
+                          20, 'New setup did not recover automatically after leave/cold restore')
+                    creates = [c for c in proxy.calls[start:] if c['path'] == '/v1/rooms']
+                    assert len(creates) >= 2 and all(c['hash'] == expected_hash for c in creates), 'Setup retry changed its identity/body'
+                    leave_native()
+                    print('Android post-leave setup: promised automatic retry, background/cold restore and exact lost-response replay passed', flush=True)
                 print(f'Android ↔ WASM HTTP {mode} {size}x{size}: full match/rematch/leave passed', flush=True)
-        # A fresh fifth room exercises process restart without inventing a winner.
-        bot = Bot(script); bots.append(bot)
-        tap('friend-start', True); tap('mode-race', True); tap('board-size-6', True); tap('room-create', True)
-        until(lambda: app_snapshot() is not None and app_snapshot()['mode'] == 'race' and not saved_client().get('voluntarily_left'))
-        bot.call({'type':'join','invite':app_snapshot()['room_code'],'name':'WebBot'})
-        ready_match(bot)
-        server_stop(server)
-        server = server_start()
-        until(lambda: 'sürdürülemiyor' in node('result-heading', True).attrib.get('text',''), 20, 'Restart was not presented as lost session')
-        assert app_snapshot()['result'] is None, 'Restart invented a result'
+        # Loss without a verified result must describe only data that this mode preserves.
+        for mode in ['race', 'duel']:
+            bot = Bot(script); bots.append(bot)
+            tap('friend-start', True)
+            # A lost old session requires an explicit reset before a new room.
+            if app_snapshot() and not saved_client().get('voluntarily_left'):
+                tap('live-recover', True); tap('live-reset-confirm', True)
+            tap('mode-'+mode, True); tap('board-size-6', True); tap('room-create', True)
+            until(lambda: app_snapshot() is not None and app_snapshot()['mode'] == mode and not saved_client().get('voluntarily_left'))
+            bot.call({'type':'join','invite':app_snapshot()['room_code'],'name':'WebBot'})
+            ready_match(bot)
+            proxy.offline = True
+            until(lambda: 'Sunucuya ulaşılamıyor' in node('live-message', True).attrib.get('text', ''), 20)
+            message = node('live-message', True).attrib.get('text', '')
+            assert ('Yerel yarış' in message) == (mode == 'race'), 'Disconnect copy claims a race draft in duel'
+            server_stop(server)
+            server = server_start()
+            proxy.offline = False
+            until(lambda: 'sürdürülemiyor' in node('result-heading', True).attrib.get('text',''), 20, 'Restart was not presented as lost session')
+            calls_after_loss = len(proxy.calls)
+            time.sleep(3)
+            assert 'dönülemiyor' in node('connection-status', True).attrib.get('text', ''), 'Lost session resumed itself'
+            assert len(proxy.calls) == calls_after_loss, 'Terminal session loss continued retrying HTTP'
+            assert app_snapshot()['result'] is None, 'Restart invented a result'
+            detail = node('result-details', True).attrib.get('text', '')
+            assert ('Yerel yarış' in detail) == (mode == 'race'), 'Lost-session copy claims a race draft in duel'
+            tap('home', True)
+            print(f'Android {mode}: disconnect and unrecoverable-session copy passed', flush=True)
         stop()
         write('live-session.json',b'{broken-live-record')
         launch(False)
@@ -413,7 +516,17 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
         assert read('live-session.json') == b'{broken-live-record', 'Corrupt session silently replaced'
         tap('live-recover',True); tap('live-reset-confirm',True)
         assert any(read(name) == b'{broken-live-record' for name in private_files() if name.startswith('live-session-recovery-'))
-        print('Android multiplayer passed: two modes/two sizes, deep links, exact lost-response retry, 40 offline edits/single sync, cold restart, explicit reconciliation, failed-save retry, corrupt-record preservation, 90-second timer, mutual rematch, explicit leave and server restart', flush=True)
+        print('Android multiplayer passed: two modes/two sizes, deep links, exact lost-response retry, 40 offline edits/single sync, cold restart, explicit reconciliation, failed-save retry, corrupt-record preservation, 90-second timer, mutual rematch, missing-opponent score/rematch, verified-result preservation, mode-specific failure copy, explicit leave and server restart', flush=True)
+    except Exception:
+        try:
+            client = saved_client()
+            snapshot = (client.get('auth') or {}).get('snapshot') or {}
+            print('Failure state:', {key: client.get(key) for key in ['session_lost', 'voluntarily_left', 'reconcile']},
+                  {key: snapshot.get(key) for key in ['mode', 'phase', 'generation']}, flush=True)
+            print('Recent transport:', proxy.calls[-12:] if proxy else [], flush=True)
+        except Exception:
+            print('Failure diagnostics unavailable', flush=True)
+        raise
     finally:
         for bot in bots: bot.close()
         if proxy: proxy.shutdown(); proxy.server_close()
