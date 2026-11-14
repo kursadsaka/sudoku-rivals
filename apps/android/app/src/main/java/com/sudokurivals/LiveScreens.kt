@@ -168,13 +168,15 @@ private fun LiveResult(live: LiveState, snapshot: JSONObject) {
     }
     Text(title, Modifier.testTag("result-heading").semantics { heading() }, style = MaterialTheme.typography.titleLarge)
     Connection(live)
-    Text(if (snapshot.getString("mode") == "duel") "Puanın: ${own.getInt("score")} · Rakip: ${opponent?.getInt("score")?.toString() ?: "Skor mevcut değil (rakip ayrıldı)"}" else "Klasik yarış tamamlandı", Modifier.testTag("result-details"))
+    Text(if (snapshot.getString("mode") == "duel") "Puanın: ${own.getInt("score")} · Rakip: ${live.opponentScore()?.toString() ?: "Skor mevcut değil"}" else "Klasik yarış tamamlandı", Modifier.testTag("result-details"))
     val detail = when (reason) { "resigned" -> "Oyunculardan biri ayrıldı."; "disconnect_timeout" -> "Yeniden bağlanma süresi doldu."; "both_disconnected" -> "İki bağlantının süresi birlikte doldu."; "resource_limit" -> "Sunucu bu maçı güvenle sürdüremedi."; "time" -> "90 saniye doldu."; else -> "İlk doğru bitiş sunucuda doğrulandı." }
     Text(detail)
-    if (opponent == null) Text("Rakibin odadan ayrıldı. Yeni bir maç için yeni oda açabilirsin.")
+    if (opponent == null) Text("Arkadaşın odadan ayrıldı; rövanş istenemez. Yeni bir oda açabilirsin.", Modifier.testTag("rematch-status"))
+    else if (!opponent.optBoolean("connected")) Text(if (own.optBoolean("rematch")) "Rövanş istedin; arkadaşının yeniden bağlanması bekleniyor." else "Arkadaşının bağlantısı kesildi. Rövanş isteyebilirsin; yeni maç için yeniden bağlanması gerekiyor.", Modifier.testTag("rematch-status"))
     else if (own.optBoolean("rematch")) Text("Rövanş istedin; arkadaşın bekleniyor.")
     else if (opponent?.optBoolean("rematch") == true) Text("Arkadaşın rövanş istiyor.")
-    Button(onClick = { live.command("rematch") }, enabled = opponent?.optBoolean("connected") == true && !live.view.optBoolean("voluntarily_left") && !live.view.optBoolean("pending_command") && live.view.optString("connection") == "connected" && !own.optBoolean("rematch"), modifier = Modifier.fillMaxWidth().testTag("rematch")) { Text("Rövanş iste") }
+    Button(onClick = { live.command("rematch") }, enabled = opponent != null && !live.view.optBoolean("voluntarily_left") && !live.view.optBoolean("pending_command") && live.view.optString("connection") == "connected" && !own.optBoolean("rematch"), modifier = Modifier.fillMaxWidth().testTag("rematch")) { Text("Rövanş iste") }
+    if (live.view.optString("connection") != "connected") Text("Rövanş için sunucuya bağlantı gerekiyor.", Modifier.testTag("rematch-connection"))
     if (live.view.optString("connection") == "session_lost") {
         Button(onClick = live::requestReset, modifier = Modifier.testTag("live-recover")) { Text("Kaydı koruyup yeni oturum aç") }
     }
@@ -204,7 +206,7 @@ private fun LiveGame(live: LiveState, snapshot: JSONObject) {
     else {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Sen: ${own.getInt("score")}", Modifier.testTag("own-score"))
-            Text("Rakip: ${opponent?.optInt("score") ?: 0}", Modifier.testTag("opponent-score"))
+            Text("Rakip: ${live.opponentScore()?.toString() ?: "Skor mevcut değil"}", Modifier.testTag("opponent-score"))
             Text("Seri: ${own.getInt("combo")}", Modifier.testTag("combo"))
         }
     }

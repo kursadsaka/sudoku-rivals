@@ -73,6 +73,16 @@ private class LiveStore(directory: File) {
 /** HTTP/storage adapter only. The Rust object owns game, sequence, retry and clock state. */
 internal class LiveState(directory: File) {
     private val store = LiveStore(directory)
+    // Presentation-only cache: no protocol or opaque Rust-save changes.
+    private val scoreFile = AtomicFile(File(directory, "live-result-score.json"))
+    private var savedResultScore = runCatching {
+        val bytes = scoreFile.openRead().use { input -> ByteArray(1024).let { buffer ->
+            val count = input.read(buffer)
+            require(count > 0 && input.read() == -1)
+            String(buffer, 0, count, Charsets.UTF_8)
+        } }
+        JSONObject(bytes).let { it.getString("match_id") to it.getLong("score").also { score -> require(score >= 0) } }
+    }.getOrNull()
     private val random = SecureRandom()
     private fun secureGuest() = ByteArray(32).also { random.nextBytes(it) }.joinToString("") { "%02x".format(it.toInt() and 255) }
     private var guest = secureGuest()
@@ -135,7 +145,31 @@ internal class LiveState(directory: File) {
     }
 
     private fun now() = SystemClock.elapsedRealtime().toULong()
-    private fun refresh() { view = JSONObject(client.view(now())) }
+    private fun refresh() {
+        view = JSONObject(client.view(now()))
+        val s = snapshot() ?: return
+        if (s.optString("phase") != "finished" || s.optString("mode") != "duel" || s.optJSONObject("result") == null) return
+        val score = (s.optJSONObject("opponent")?.opt("score") as? Number)?.toLong() ?: return
+        val next = s.getString("match_id") to score
+        if (next == savedResultScore) return
+        var stream: FileOutputStream? = null
+        try {
+            stream = scoreFile.startWrite()
+            stream.write(JSONObject().put("match_id", next.first).put("score", next.second).toString().toByteArray(Charsets.UTF_8))
+            scoreFile.finishWrite(stream)
+        } catch (_: Exception) {
+            scoreFile.failWrite(stream)
+        }
+        savedResultScore = next
+    }
+    fun opponentScore(): Long? {
+        val s = snapshot() ?: return null
+        val current = (s.optJSONObject("opponent")?.opt("score") as? Number)?.toLong()
+        if (current != null) return current
+        return savedResultScore?.takeIf {
+            s.optString("phase") == "finished" && s.optString("mode") == "duel" && it.first == s.optString("match_id")
+        }?.second
+    }
     fun snapshot(): JSONObject? = view.optJSONObject("snapshot")
     fun isConfigured() = runCatching { normalizeOrigin(origin) }.isSuccess
     fun open() { visible = true; foreground = true; tick() }
@@ -145,8 +179,11 @@ internal class LiveState(directory: File) {
         inviteReceived = true
         visible = true
         foreground = true
-        message = if (snapshot() != null && !view.optBoolean("voluntarily_left"))
-            "Yeni davete katılmadan önce mevcut odadan ayrılmalısın." else null
+        message = when {
+            view.optString("connection") == "session_lost" -> "Bu oturuma dönülemiyor. Yeni davete katılmak için kaydı koruyup yeni oturum aç."
+            snapshot() != null && !view.optBoolean("voluntarily_left") -> "Yeni davete katılmadan önce mevcut odadan ayrılmalısın."
+            else -> null
+        }
         tick()
     }
     fun setForeground(active: Boolean) {
@@ -406,9 +443,10 @@ internal class LiveState(directory: File) {
                     if (!destroyed && transportEpoch == epoch && activeId == id) {
                         activeId = null
                         connection = null
-                        message = when (snapshot()?.optString("mode")) {
-                            "race" -> "Sunucuya ulaşılamıyor. Yerel yarış değişikliklerin korunuyor."
-                            "duel" -> "Sunucuya ulaşılamıyor. Yeniden bağlanılacak; düello hamleleri ve sonuç sunucu onayı bekliyor."
+                        message = when {
+                            snapshot()?.optString("phase") != "playing" -> "Sunucuya ulaşılamıyor. Yeniden bağlanılacak."
+                            snapshot()?.optString("mode") == "race" -> "Sunucuya ulaşılamıyor. Yerel yarış değişikliklerin korunuyor."
+                            snapshot()?.optString("mode") == "duel" -> "Sunucuya ulaşılamıyor. Yeniden bağlanılacak; düello hamleleri ve sonuç sunucu onayı bekliyor."
                             else -> "Sunucuya ulaşılamıyor. Yeniden bağlanılacak."
                         }
                         dispatch(JSONObject().put("type", "network_failed").put("request_id", id), quiet = true)

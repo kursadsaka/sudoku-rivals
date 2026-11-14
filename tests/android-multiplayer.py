@@ -53,7 +53,7 @@ def write(name, data): adb('shell', '-T', 'run-as', PKG, 'tee', 'files/' + name,
 
 def private_files():
     return [name for name in adb('exec-out', 'run-as', PKG, 'ls', '-1p', 'files', check=False).decode().splitlines()
-            if re.fullmatch(r'(?:live-session|solo-[\w.-]+)[\w.-]*', name)]
+            if re.fullmatch(r'(?:live-session|live-result-score|solo-[\w.-]+)[\w.-]*', name)]
 
 
 def saved_client():
@@ -186,14 +186,14 @@ const {MultiplayerTransport}=await import(process.argv[4]);
 class MemoryStorage {map=new Map();getItem(k){return this.map.get(k)??null;}setItem(k,v){this.map.set(k,v);}}
 const adapter=new MultiplayerTransport(core,new MemoryStorage(),{origin:process.argv[5],onError:()=>{}});
 const guest=Array.from(crypto.getRandomValues(new Uint8Array(32)),v=>v.toString(16).padStart(2,'0')).join('');
-let busy=false;
-const timer=setInterval(()=>{if(!busy)adapter.tick();},100);
+let busy=false,paused=false;
+const timer=setInterval(()=>{if(!busy&&!paused)adapter.tick();},100);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function settle(){const end=performance.now()+15000;while(adapter.active.size){if(performance.now()>end)throw Error('timeout');await sleep(10);}}
 let chain=Promise.resolve();
 readline.createInterface({input:process.stdin}).on('line',line=>{
  chain=chain.then(async()=>{busy=true;try{
-  const message=JSON.parse(line);await settle();
+  const message=JSON.parse(line);paused=Boolean(message.pause);await settle();
   if(message.op==='stop'){clearInterval(timer);adapter.stop();process.stdout.write('{"ok":true}\n');process.exit(0);}
   if(message.action&&['create','join'].includes(message.action.type))message.action.guest=guest;
   if(message.action&&!adapter.dispatch(message.action))throw Error('action rejected');
@@ -208,8 +208,8 @@ class Bot:
         self.process = subprocess.Popen(['node', str(script), (ROOT/'apps/web/pkg/sudoku_wasm.js').as_uri(),
             str(ROOT/'apps/web/pkg/sudoku_wasm_bg.wasm'), (ROOT/'apps/web/live.js').as_uri(), UPSTREAM],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
-    def call(self, action=None):
-        self.process.stdin.write(json.dumps({'action': action}) + '\n'); self.process.stdin.flush()
+    def call(self, action=None, pause=False):
+        self.process.stdin.write(json.dumps({'action': action, 'pause': pause}) + '\n'); self.process.stdin.flush()
         result = json.loads(self.process.stdout.readline())
         assert result.get('ok'), 'WASM bot operation failed'
         return result['view']
@@ -290,7 +290,7 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
     try:
         stop()
         for name in private_files():
-            if name.startswith('live-session'): shell('run-as', PKG, 'rm', '-f', 'files/'+name)
+            if name.startswith(('live-session', 'live-result-score')): shell('run-as', PKG, 'rm', '-f', 'files/'+name)
         shell('cmd', 'connectivity', 'airplane-mode', 'disable')
         server = server_start()
         proxy = FaultProxy(('127.0.0.1', args.proxy_port), ProxyHandler)
@@ -375,6 +375,10 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
                         time.sleep(2.1)
                         shell('input','keyevent','KEYCODE_'+str(solution[blank]))
                         until(lambda: app_snapshot()['own']['score'] == 10, 10, 'Native duel correct move not acknowledged')
+                        partner = bot.call()['snapshot']
+                        partner_solution = solve(partner['own']['givens'], size)
+                        partner_blank = next(i for i,v in enumerate(partner['own']['givens']) if v == 0)
+                        bot.call({'type':'command','command':{'type':'move','board_id':partner['own']['board_id'],'index':partner_blank,'value':partner_solution[partner_blank]}})
                         bot.call({'type':'command','command':{'type':'resign'}})
                         until(lambda: app_snapshot()['phase'] == 'finished', 10)
                         assert app_snapshot()['result']['winner'] == app_snapshot()['own']['seat']
@@ -389,8 +393,30 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
                         until(lambda: app_snapshot()['phase'] == 'finished', 100, '90-second duel did not finish authoritatively')
                         assert app_snapshot()['result']['reason'] == 'time' and app_snapshot()['result']['winner'] is None
                 node('result-heading', True)
+                if mode == 'duel' and size == 6:
+                    assert 'Rakip: 10' in node('result-details', True).attrib.get('text', '')
+                    bot.call({'type':'leave'})
+                    until(lambda: app_snapshot()['opponent'] is None)
+                    assert 'Rakip: 10' in node('result-details', True).attrib.get('text', ''), 'Verified final score lost on departure'
+                    stop(); launch()
+                    until(lambda: app_snapshot()['opponent'] is None and app_snapshot()['phase'] == 'finished')
+                    assert 'Rakip: 10' in node('result-details', True).attrib.get('text', ''), 'Final score lost on cold restore'
+                    assert node('rematch', True).attrib.get('enabled') == 'false'
+                    leave_native()
+                    bot.close()
+                    print('Android duel 6x6: verified final score survives departure and cold restore', flush=True)
+                    continue
+                if mode == 'duel':
+                    bot.call({'type':'command','command':{'type':'disconnect'}}, pause=True)
+                    until(lambda: app_snapshot()['opponent']['connected'] is False)
+                    assert node('rematch', True).attrib.get('enabled') == 'true', 'Cannot queue rematch during temporary opponent disconnect'
+                    assert 'bağlantısı kesildi' in node('rematch-status', True).attrib.get('text', '')
                 old_match = app_snapshot()['match_id']
                 tap('rematch', True)
+                if mode == 'duel':
+                    until(lambda: app_snapshot()['own']['rematch'])
+                    assert app_snapshot()['match_id'] == old_match, 'Rematch started with disconnected opponent'
+                    bot.call({'type':'resume'})
                 bot.call({'type':'command','command':{'type':'rematch'}})
                 until(lambda: app_snapshot()['match_id'] != old_match, 12, 'Mutual rematch did not create a new match')
                 ready_match(bot)

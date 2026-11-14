@@ -186,3 +186,37 @@ if(process.argv.includes('--http')){
     }
   }finally{for(const a of clients)a.stop();}
 }
+
+// A failed poll followed by terminal room loss must not restart via tick/online resume.
+{
+  let clock=0, requests=0;
+  const saved=new Storage();
+  const options={now:()=>clock,origin:'http://localhost',onError:()=>{},fetcher:async()=>{
+    requests++;
+    if(requests===1)return response(session);
+    if(requests===2)throw new Error('offline');
+    return response({protocol:1,error:'room_missing'},404);
+  }};
+  const lost=new MultiplayerTransport(core,saved,options);
+  assert(lost.dispatch({type:'create',guest:session.guest,name:'A',mode:'race',size:6}));
+  await until(()=>lost.active.size===0);
+  clock=100;lost.dispatch({type:'poll'});
+  await until(()=>lost.active.size===0);
+  assert.notEqual(lost.view().retry_at_ms,null);
+  clock=10000;lost.tick();
+  await until(()=>lost.active.size===0);
+  assert.equal(lost.view().connection,'session_lost');
+  assert.equal(lost.view().retry_at_ms,null);
+  const calls=requests;
+  const restored=new MultiplayerTransport(core,saved,options);
+  for(const client of [lost,restored]){
+    for(let i=0;i<8;i++){
+      clock+=250;client.tick();
+      assert(!client.dispatch({type:'resume'}));
+      assert.equal(client.view().connection,'session_lost');
+    }
+    client.stop();
+  }
+  assert.equal(requests,calls,'Lost sessions issued more HTTP requests');
+  console.log('Web WASM terminal session loss: retry cleared, tick/online resume and cold restore stay terminal');
+}

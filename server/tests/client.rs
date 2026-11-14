@@ -789,3 +789,50 @@ fn cold_restore_replays_lost_create_and_join() {
         .replace("/v1/rooms", "/v1/rooms/ABCDEF/leave");
     assert!(MultiplayerClient::load(&forged).is_err());
 }
+
+#[test]
+fn terminal_loss_clears_retry_and_cannot_be_resumed() {
+    for mode in [Mode::Race, Mode::Duel] {
+        for error in [Error::RoomMissing, Error::RoomClosed, Error::Unauthorized] {
+            let (_, mut a, _) = started(mode, 6);
+            let poll = req(&mut a, json!({"type":"poll"}), 4000);
+            act(
+                &mut a,
+                json!({"type":"network_failed","request_id":poll.id}),
+                4001,
+            );
+            assert!(!view(&a, 4001)["retry_at_ms"].is_null());
+            let retry_at = view(&a, 4001)["retry_at_ms"].as_u64().unwrap();
+            let retry = req(&mut a, json!({"type":"retry"}), retry_at);
+            receive(
+                &mut a,
+                &retry,
+                (404, json!({"protocol":1,"error":error}).to_string()),
+                retry_at,
+            );
+            let saved = a.save().unwrap();
+            for mut client in [a, MultiplayerClient::load(&saved).unwrap()] {
+                assert_eq!(view(&client, retry_at)["connection"], "session_lost");
+                assert!(view(&client, retry_at)["retry_at_ms"].is_null());
+                for time in [retry_at, retry_at + 250, retry_at + 10_000] {
+                    for action in ["retry", "resume", "poll"] {
+                        assert!(matches!(
+                            try_act(&mut client, json!({"type":action}), time),
+                            Err(ClientError::NoSession)
+                        ));
+                    }
+                    act(&mut client, json!({"type":"network_failed"}), time);
+                    assert_eq!(client.save().unwrap(), saved);
+                    assert_eq!(view(&client, time)["connection"], "session_lost");
+                }
+                // A terminal old room must not prevent an explicitly requested new session.
+                let wire = req(
+                    &mut client,
+                    json!({"type":"create","name":"New","mode":mode,"size":6}),
+                    retry_at + 10_001,
+                );
+                assert_eq!(wire.path, "/v1/rooms");
+            }
+        }
+    }
+}

@@ -285,6 +285,9 @@ impl MultiplayerClient {
                 )?);
             }
             Action::Resume {} => {
+                if self.connection == ConnectionState::SessionLost {
+                    return Err(ClientError::NoSession);
+                }
                 if self.retry_at.is_some_and(|at| now < at) {
                     return Err(ClientError::RetryNotDue);
                 }
@@ -364,6 +367,9 @@ impl MultiplayerClient {
                 }
             }
             Action::Retry {} => {
+                if self.connection == ConnectionState::SessionLost && self.pending_http.is_none() {
+                    return Err(ClientError::NoSession);
+                }
                 if self.needs_resume {
                     return Err(ClientError::ResumeRequired);
                 }
@@ -620,6 +626,7 @@ impl MultiplayerClient {
             match failure.error {
                 Error::RoomMissing | Error::RoomClosed | Error::Unauthorized => {
                     self.connection = ConnectionState::SessionLost;
+                    self.retry_at = None;
                     self.pending_http = None;
                     self.pending_command = None;
                     self.needs_resume = false;
@@ -649,6 +656,7 @@ impl MultiplayerClient {
             self.pending_http = None;
             self.pending_command = None;
             self.connection = ConnectionState::SessionLost;
+            self.retry_at = None;
             self.needs_resume = false;
             self.voluntarily_left = true;
             return Ok(true);
