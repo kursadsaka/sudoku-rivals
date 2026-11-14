@@ -300,6 +300,8 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
             for size in [6, 9]:
                 bot = Bot(script); bots.append(bot)
                 tap('friend-start', True)
+                if app_snapshot() and not saved_client().get('voluntarily_left'):
+                    tap('live-recover', True); tap('live-reset-confirm', True)
                 if size == 9:
                     partner = bot.call({'type': 'create', 'name': 'WebBot', 'mode': mode, 'size': size})
                     code = partner['snapshot']['room_code']
@@ -391,20 +393,57 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
                 tap('rematch', True)
                 bot.call({'type':'command','command':{'type':'rematch'}})
                 until(lambda: app_snapshot()['match_id'] != old_match, 12, 'Mutual rematch did not create a new match')
-                leave_native()
+                ready_match(bot)
+                # Leaving removes the seat, including its score. Never invent zero or offer rematch.
                 bot.call({'type':'leave'})
+                until(lambda: app_snapshot()['phase'] == 'finished' and app_snapshot()['opponent'] is None)
+                assert app_snapshot()['result']['winner'] == app_snapshot()['own']['seat']
+                assert 'kazandın' in node('result-heading', True).attrib.get('text', '')
+                assert node('rematch', True).attrib.get('enabled') == 'false', 'Rematch offered without an opponent'
+                if mode == 'duel':
+                    assert 'Skor mevcut değil' in node('result-details', True).attrib.get('text', ''), 'Missing opponent score invented'
+                # A later room loss must not hide an already verified result.
+                if size == 9:
+                    server_stop(server)
+                    server = server_start()
+                    until(lambda: 'dönülemiyor' in node('connection-status', True).attrib.get('text', ''), 20)
+                    assert 'kazandın' in node('result-heading', True).attrib.get('text', '')
+                    assert 'kazanan ilan edilmedi' not in node('live-message', True).attrib.get('text', ''), 'Room-loss banner contradicts verified result'
+                    assert node('rematch', True).attrib.get('enabled') == 'false'
+                    tap('home', True)
+                    node('friend-start', True)
+                else:
+                    leave_native()
                 bot.close()
                 print(f'Android ↔ WASM HTTP {mode} {size}x{size}: full match/rematch/leave passed', flush=True)
-        # A fresh fifth room exercises process restart without inventing a winner.
-        bot = Bot(script); bots.append(bot)
-        tap('friend-start', True); tap('mode-race', True); tap('board-size-6', True); tap('room-create', True)
-        until(lambda: app_snapshot() is not None and app_snapshot()['mode'] == 'race' and not saved_client().get('voluntarily_left'))
-        bot.call({'type':'join','invite':app_snapshot()['room_code'],'name':'WebBot'})
-        ready_match(bot)
-        server_stop(server)
-        server = server_start()
-        until(lambda: 'sürdürülemiyor' in node('result-heading', True).attrib.get('text',''), 20, 'Restart was not presented as lost session')
-        assert app_snapshot()['result'] is None, 'Restart invented a result'
+        # Loss without a verified result must describe only data that this mode preserves.
+        for mode in ['race', 'duel']:
+            bot = Bot(script); bots.append(bot)
+            tap('friend-start', True)
+            # A lost old session requires an explicit reset before a new room.
+            if app_snapshot() and not saved_client().get('voluntarily_left'):
+                tap('live-recover', True); tap('live-reset-confirm', True)
+            tap('mode-'+mode, True); tap('board-size-6', True); tap('room-create', True)
+            until(lambda: app_snapshot() is not None and app_snapshot()['mode'] == mode and not saved_client().get('voluntarily_left'))
+            bot.call({'type':'join','invite':app_snapshot()['room_code'],'name':'WebBot'})
+            ready_match(bot)
+            proxy.offline = True
+            until(lambda: 'Sunucuya ulaşılamıyor' in node('live-message', True).attrib.get('text', ''), 20)
+            message = node('live-message', True).attrib.get('text', '')
+            assert ('Yerel yarış' in message) == (mode == 'race'), 'Disconnect copy claims a race draft in duel'
+            server_stop(server)
+            server = server_start()
+            proxy.offline = False
+            until(lambda: 'sürdürülemiyor' in node('result-heading', True).attrib.get('text',''), 20, 'Restart was not presented as lost session')
+            calls_after_loss = len(proxy.calls)
+            time.sleep(3)
+            assert 'dönülemiyor' in node('connection-status', True).attrib.get('text', ''), 'Lost session resumed itself'
+            assert len(proxy.calls) == calls_after_loss, 'Terminal session loss continued retrying HTTP'
+            assert app_snapshot()['result'] is None, 'Restart invented a result'
+            detail = node('result-details', True).attrib.get('text', '')
+            assert ('Yerel yarış' in detail) == (mode == 'race'), 'Lost-session copy claims a race draft in duel'
+            tap('home', True)
+            print(f'Android {mode}: disconnect and unrecoverable-session copy passed', flush=True)
         stop()
         write('live-session.json',b'{broken-live-record')
         launch(False)
@@ -413,7 +452,7 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
         assert read('live-session.json') == b'{broken-live-record', 'Corrupt session silently replaced'
         tap('live-recover',True); tap('live-reset-confirm',True)
         assert any(read(name) == b'{broken-live-record' for name in private_files() if name.startswith('live-session-recovery-'))
-        print('Android multiplayer passed: two modes/two sizes, deep links, exact lost-response retry, 40 offline edits/single sync, cold restart, explicit reconciliation, failed-save retry, corrupt-record preservation, 90-second timer, mutual rematch, explicit leave and server restart', flush=True)
+        print('Android multiplayer passed: two modes/two sizes, deep links, exact lost-response retry, 40 offline edits/single sync, cold restart, explicit reconciliation, failed-save retry, corrupt-record preservation, 90-second timer, mutual rematch, missing-opponent score/rematch, verified-result preservation, mode-specific failure copy, explicit leave and server restart', flush=True)
     finally:
         for bot in bots: bot.close()
         if proxy: proxy.shutdown(); proxy.server_close()

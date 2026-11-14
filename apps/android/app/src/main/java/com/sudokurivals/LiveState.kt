@@ -406,7 +406,11 @@ internal class LiveState(directory: File) {
                     if (!destroyed && transportEpoch == epoch && activeId == id) {
                         activeId = null
                         connection = null
-                        message = "Sunucuya ulaşılamıyor. Yerel yarış değişikliklerin korunuyor."
+                        message = when (snapshot()?.optString("mode")) {
+                            "race" -> "Sunucuya ulaşılamıyor. Yerel yarış değişikliklerin korunuyor."
+                            "duel" -> "Sunucuya ulaşılamıyor. Yeniden bağlanılacak; düello hamleleri ve sonuç sunucu onayı bekliyor."
+                            else -> "Sunucuya ulaşılamıyor. Yeniden bağlanılacak."
+                        }
                         dispatch(JSONObject().put("type", "network_failed").put("request_id", id), quiet = true)
                     }
                 }
@@ -416,6 +420,7 @@ internal class LiveState(directory: File) {
     fun tick() {
         if (!foreground || destroyed || protectedSave || !visible || view.optBoolean("voluntarily_left")) return
         refresh()
+        if (view.optString("connection") == "session_lost") return
         val time = SystemClock.elapsedRealtime()
         val retryAt = if (view.isNull("retry_at_ms")) null else view.optLong("retry_at_ms")
         if (activeId != null || deferredRequest != null || storageError) return
@@ -449,7 +454,7 @@ internal class LiveState(directory: File) {
     }
     private fun safeServerMessage(raw: String): String = when (runCatching { JSONObject(raw).optString("error") }.getOrNull()) {
         "room_full" -> "Oda dolu. Başka bir davet kullanabilirsin."
-        "room_missing", "room_closed" -> "Oda kapandı veya sunucu yeniden başladı. Maç sonucu kurtarılamadı; kazanan ilan edilmedi."
+        "room_missing", "room_closed" -> "Oda kapandı veya sunucu yeniden başladı. Bu oturumla odaya dönülemiyor."
         "unauthorized" -> "Bu oturumla odaya dönülemiyor. Yerel kayıt korunuyor."
         "rate_limited", "capacity" -> "Sunucu şu anda yeni işlem kabul etmiyor. Biraz bekleyip tekrar dene."
         "stale_generation", "stale_match", "sequence_gap", "sequence_conflict" -> "Oturum eşitleniyor. Yerel değişikliklerin korunuyor."
