@@ -1,5 +1,7 @@
 # Android API 36 / 16 KB release preparation
 
+Follow-up: the full Android multiplayer matrix now passes on both the G14 and API36 APKs in the same API36/16KB emulator after test-fixture/lifecycle hardening. The failed attempts below are historical. See [comparison, regression proof and final results](android-multiplayer-investigation.md).
+
 Base: `origin/agent/g14-integration` at `c6930b0d8b4ec6fd74a7aa4d4e5e493041f25b6f`, fetched 2026-11-15. Isolated branch `agent/android-api36-prep`; no G16 checkout edits.
 
 ## Toolchain and policy
@@ -47,7 +49,7 @@ The build script defaults to `assembleDebug` and always rebuilds both arm64-v8a 
 - APK badging confirms package ID unchanged, compile/target SDK 36, min SDK 26. `apksigner verify` rejects unsigned release APK; `jarsigner -verify` reports AAB unsigned. No release key was provided or created.
 - Isolated API 35 / 4096-byte emulator: solo and full G14 lifecycle suite passed, including verified race/duel results surviving expiry/cold restore. These ran the first API36-targeted APK before the lint/config-only follow-up.
 - First API35 multiplayer attempt: post-leave replay and race 6x6 passed, then missing `room-join` at line 324. Investigation found the harness swipes at (540,1620) on an emulator still configured to 320x640 for solo; those coordinates are outside the display. Do not count this attempt as a full pass. The final APK was rerun at the harness's intended 1080x1920 / 420dpi; application invite logic is unchanged.
-- Final APK API35 multiplayer retry also FAILED, at `tests/android-multiplayer.py:368`: `Divergent race board did not require explicit choice`. The 40-edit draft/cold-restore assertions passed and the external seat sync returned HTTP 200, but persisted `reconcile` did not become true within 20 s. Diagnostics showed race/playing/generation=2 and successful state polls. This is a separate unresolved acceptance blocker; no full Android multiplayer matrix pass is claimed. No unrelated match/client behavior was changed to make the test pass. See `.tools/android-multiplayer-retry.log` and `.tools/multiplayer-retry-status.log`.
+- Final APK API35 multiplayer retry also FAILED, at `tests/android-multiplayer.py:368`: `Divergent race board did not require explicit choice`. The 40-edit draft/cold-restore assertions passed and the external seat sync returned HTTP 200, but persisted `reconcile` did not become true within 20 s. Diagnostics showed race/playing/generation=2 and successful state polls. This was the initial unresolved acceptance blocker (superseded by the passing follow-up linked above); no full Android multiplayer matrix pass is claimed. No unrelated match/client behavior was changed to make the test pass. See `.tools/android-multiplayer-retry.log` and `.tools/multiplayer-retry-status.log`.
 - Final API 36 / 16 KB x86_64 emulator: `ro.build.version.sdk=36`, `getconf PAGE_SIZE=16384`; final APK installed successfully. Full 320dp solo suite passed. Full G14 lifecycle suite also passed: slow create, Home/reopen exact setup replay, lost leave with background and process death, verified race/duel results surviving expiry/cold restore, atomic backup and new-room creation. Final status: `boot=0 solo=0 lifecycle=0`; lifecycle duration 216 s.
 
 ## Remaining limits

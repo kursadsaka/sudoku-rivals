@@ -267,6 +267,49 @@ fn processed_pending_is_reconciled_from_poll_without_resending_wrong_penalty() {
 }
 
 #[test]
+fn cold_resume_distinguishes_uncertain_sync_ack_from_divergence() {
+    for size in [6, 9] {
+        for remote_value in [1, 3] {
+            let (mut service, mut a, _) = started(Mode::Race, size);
+            let initial = snapshot(&a, 3000);
+            let index = initial.own.givens.iter().position(|&v| v == 0).unwrap();
+            set(&mut a, index, 1, 4000);
+            let uncertain = req(&mut a, json!({"type":"sync"}), 4000);
+            act(&mut a, json!({"type":"network_failed"}), 4001);
+            for edit in 1..40 {
+                set(&mut a, index, if edit % 2 == 0 { 1 } else { 2 }, 4002);
+            }
+            let mut foreign: Envelope = serde_json::from_str(&uncertain.body).unwrap();
+            if let Command::Sync { cells, .. } = &mut foreign.command {
+                cells[index] = remote_value;
+            }
+            let result = service.command(&initial.room_code, &foreign, 4500).unwrap();
+            assert_eq!(result.receipt.code, Code::Ok);
+            assert_eq!(result.snapshot.own.board_version, 1);
+            let mut restored = MultiplayerClient::load(&a.save().unwrap()).unwrap();
+            drive(&mut service, &mut restored, json!({"type":"resume"}), 5000);
+            let current = view(&restored, 5000);
+            assert_eq!(current["race"]["cells"][index], 2);
+            assert_eq!(current["race"]["dirty"], true);
+            assert_eq!(current["pending_command"], false);
+            assert_eq!(current["reconcile_required"], remote_value != 1);
+            let saved: Value = serde_json::from_str(&restored.save().unwrap()).unwrap();
+            let draft: Value = serde_json::from_str(saved["draft"].as_str().unwrap()).unwrap();
+            assert_eq!(draft["undo"].as_array().unwrap().len(), 40);
+            if remote_value != 1 {
+                act(
+                    &mut restored,
+                    json!({"type":"reconcile","keep_local":true}),
+                    5000,
+                );
+            }
+            drive(&mut service, &mut restored, json!({"type":"sync"}), 6000);
+            assert_eq!(view(&restored, 6000)["race"]["dirty"], false);
+        }
+    }
+}
+
+#[test]
 fn divergent_server_board_requires_explicit_reconcile_and_restart_keeps_draft() {
     let (mut service, mut a, _) = started(Mode::Race, 6);
     let initial = snapshot(&a, 3000);
