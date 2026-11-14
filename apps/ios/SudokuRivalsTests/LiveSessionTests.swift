@@ -14,6 +14,10 @@ final class FaultTransport {
     var offline = false
     /// Forwards the request but loses the response once, like a dropped connection.
     var dropNextCommand: String?
+    /// Forwards the next request to this exact path but loses its response once.
+    var dropNextPath: String?
+    /// Holds the next forwarded request until opened, so it is still in flight.
+    var holdNext: Gate?
     let upstream: LiveSession.Transport?
 
     init(upstream: LiveSession.Transport? = nil) { self.upstream = upstream }
@@ -24,9 +28,17 @@ final class FaultTransport {
             if self.offline { throw URLError(.notConnectedToInternet) }
             self.calls.append(Call(path: request.url?.path ?? "", body: body))
             guard let upstream = self.upstream else { throw URLError(.cannotConnectToHost) }
+            if let gate = self.holdNext {
+                self.holdNext = nil
+                await gate.wait()
+            }
             let result = try await upstream(request)
             if let drop = self.dropNextCommand, body.contains(#""type":"\#(drop)""#) {
                 self.dropNextCommand = nil
+                throw URLError(.networkConnectionLost)
+            }
+            if let drop = self.dropNextPath, request.url?.path == drop {
+                self.dropNextPath = nil
                 throw URLError(.networkConnectionLost)
             }
             return result
@@ -357,6 +369,75 @@ struct LiveServerTests {
         for text in [host.message, guest.message, host.inviteURL?.absoluteString].compactMap({ $0 }) {
             #expect(!text.contains(auth.token) && !text.contains(auth.guest))
         }
+        try await leave(host, guest)
+    }
+
+    /// G14: after leaving, a new room whose response is lost is retried with the
+    /// exact body (live, after backgrounding an in-flight setup, and after a cold
+    /// restore) and the departed room is never resumed or polled again.
+    @Test func newRoomAfterLeaveRecoversLostSetupLiveAndRestored() async throws {
+        let (host, guest, hostFault, guestFault) = try await startMatch(mode: "race", size: 6)
+        let oldRoom = try #require(host.snapshot?.roomCode)
+        try await leave(host, guest)
+        let afterLeave = (hostFault.calls.count, guestFault.calls.count)
+
+        // Host: the setup is in flight when the app goes to the background.
+        host.open()
+        let gate = Gate()
+        hostFault.holdNext = gate
+        host.create()
+        try await waitFor { hostFault.calls.count > afterLeave.0 }
+        #expect(host.view.pendingHttp && host.view.voluntarilyLeft)
+        host.setForeground(false)
+        #expect(host.view.retryAtMs != nil, "backgrounded setup was not marked failed")
+        await gate.open()
+        host.setForeground(true)
+        try await pump([host]) { host.snapshot.map { $0.roomCode != oldRoom } ?? false && !host.view.voluntarilyLeft }
+        let hostCalls = hostFault.calls.dropFirst(afterLeave.0)
+        #expect(hostCalls.count >= 2 && hostCalls.allSatisfy { $0.path == "/v1/rooms" || !$0.path.contains(oldRoom) })
+        let hostCreates = hostCalls.filter { $0.path == "/v1/rooms" }
+        #expect(hostCreates.count == 2 && hostCreates[0].body == hostCreates[1].body, "setup retry changed the body")
+
+        // Guest: the response is lost, then the app is cold-restored from disk.
+        guest.open()
+        guestFault.dropNextPath = "/v1/rooms"
+        guest.create()
+        try await waitFor { guest.view.retryAtMs != nil }
+        #expect(guest.view.pendingHttp && guest.view.voluntarilyLeft)
+        guest.setForeground(false)
+        let restored = LiveSession(store: guest.store, origin: origin, transport: guestFault.transport)
+        restored.open()
+        try await pump([restored]) { restored.snapshot.map { $0.roomCode != oldRoom } ?? false && !restored.view.voluntarilyLeft }
+        let guestCalls = guestFault.calls.dropFirst(afterLeave.1)
+        #expect(guestCalls.allSatisfy { $0.path == "/v1/rooms" || !$0.path.contains(oldRoom) })
+        let guestCreates = guestCalls.filter { $0.path == "/v1/rooms" }
+        #expect(guestCreates.count == 2 && guestCreates[0].body == guestCreates[1].body, "restored retry changed the body")
+        #expect(restored.snapshot?.roomCode != host.snapshot?.roomCode)
+        host.confirmLeave()
+        restored.confirmLeave()
+        try await pump([host, restored]) { host.view.voluntarilyLeft && restored.view.voluntarilyLeft }
+    }
+
+    /// G14: a rematch queued while the friend is disconnected starts when the
+    /// friend resumes, with no second rematch command from either side.
+    @Test func queuedRematchStartsWhenDisconnectedFriendResumes() async throws {
+        let (host, guest, hostFault, guestFault) = try await startMatch(mode: "duel", size: 6)
+        guest.command("resign")
+        try await pump([host, guest]) { host.snapshot?.phase == "finished" && guest.snapshot?.phase == "finished" }
+        let old = try #require(host.snapshot?.matchId)
+        guest.command("rematch")
+        try await pump([host, guest]) { !guest.view.pendingCommand && host.snapshot?.opponent?.rematch == true }
+        guest.setForeground(false)
+        try await pump([host], timeout: .seconds(40)) { host.snapshot?.opponent?.connected == false }
+        #expect(host.snapshot?.opponent?.rematch == true, "disconnect dropped the queued rematch")
+        host.command("rematch")
+        try await pump([host]) { !host.view.pendingCommand }
+        #expect(host.snapshot?.matchId == old && host.snapshot?.own.rematch == true)
+        guest.setForeground(true)
+        try await pump([host, guest]) {
+            host.snapshot.map { $0.matchId != old } ?? false && guest.snapshot?.matchId == host.snapshot?.matchId
+        }
+        #expect(hostFault.commands("rematch").count == 1 && guestFault.commands("rematch").count == 1)
         try await leave(host, guest)
     }
 

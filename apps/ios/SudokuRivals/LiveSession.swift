@@ -244,7 +244,8 @@ final class LiveSession {
         if !active {
             if holdsSeat { resumeRequired = true }
             cancelTransport()
-            if !view.voluntarilyLeft && (snapshot != nil || view.pendingHttp) {
+            // A new room setup after leaving is still ours to recover; the departed room is not.
+            if view.pendingHttp || (!view.voluntarilyLeft && snapshot != nil) {
                 dispatch(["type": "network_failed"], quiet: true)
             }
             persist()
@@ -351,7 +352,8 @@ final class LiveSession {
 
     /// Called every 250 ms while the live screen is on screen.
     func tick() {
-        guard foreground, !protectedSave, visible, !view.voluntarilyLeft else { return }
+        // After leaving, only a pending new create/join may run; the old room is never polled or resumed.
+        guard foreground, !protectedSave, visible, !view.voluntarilyLeft || view.pendingHttp else { return }
         refresh()
         let time = now()
         if activeId != nil || deferred != nil || storageError { return }

@@ -1,5 +1,5 @@
 // Bump this version when shipping changed app or WASM assets.
-const CACHE = 'sudoku-rivals-app-v3';
+const CACHE = 'sudoku-rivals-app-v4';
 const ASSETS = ['/', '/index.html', '/main.js', '/session.js', '/live.js', '/styles.css',
   '/icon.svg', '/manifest.webmanifest', '/pkg/sudoku_wasm.js', '/pkg/sudoku_wasm_bg.wasm'];
 self.addEventListener('install', event => {
