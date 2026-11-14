@@ -47,18 +47,16 @@ struct HomeView: View {
                 .foregroundStyle(Theme.onAccent)
                 .accessibilityIdentifier("solo-start")
 
-                // Live matches arrive in G13; no placeholder behaviour here.
-                VStack(alignment: .leading, spacing: 4) {
-                    Button {} label: {
-                        Text(L10n.t("home.friends")).font(.headline).frame(maxWidth: .infinity, minHeight: 48)
+                Button { app.openLive() } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(L10n.t("home.friends")).font(.title3.bold())
+                        Text(L10n.t("home.friendsDetail")).font(.subheadline)
                     }
-                    .buttonStyle(.bordered)
-                    .disabled(true)
-                    .accessibilityHint(L10n.t("home.friendsPending"))
-                    .accessibilityIdentifier("friend-start")
-                    Text(L10n.t("home.friendsPending")).font(.footnote).foregroundStyle(Theme.muted)
-                        .accessibilityHidden(true)
+                    .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                    .padding(.vertical, 8)
                 }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("friend-start")
 
                 let ready = SoloStore.sizes.filter { app.status($0).isReadable }
                 if !ready.isEmpty {

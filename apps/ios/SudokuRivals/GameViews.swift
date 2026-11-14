@@ -72,7 +72,7 @@ struct PlayingView: View {
                     .accessibilityIdentifier("pause")
             }
         }
-        .background { keyboardOnlyShortcuts }
+        .background { ArrowKeys { session.move(rowDelta: $0, columnDelta: $1) } }
         .background { DeleteKeyCatcher { if session.canEdit { report(session.erase()) } }.accessibilityHidden(true) }
         .onChange(of: session.game) { hint = nil }
     }
@@ -104,7 +104,7 @@ struct PlayingView: View {
 
     @ViewBuilder private var controls: some View {
         selectionLine
-        NumberPad(session: session) { report(session.enter($0)) }
+        NumberPad(size: session.size, notesMode: session.notesMode, enabled: session.canEdit) { report(session.enter($0)) }
         tools
         if let hint { hintCard(hint) }
         if let notice {
@@ -200,14 +200,18 @@ struct PlayingView: View {
 
     private func say(_ text: String) { notice = text; announce(text) }
     private func announce(_ text: String) { AccessibilityNotification.Announcement(text).post() }
+}
 
-    /// Arrow keys have no on-screen button; these invisible buttons carry the shortcuts.
-    private var keyboardOnlyShortcuts: some View {
+/// Arrow keys have no on-screen button; these invisible buttons carry the shortcuts.
+struct ArrowKeys: View {
+    let move: (Int, Int) -> Void
+
+    var body: some View {
         ZStack {
-            Button("") { session.move(rowDelta: -1, columnDelta: 0) }.keyboardShortcut(.upArrow, modifiers: [])
-            Button("") { session.move(rowDelta: 1, columnDelta: 0) }.keyboardShortcut(.downArrow, modifiers: [])
-            Button("") { session.move(rowDelta: 0, columnDelta: -1) }.keyboardShortcut(.leftArrow, modifiers: [])
-            Button("") { session.move(rowDelta: 0, columnDelta: 1) }.keyboardShortcut(.rightArrow, modifiers: [])
+            Button("") { move(-1, 0) }.keyboardShortcut(.upArrow, modifiers: [])
+            Button("") { move(1, 0) }.keyboardShortcut(.downArrow, modifiers: [])
+            Button("") { move(0, -1) }.keyboardShortcut(.leftArrow, modifiers: [])
+            Button("") { move(0, 1) }.keyboardShortcut(.rightArrow, modifiers: [])
         }
         .opacity(0)
         .accessibilityHidden(true)
@@ -242,21 +246,23 @@ struct ToolButton: View {
 }
 
 struct NumberPad: View {
-    let session: SoloSession
+    let size: Int
+    let notesMode: Bool
+    let enabled: Bool
     let enter: (Int) -> Void
 
     var body: some View {
-        let n = session.size
+        let n = size
         let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: n == 6 ? 6 : 5)
         LazyVGrid(columns: columns, spacing: 8) {
             ForEach(1...n, id: \.self) { digit in
                 Button { enter(digit) } label: {
                     Text("\(digit)")
-                        .font(.title.weight(session.notesMode ? .regular : .semibold))
+                        .font(.title.weight(notesMode ? .regular : .semibold))
                         .frame(maxWidth: .infinity, minHeight: 56)
                 }
                 .buttonStyle(.bordered)
-                .disabled(!session.canEdit)
+                .disabled(!enabled)
                 .keyboardShortcut(KeyEquivalent(Character("\(digit)")), modifiers: [])
                 .accessibilityLabel(L10n.t("digit.label", ["digit": digit]))
                 .accessibilityIdentifier("number-\(digit)")
@@ -267,11 +273,40 @@ struct NumberPad: View {
     }
 }
 
+/// What a board shows. Solo and live games fill it from their own state.
+struct BoardContent {
+    let size: Int
+    let values: [Int]
+    let givens: [Int]
+    let notes: (Int) -> [Int]
+    let conflicts: Set<Int>
+    let selected: Int
+    /// Duel cells the server has locked after a correct entry.
+    var locked: (Int) -> Bool = { _ in false }
+
+    /// 6×6 boxes are 2 rows × 3 columns; 9×9 boxes are 3 × 3.
+    var boxRows: Int { size == 6 ? 2 : 3 }
+}
+
 struct BoardView: View {
-    let session: SoloSession
+    let content: BoardContent
+    let select: (Int) -> Void
+
+    init(content: BoardContent, select: @escaping (Int) -> Void) {
+        self.content = content
+        self.select = select
+    }
+
+    init(session: SoloSession) {
+        let board = session.board
+        self.init(content: BoardContent(size: board.size, values: board.cells.map(\.value), givens: board.givens,
+                                        notes: board.notes, conflicts: session.conflicts, selected: session.selected)) {
+            session.selected = $0
+        }
+    }
 
     var body: some View {
-        let board = session.board, n = board.size
+        let n = content.size
         Color.clear
             .aspectRatio(1, contentMode: .fit)
             .overlay {
@@ -281,12 +316,12 @@ struct BoardView: View {
                         ForEach(0..<n, id: \.self) { row in
                             HStack(spacing: 0) {
                                 ForEach(0..<n, id: \.self) { column in
-                                    CellView(session: session, index: row * n + column, side: cell)
+                                    CellView(content: content, index: row * n + column, side: cell, select: select)
                                 }
                             }
                         }
                     }
-                    .overlay { GridLines(n: n, boxRows: board.boxRows).allowsHitTesting(false).accessibilityHidden(true) }
+                    .overlay { GridLines(n: n, boxRows: content.boxRows).allowsHitTesting(false).accessibilityHidden(true) }
                 }
             }
             .accessibilityElement(children: .contain)
@@ -316,24 +351,25 @@ struct GridLines: View {
 }
 
 struct CellView: View {
-    let session: SoloSession
+    let content: BoardContent
     let index: Int
     let side: CGFloat
+    let select: (Int) -> Void
 
     var body: some View {
-        let board = session.board, n = board.size
+        let n = content.size
         let row = index / n, column = index % n
-        let cell = board.cells[index]
-        let given = board.isGiven(index)
-        let conflict = session.conflicts.contains(index)
-        let selected = session.selected == index
-        let notes = board.notes(index)
+        let value = content.values[index]
+        let given = content.givens[index] != 0
+        let conflict = content.conflicts.contains(index)
+        let selected = content.selected == index
+        let notes = content.notes(index)
 
-        Button { session.selected = index } label: {
+        Button { select(index) } label: {
             ZStack {
                 Rectangle().fill(background(selected: selected, row: row, column: column))
-                if cell.value != 0 {
-                    Text("\(cell.value)")
+                if value != 0 {
+                    Text("\(value)")
                         .font(.system(size: side * 0.58, weight: given ? .bold : .regular, design: .rounded))
                         .foregroundStyle(conflict ? Theme.error : given ? Theme.foreground : Theme.accent)
                 } else if !notes.isEmpty {
@@ -351,14 +387,14 @@ struct CellView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(label(row: row, column: column, value: cell.value, given: given, notes: notes, conflict: conflict))
+        .accessibilityLabel(label(row: row, column: column, value: value, given: given, notes: notes, conflict: conflict))
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier("cell-\(row + 1)-\(column + 1)")
     }
 
     private func background(selected: Bool, row: Int, column: Int) -> Color {
         if selected { return Theme.selected }
-        let n = session.size, boxRows = session.board.boxRows, s = session.selected
+        let n = content.size, boxRows = content.boxRows, s = content.selected
         let peer = s / n == row || s % n == column || (s / n / boxRows == row / boxRows && s % n / 3 == column / 3)
         return peer ? Theme.selected.opacity(0.35) : Color(uiColor: .systemBackground)
     }
@@ -366,7 +402,7 @@ struct CellView: View {
     private func label(row: Int, column: Int, value: Int, given: Bool, notes: [Int], conflict: Bool) -> String {
         L10n.t("cell.label", [
             "row": row + 1, "column": column + 1,
-            "kind": L10n.t(given ? "game.given" : "game.editable"),
+            "kind": L10n.t(given ? "game.given" : content.locked(index) ? "game.locked" : "game.editable"),
             "value": value == 0 ? L10n.t("game.empty") : "\(value)",
             "notes": notes.isEmpty ? L10n.t("game.noNotes") : notes.map(String.init).joined(separator: " "),
             "conflict": conflict ? L10n.t("cell.conflict") : "",

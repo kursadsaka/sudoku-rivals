@@ -13,6 +13,8 @@ struct SudokuRivalsApp: App {
         .onChange(of: scenePhase) { _, phase in
             // Local solo time stops in the background; the game is saved there too.
             if phase == .background, app.screen == .game { app.session?.pause() }
+            // Live: drop the transport and save in the background; resume with a new generation on return.
+            if phase == .background || phase == .active { app.live.setForeground(phase == .active) }
         }
     }
 }
@@ -26,22 +28,39 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 }
 
+@MainActor
 @Observable
 final class AppModel {
-    enum Screen { case home, setup, game }
+    enum Screen { case home, setup, game, live }
     var screen: Screen = .home
     var session: SoloSession?
     private(set) var slots: [Int: SlotStatus] = [:]
     private(set) var store = SoloStore.standard
     var setupError: String?
     private var seedOverride: UInt32?
+    let live: LiveSession
 
     init() {
+        var liveStore = LiveStore.standard
+        var liveOrigin = LiveSession.releaseOrigin
         #if DEBUG
-        applyTestHooks(ProcessInfo.processInfo.environment)
+        let env = ProcessInfo.processInfo.environment
+        // Simulator reaches the Mac's loopback; `cargo run -p sudoku-server` listens on :3000.
+        liveOrigin = env["LIVE_TEST_ORIGIN"] ?? "http://127.0.0.1:3000"
+        if env["LIVE_TEST_RESET"] == "1" { try? FileManager.default.removeItem(at: liveStore.directory) }
+        liveStore.failWrites = env["LIVE_TEST_FAIL_WRITES"] == "1"
+        #endif
+        live = LiveSession(store: liveStore, origin: liveOrigin)
+        #if DEBUG
+        applyTestHooks(env)
         #endif
         refreshSlots()
+        live.onHome = { [unowned self] in screen = .home }
+        // A match that still holds our seat reopens after a cold start.
+        if live.visible { screen = .live }
     }
+
+    func openLive() { screen = .live }
 
     func refreshSlots() {
         slots = Dictionary(uniqueKeysWithValues: SoloStore.sizes.map { ($0, store.read($0)) })
@@ -115,6 +134,7 @@ struct RootView: View {
             Group {
                 switch app.screen {
                 case .home: HomeView(app: app)
+                case .live: LiveScreen(live: app.live)
                 case .setup: SetupView(app: app)
                 case .game:
                     if let session = app.session { GameScreen(app: app, session: session) } else { HomeView(app: app) }

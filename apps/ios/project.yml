@@ -39,14 +39,21 @@ targets:
   SudokuRivalsUITests:
     type: bundle.ui-testing
     platform: iOS
-    sources: [SudokuRivalsUITests]
+    sources:
+      - SudokuRivalsUITests
+      # The live-match opponent runs in the test process on the same adapter and Rust client.
+      - SudokuRivals/LiveSession.swift
+      - SudokuRivals/Strings.swift
+      - generated/sudoku_ffi.swift
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.example.sudokurivals.uitests
+        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/generated"
         EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
     dependencies:
       - target: SudokuRivals
+      - framework: generated/SudokuFFI.xcframework
 schemes:
   SudokuRivals:
     build:
