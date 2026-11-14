@@ -50,3 +50,7 @@ Yerel üç Codex B işçisi 00:27 kullanım limitine takıldı; yenilenme saati 
 Parent G11 için `/health`, allowlist statik varlık sunumu ve `/r/CODE` girişi ekledi; aynı origin `/v1` kullanılır. Dosya sızmasını engelleyen gerçek HTTP testleri eklendi. Ortak istemci object bağlamaları UniFFI/WASM tarafında yazıldı; `cargo check --workspace` geçti. Bunlar henüz G07 bot testlerinin geçtiği anlamına gelmez.
 
 Kullanıcının Chromium Modern Web Guidance 1.0 ve Vercel UI SDK sorusu resmî kaynaklarla yanıtlandı: ikisi de şu an kurulu/kullanılıyor değil. MWG geliştirme rehberi, UI SDK beta davranış kütüphanesi olarak ayrıldı; soru tek başına yeni bağımlılık veya skill kurulumu yetkisi olarak yorumlanmadı.
+
+## G16 Render Free — Fable sonrası takip
+
+Kullanıcının bildirdiği kartsız Render Free staging kurulmuş ve testten sonra askıya alınmış durumda; auto deploy kapalı. `agent/g16-render-free` üzerinde public oda sınırı 32, bellekte statik varlıklar/ETag ve 128 MiB süreç bütçesi, aynı lobi kurulum tekrarında kota tüketmeme eklendi. 89 Rust testi ve izole gerçek public bind üzerinde statik bütçe tükenmesi sonrası dört HTTP maç kombinasyonu geçti. Render ayarı/servisi değiştirilmedi; final gönderim incelemesi Fable için bekliyor. Native linklerin eksik adımları ve kanıt: [G16 takip](validation/g16-render-hardening.md).

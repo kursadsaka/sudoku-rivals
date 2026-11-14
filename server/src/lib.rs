@@ -14,6 +14,8 @@ const LOBBY_MS: u64 = 1_800_000;
 const RESULT_MS: u64 = 600_000;
 const CLOSED_MS: u64 = 86_400_000;
 const MAX_ROOMS: usize = 128;
+const MAX_PUBLIC_ROOMS: usize = 32;
+pub(crate) const PUBLIC_INGRESS: &str = "public-ingress";
 const MAX_RECEIPTS: usize = 16_384;
 
 pub use sudoku_core::protocol::*;
@@ -866,12 +868,9 @@ impl Service {
         } else {
             5
         };
-        Self::limit(&mut self.create_attempts, peer, now, max)?;
         if !valid_name(&name) || ![6, 9].contains(&size) {
+            Self::limit(&mut self.create_attempts, peer, now, max)?;
             return Err(Error::InvalidInput);
-        }
-        if self.rooms.len() >= MAX_ROOMS {
-            return Err(Error::Capacity);
         }
         let guest = self.guest(guest)?;
         if let Some(session) = self.replay(
@@ -881,6 +880,15 @@ impl Service {
             now,
         ) {
             return Ok(session);
+        }
+        Self::limit(&mut self.create_attempts, peer, now, max)?;
+        let room_limit = if peer == PUBLIC_INGRESS {
+            MAX_PUBLIC_ROOMS
+        } else {
+            MAX_ROOMS
+        };
+        if self.rooms.len() >= room_limit {
+            return Err(Error::Capacity);
         }
         if self.occupied(&guest) {
             return Err(Error::InvalidInput);
@@ -924,8 +932,8 @@ impl Service {
         } else {
             10
         };
-        Self::limit(&mut self.join_attempts, peer, now, max)?;
         if !valid_name(&name) {
+            Self::limit(&mut self.join_attempts, peer, now, max)?;
             return Err(Error::InvalidInput);
         }
         let code = normalized_code(code)?;
@@ -933,6 +941,7 @@ impl Service {
         if let Some(session) = self.replay(&guest, &name, |room, _| room.code == code, now) {
             return Ok(session);
         }
+        Self::limit(&mut self.join_attempts, peer, now, max)?;
         if self.occupied(&guest) {
             return Err(Error::InvalidInput);
         }
@@ -1228,5 +1237,136 @@ mod ingress_tests {
         assert!(final_state.server_ms >= 93_000);
         assert_eq!(final_state.phase, Phase::Finished);
         assert_eq!(final_state.own.score, 10);
+    }
+}
+
+#[cfg(test)]
+mod staging_limits {
+    use super::*;
+
+    #[test]
+    fn public_capacity_includes_retained_rooms_but_never_blocks_setup_replay() {
+        let mut service = Service::default();
+        let mut last = None;
+        for i in 0..MAX_PUBLIC_ROOMS {
+            last = Some(
+                service
+                    .create(
+                        PUBLIC_INGRESS,
+                        None,
+                        "A".into(),
+                        Mode::Race,
+                        6,
+                        i as u64 * 600_000,
+                    )
+                    .unwrap(),
+            );
+        }
+        let last = last.unwrap();
+        let now = MAX_PUBLIC_ROOMS as u64 * 600_000;
+        assert_eq!(
+            service
+                .create(PUBLIC_INGRESS, None, "New".into(), Mode::Race, 6, now)
+                .err(),
+            Some(Error::Capacity)
+        );
+        let replay = service
+            .create(
+                PUBLIC_INGRESS,
+                Some(last.guest.clone()),
+                "A".into(),
+                Mode::Race,
+                6,
+                now,
+            )
+            .unwrap();
+        assert_eq!(replay.token, last.token);
+        assert_eq!(service.rooms.len(), MAX_PUBLIC_ROOMS);
+        assert!(service
+            .state(&last.snapshot.room_code, &last.token, 1, now)
+            .is_ok());
+        // No shrinking of local-development capacity or eviction of existing seats.
+        assert!(service
+            .create("127.0.0.1", None, "Local".into(), Mode::Race, 6, now)
+            .is_ok());
+    }
+
+    #[test]
+    fn lost_setup_replays_do_not_spend_create_or_join_quota() {
+        let mut service = Service::default();
+        let a = service
+            .create(PUBLIC_INGRESS, None, "A".into(), Mode::Race, 6, 0)
+            .unwrap();
+        let code = a.snapshot.room_code.clone();
+        let b = service
+            .join(PUBLIC_INGRESS, &code, None, "B".into(), 0)
+            .unwrap();
+        for _ in 0..20 {
+            assert_eq!(
+                service
+                    .create(
+                        PUBLIC_INGRESS,
+                        Some(a.guest.clone()),
+                        "A".into(),
+                        Mode::Race,
+                        6,
+                        0
+                    )
+                    .unwrap()
+                    .token,
+                a.token
+            );
+            assert_eq!(
+                service
+                    .join(PUBLIC_INGRESS, &code, Some(b.guest.clone()), "B".into(), 0)
+                    .unwrap()
+                    .token,
+                b.token
+            );
+        }
+        assert_eq!(service.create_attempts[PUBLIC_INGRESS].len(), 1);
+        assert_eq!(service.join_attempts[PUBLIC_INGRESS].len(), 1);
+        for _ in 1..5 {
+            service
+                .create(PUBLIC_INGRESS, None, "New".into(), Mode::Race, 6, 0)
+                .unwrap();
+        }
+        assert_eq!(
+            service
+                .create(PUBLIC_INGRESS, None, "New".into(), Mode::Race, 6, 0)
+                .err(),
+            Some(Error::RateLimited)
+        );
+        assert!(service
+            .create(PUBLIC_INGRESS, Some(a.guest), "A".into(), Mode::Race, 6, 0)
+            .is_ok());
+        // Knowing a guest is insufficient to replay a different request.
+        assert_eq!(
+            service
+                .create(
+                    PUBLIC_INGRESS,
+                    Some(b.guest.clone()),
+                    "Other".into(),
+                    Mode::Race,
+                    6,
+                    0
+                )
+                .err(),
+            Some(Error::RateLimited)
+        );
+        for _ in 1..10 {
+            assert!(service
+                .join(PUBLIC_INGRESS, "222222", None, "New".into(), 0)
+                .is_err());
+        }
+        assert!(service
+            .join(PUBLIC_INGRESS, &code, Some(b.guest), "B".into(), 0)
+            .is_ok());
+        assert_eq!(
+            service
+                .join(PUBLIC_INGRESS, &code, None, "New".into(), 0)
+                .err(),
+            Some(Error::RateLimited)
+        );
     }
 }

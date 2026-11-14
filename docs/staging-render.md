@@ -2,8 +2,10 @@
 
 Bu yapılandırma yalnız ayrı, yeni bir staging Web Service içindir. Production,
 DNS, ücretli disk/veritabanı, mağaza veya imza anahtarı gerektirmez. Kaynak dal
-`agent/g16-render-free`; otomatik deploy kapalıdır. Gerçek servis URL'si henüz
-oluşturulmadı; aşağıdaki `<HOST>` bir placeholder'dır.
+`agent/g16-render-free`; otomatik deploy kapalıdır. Kullanıcının son bilgisine
+göre kartsız Free servis kurulmuş, test sonrası askıya alınmıştır. Bu kod turu
+Render servisine veya ayarlarına dokunmaz. `<HOST>` mevcut servisin hostname'i
+için bir placeholder'dır.
 
 ## Önce hesap kontrolü
 
@@ -23,7 +25,7 @@ Resmî kaynaklar (14 Kasım 2026 kontrolü):
 
 ## Kurulum
 
-Hesap kontrolü geçtikten sonra `render.yaml` ile yeni servis kur veya aynı
+Yeniden kurulum gerekirse hesap kontrolü sonrası `render.yaml` ile yeni servis kur veya aynı
 değerleri Web Service formunda kullan:
 
 - Runtime Rust, plan **Free**, Frankfurt, tek instance; disk/DB/autoscaling yok.
@@ -49,8 +51,10 @@ eksik/okunamayan public web dosyası başlangıcı durdurur. Yanlış web root i
 build checkout'una sessiz fallback yapılmaz.
 
 Loopback dışı bind otomatik olarak **ortak staging kotası** kullanır: tüm
-ziyaretçiler toplam 10 dakikada 5 create, 10 join denemesi paylaşır. Mevcut
-protokolde tekrarlar da bu giriş kotasını tüketir; kota dolunca 429 döner.
+ziyaretçiler toplam 10 dakikada 5 create, 10 join denemesi paylaşır. Aynı 256-bit
+guest, ad, mod/boyut ve lobi koltuğuna ait başarılı create/join tekrarları kotayı
+tüketmez. Farklı kurulumlar ve normal giriş retleri kotayı tüketir; dolunca 429
+döner. Misafir sırrını bilmeden tekrar istisnası kullanılamaz.
 `X-Forwarded-For`, `Forwarded`, `X-Real-IP` güvenilmez ve kota anahtarı yapılmaz.
 Proxy'nin loopback görünmesi yüksek yerel-test kotası sağlamaz. Bu küçük
 staging için bilinçli bir sınırdır; ziyaretçi başına IP adaleti sağlamaz.
@@ -64,7 +68,24 @@ API/health/hata yanıtları `no-store`; statik varlıklar revalidation ve
 `Referrer-Policy: no-referrer` kullanır. Token/guest URL'ye veya uygulama loguna
 eklenmez. İstek yolu dosya yoluna çevrilmez; yalnız sabit allowlist okunur.
 
+Statik varlıklar başlangıçta bir kez belleğe alınır; gövdeler her istekte
+yeniden okunup kopyalanmaz. İçerik ETag'i ile eşleşen GET 304 ve boş gövde verir.
+Public statik aktarım bütçesi süreç başına 128 MiB'dır; gövde boyutu ve istek
+başına muhafazakâr 1 KiB başlık payı atomik rezerve edilir. 304 başlık payını
+tüketir; HEAD muhafazakâr olarak gövde bedeliyle sayılır. Bütçe tükenince statik
+yollar 503 verir; health/API ve mevcut maçlar etkilenmez. Bütçe restart ile
+yenilenir. Bu aylık Render/billing limiti değildir: yeniden başlatmalar, küçük
+hata yanıtları, API ve platform trafiği ayrıca sayılır. Statik bütçe de kötüye
+kullanılarak yeni web yüklemeleri engellenebilir; test sonrası askıya alma
+koşulu sürer.
+
 ## RAM durumu ve ücretsiz servis davranışı
+
+Public süreçte kapalı/tutulan odalar dahil üst sınır 32'dir; yerelde 128 kalır.
+Mevcut koltuklar ve makbuzlar kapasite için silinmez; dolu kapasitede doğrulanmış
+aynı lobi kurulumu tekrar döner. 24 saatlik kapalı oda saklama nedeniyle yeni
+oda girişi uzun süre sınırlanabilir; bu bilinçli bellek/erişilebilirlik tercihidir.
+32 oda bir RSS garantisi değildir; en büyük makbuz birikimini azaltır.
 
 Free servis 15 dakika trafiksizlikte uyuyabilir; soğuk açılış yaklaşık bir
 dakika sürebilir. Native timeout'larında hata/retry görülmesi beklenir.
@@ -90,14 +111,24 @@ taşır; gerçek WASM, solo, UI sözleşmesi ve race/duel × 6/9 HTTP maç matri
 çalıştırır. Eksik WASM ile başlangıcın reddedildiğini de sınar. Public bind
 kotası ayrı HTTP regresyon testinde loopback üzerinden doğrulanır.
 
+Gerçek 0.0.0.0 bind'i yalnız izole ağ ad alanında sınanır:
+
+```sh
+unshare --user --map-root-user --net sh -c 'ip link set lo up && python3 tests/staging-package.py --public'
+```
+
+`--public`, `lo` dışında bir arayüz varsa çalışmayı reddeder; LAN portu açmak için
+kullanılmaz. Statik bütçe yerel WASM istekleriyle tüketilir, ardından aynı
+sunucuda dört gerçek istemci maç kombinasyonunun geçtiği doğrulanır.
+
 Render servisi kurulduğunda önce plan/build SHA/tek-instance ayarını tekrar
 doğrula, ardından HTTPS `/health`, `/`, `/r/ABC234`, JS/WASM MIME ve kaynak
 dosyalarının 404'ünü kontrol et. HTTPS yanıtı giriş sayfası/bot challenge
 olmamalı. İki tarayıcı bağlamıyla gerçek oda kur/katıl, hazır, sonuç, rövanş ve
 ayrılma deneyi yap; secret taşıyan cevapları rapora/loga basma. Geçici hata ve
-soğuk açılışta sonuç uydurulmadığını doğrula. Tam Node HTTP suite'i altı create
-denemesi yapar; 5/10 ortak public kotasını aşacağından public origin'de körlemesine
-çalıştırma. Dört mod/boyutu gerektiğinde kota pencerelerine bölerek doğrula.
+soğuk açılışta sonuç uydurulmadığını doğrula. Tam Node HTTP suite'i beş farklı
+oda ve kayıp yanıt tekrarları oluşturur; yeni kodla boş public kota penceresine
+sığar. Mevcut staging'de izinsiz çalıştırma; ortak kotayı tamamen tüketir.
 
 iOS/Android API origin'i ancak gerçek HTTPS servis URL'si belli olduğunda
 ayarlanabilir. Universal/App Links için gerçek imzalı app identifier ve APK

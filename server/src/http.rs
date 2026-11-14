@@ -1,13 +1,65 @@
 use crate::{CommandResponse, Envelope, Error, Mode, Session, SharedService, Snapshot, PROTOCOL};
 use axum::{
     extract::{ConnectInfo, DefaultBodyLimit, Path, State},
-    http::{StatusCode, Uri},
+    http::{HeaderMap, StatusCode, Uri},
     response::{IntoResponse, Response},
     routing::{get, post},
     Extension, Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::net::SocketAddr;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
+
+const PUBLIC_STATIC_BYTES: u64 = 128 * 1024 * 1024;
+
+struct Asset {
+    bytes: axum::body::Bytes,
+    etag: String,
+}
+struct StaticAssets {
+    files: HashMap<&'static str, Asset>,
+    remaining: AtomicU64,
+}
+impl StaticAssets {
+    fn load(config: &Config) -> Self {
+        let files = WEB_ASSETS
+            .iter()
+            .filter_map(|&(file, _)| {
+                let bytes = std::fs::read(config.web_root.join(file)).ok()?;
+                let mut hash = std::collections::hash_map::DefaultHasher::new();
+                bytes.hash(&mut hash);
+                Some((
+                    file,
+                    Asset {
+                        etag: format!("W/\"{:x}-{}\"", hash.finish(), bytes.len()),
+                        bytes: bytes.into(),
+                    },
+                ))
+            })
+            .collect();
+        Self {
+            files,
+            remaining: AtomicU64::new(if config.public_ingress {
+                PUBLIC_STATIC_BYTES
+            } else {
+                u64::MAX
+            }),
+        }
+    }
+
+    fn reserve(&self, bytes: u64) -> bool {
+        self.remaining
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
+                remaining.checked_sub(bytes)
+            })
+            .is_ok()
+    }
+}
 
 const WEB_ASSETS: &[(&str, &str)] = &[
     ("index.html", "text/html; charset=utf-8"),
@@ -54,7 +106,7 @@ impl Config {
         // shortcut: shared staging quota until the ingress IP-header contract is verified.
         // Never trust forwarded headers or grant a proxy the local-test quota.
         if self.public_ingress {
-            "public-ingress".into()
+            crate::PUBLIC_INGRESS.into()
         } else {
             peer.ip().to_string()
         }
@@ -233,7 +285,11 @@ async fn command(
 
 // Only known public build assets can be read; no request path is joined onto
 // the filesystem. Credentials, saves, sources and arbitrary files stay private.
-async fn web_asset(Extension(config): Extension<Config>, uri: Uri) -> Response {
+async fn web_asset(
+    Extension(assets): Extension<Arc<StaticAssets>>,
+    uri: Uri,
+    headers: HeaderMap,
+) -> Response {
     let path = uri.path();
     let invite = path.starts_with("/r/")
         && uri.query().is_none()
@@ -246,23 +302,51 @@ async fn web_asset(Extension(config): Extension<Config>, uri: Uri) -> Response {
     let Some(&(file, mime)) = WEB_ASSETS.iter().find(|(asset, _)| *asset == file) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    let root = config.web_root;
-    match tokio::task::spawn_blocking(move || std::fs::read(root.join(file))).await {
-        Ok(Ok(bytes)) => (
-            [
-                ("content-type", mime),
-                ("cache-control", "no-cache"),
-                ("x-content-type-options", "nosniff"),
-            ],
-            bytes,
-        )
-            .into_response(),
-        _ => (
+    let Some(asset) = assets.files.get(file) else {
+        return (
             StatusCode::SERVICE_UNAVAILABLE,
             "Web uygulaması şu anda yüklenemiyor.",
         )
-            .into_response(),
+            .into_response();
+    };
+    let unchanged = headers
+        .get_all("if-none-match")
+        .iter()
+        .filter_map(|h| h.to_str().ok())
+        .flat_map(|h| h.split(','))
+        .any(|tag| {
+            let tag = tag.trim();
+            tag == "*" || tag.trim_start_matches("W/") == asset.etag.trim_start_matches("W/")
+        });
+    // Reserve conservatively for headers too; concurrent downloads cannot overspend.
+    let cost = 1024
+        + if unchanged {
+            0
+        } else {
+            asset.bytes.len() as u64
+        };
+    if !assets.reserve(cost) {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            [("retry-after", "3600")],
+            "Staging static transfer budget exhausted.",
+        )
+            .into_response();
     }
+    let mut response = if unchanged {
+        StatusCode::NOT_MODIFIED.into_response()
+    } else {
+        asset.bytes.clone().into_response()
+    };
+    for (name, value) in [
+        ("content-type", mime),
+        ("cache-control", "no-cache"),
+        ("x-content-type-options", "nosniff"),
+        ("etag", asset.etag.as_str()),
+    ] {
+        response.headers_mut().insert(name, value.parse().unwrap());
+    }
+    response
 }
 
 #[derive(Serialize)]
@@ -283,6 +367,7 @@ pub fn router(shared: SharedService) -> Router {
 }
 
 pub fn router_with_config(shared: SharedService, config: Config) -> Router {
+    let assets = Arc::new(StaticAssets::load(&config));
     Router::new()
         .route("/health", get(health))
         .fallback(get(web_asset))
@@ -308,5 +393,85 @@ pub fn router_with_config(shared: SharedService, config: Config) -> Router {
             },
         ))
         .layer(Extension(config))
+        .layer(Extension(assets))
         .with_state(shared)
+}
+
+#[cfg(test)]
+mod static_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn conditional_static_requests_are_empty_and_budget_exhaustion_preserves_api() {
+        let assets = Arc::new(StaticAssets {
+            files: HashMap::from([(
+                "index.html",
+                Asset {
+                    bytes: axum::body::Bytes::from_static(b"app"),
+                    etag: "W/\"app-v1\"".into(),
+                },
+            )]),
+            remaining: AtomicU64::new(2051),
+        });
+        let first = web_asset(
+            Extension(assets.clone()),
+            "/".parse().unwrap(),
+            HeaderMap::new(),
+        )
+        .await;
+        assert_eq!(first.status(), StatusCode::OK);
+        let tag = first.headers()["etag"].clone();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "if-none-match",
+            format!(
+                "\"old\", {}",
+                tag.to_str().unwrap().trim_start_matches("W/")
+            )
+            .parse()
+            .unwrap(),
+        );
+        let cached = web_asset(
+            Extension(assets.clone()),
+            "/r/ABC234".parse().unwrap(),
+            headers,
+        )
+        .await;
+        assert_eq!(cached.status(), StatusCode::NOT_MODIFIED);
+        assert_eq!(cached.headers()["etag"], tag);
+        assert!(axum::body::to_bytes(cached.into_body(), 1024)
+            .await
+            .unwrap()
+            .is_empty());
+        let exhausted = web_asset(
+            Extension(assets.clone()),
+            "/".parse().unwrap(),
+            HeaderMap::new(),
+        )
+        .await;
+        assert_eq!(exhausted.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(assets.remaining.load(Ordering::Relaxed), 0);
+        assert!(health(State(crate::shared_service())).await.is_ok());
+    }
+
+    #[test]
+    fn parallel_downloads_cannot_overspend_static_budget() {
+        let assets = Arc::new(StaticAssets {
+            files: HashMap::new(),
+            remaining: AtomicU64::new(100),
+        });
+        let threads: Vec<_> = (0..20)
+            .map(|_| {
+                let assets = assets.clone();
+                std::thread::spawn(move || assets.reserve(10))
+            })
+            .collect();
+        let successes = threads
+            .into_iter()
+            .filter_map(|t| t.join().ok())
+            .filter(|ok| *ok)
+            .count();
+        assert_eq!(successes, 10);
+        assert_eq!(assets.remaining.load(Ordering::Relaxed), 0);
+    }
 }
