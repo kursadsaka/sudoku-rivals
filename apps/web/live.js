@@ -126,6 +126,7 @@ export class MultiplayerTransport {
     if (this.stopped || this.protectedSave) return;
     const view = this.view();
     const now = this.now();
+    if (view.voluntarily_left && !view.pending_http) return;
     if (view.retry_at_ms !== null && now >= view.retry_at_ms && this.active.size === 0) {
       const effect = this.dispatch({type:'retry'},{quiet:true});
       if (!effect && view.snapshot) this.dispatch({type:'resume'},{quiet:true});
@@ -216,8 +217,8 @@ export class LiveScreens {
     if (this.transport.protectedSave) {
       this.content.innerHTML = `<section class="panel" data-screen="live-recovery"><h1>${this.t('title')}</h1><p class="notice error" role="alert">${this.t('corrupt')}</p><button class="primary-button" data-action="live-recover">${this.t('recover')}</button><button class="text-button" data-action="live-home">${this.t('home')}</button></section>`;
     } else if (!view.snapshot || view.voluntarily_left) this.renderSetup(view);
+    else if (view.snapshot.phase === 'finished' && view.snapshot.result) this.renderResult(view);
     else if (view.connection === 'session_lost' || view.snapshot.phase === 'closed') this.renderLost(view);
-    else if (view.snapshot.phase === 'finished') this.renderResult(view);
     else if (['lobby','countdown'].includes(view.snapshot.phase)) this.renderLobby(view);
     else this.renderGame(view);
     if (focused) this.content.querySelector(`[data-testid="${CSS.escape(focused)}"]`)?.focus({preventScroll:true});
@@ -296,7 +297,7 @@ export class LiveScreens {
     const result=s.result;
     const noContest=!result || (result.winner===null && ['both_disconnected','resource_limit'].includes(result.reason));
     const key=noContest?'noContest':result.winner===null?'draw':result.winner===s.own.seat?'win':'loss';
-    this.content.innerHTML=`<section class="result" data-screen="match-result"><p class="eyebrow">${this.t(s.mode)} · ${s.size}×${s.size}</p><h1 data-testid="result-heading">${this.t(key)}</h1>${this.connection(view)}${this.noticeHTML()}${this.storageNotice()}<p data-testid="result-details">${s.mode==='duel'?`${this.escape(s.own.name)} ${s.own.score}${s.opponent?` — ${s.opponent.score} ${this.escape(s.opponent.name)}`:''}`:this.escape(s.opponent?.name||'')}</p>${result?`<p data-testid="result-reason">${this.t('reason_'+result.reason)}</p>`:''}
+    this.content.innerHTML=`<section class="result" data-screen="match-result"><p class="eyebrow">${this.t(s.mode)} · ${s.size}×${s.size}</p><h1 data-testid="result-heading">${this.t(key)}</h1>${view.connection==='session_lost'?`<p role="status">${this.t('room_closed')}</p>`:this.connection(view)}${this.noticeHTML()}${this.storageNotice()}<p data-testid="result-details">${s.mode==='duel'?`${this.escape(s.own.name)} ${s.own.score}${s.opponent?` — ${s.opponent.score} ${this.escape(s.opponent.name)}`:''}`:this.escape(s.opponent?.name||'')}</p>${result?`<p data-testid="result-reason">${this.t('reason_'+result.reason)}</p>`:''}
       ${!s.opponent?`<p role="status">${this.t('opponentLeft')}</p>`:s.own.rematch?`<p role="status">${this.t('rematchWaiting')}</p>`:s.opponent?.rematch?`<p role="status">${this.t('rematchOpponent')}</p>`:''}
       <div class="action-stack"><button class="primary-button" data-action="live-rematch" data-testid="rematch" ${!s.opponent||s.own.rematch||view.pending_command||view.connection!=='connected'?'disabled':''}>${this.t('rematch')}</button><button class="secondary-button" data-action="live-leave" data-testid="home">${this.t('home')}</button></div></section>`;
   }

@@ -68,7 +68,9 @@ struct LiveScreen: View {
                 PrimaryButton(title: L10n.t("protected.reset"), id: "live-recover") { live.requestReset() }
             }
         } else if let snapshot = view.snapshot, !view.voluntarilyLeft {
-            if view.connection == "session_lost" || snapshot.phase == "closed" {
+            if snapshot.phase == "finished", snapshot.result != nil {
+                LiveResultView(live: live, snapshot: snapshot)
+            } else if view.connection == "session_lost" || snapshot.phase == "closed" {
                 VStack(alignment: .leading, spacing: 12) {
                     ConnectionStatus(connection: view.connection)
                     Text(L10n.t("lost.title")).font(.title2.bold()).accessibilityAddTraits(.isHeader)
@@ -77,8 +79,6 @@ struct LiveScreen: View {
                     PrimaryButton(title: L10n.t("lost.reset"), id: "live-recover") { live.requestReset() }
                     SecondaryButton(title: L10n.t("nav.home"), id: "home") { live.goHome() }
                 }
-            } else if snapshot.phase == "finished" {
-                LiveResultView(live: live, snapshot: snapshot)
             } else if snapshot.phase == "lobby" || snapshot.phase == "countdown" {
                 LiveLobbyView(live: live, snapshot: snapshot)
             } else {

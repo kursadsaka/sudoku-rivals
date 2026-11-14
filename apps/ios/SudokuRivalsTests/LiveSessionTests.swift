@@ -18,6 +18,7 @@ final class FaultTransport {
     var dropNextPath: String?
     /// Holds the next forwarded request until opened, so it is still in flight.
     var holdNext: Gate?
+    var expireRoom = false
     let upstream: LiveSession.Transport?
 
     init(upstream: LiveSession.Transport? = nil) { self.upstream = upstream }
@@ -33,6 +34,22 @@ final class FaultTransport {
                 await gate.wait()
             }
             let result = try await upstream(request)
+            // Simulate the protocol's 10-minute expiry response without a wall-clock wait.
+            if self.expireRoom, request.url?.path.hasSuffix("/resume") == true {
+                return (Data(#"{"protocol":1,"error":"room_closed"}"#.utf8), 410)
+            }
+            if self.expireRoom, request.url?.path.hasSuffix("/state") == true, result.1 == 200 {
+                var snapshot = try #require(JSONSerialization.jsonObject(with: result.0) as? [String: Any])
+                var own = try #require(snapshot["own"] as? [String: Any])
+                own["cells"] = [Int]()
+                own["givens"] = [Int]()
+                snapshot["own"] = own
+                snapshot["phase"] = "closed"
+                snapshot["result"] = NSNull()
+                snapshot["server_ms"] = (snapshot["server_ms"] as? UInt64 ?? 0) + 600_000
+                snapshot["event_order"] = (snapshot["event_order"] as? UInt64 ?? 0) + 1
+                return (try JSONSerialization.data(withJSONObject: snapshot), 200)
+            }
             if let drop = self.dropNextCommand, body.contains(#""type":"\#(drop)""#) {
                 self.dropNextCommand = nil
                 throw URLError(.networkConnectionLost)
@@ -154,6 +171,31 @@ final class ManualClock {
         try await waitFor { fault.calls.count == 2 }
         #expect(fault.calls[0].body == fault.calls[1].body)
         #expect(fault.calls[0].body.contains(#""guest":""#))
+    }
+
+    @Test(arguments: [false, true])
+    func homeCancelsSetupAndReopenRetriesIdenticalBody(join: Bool) async throws {
+        let gate = Gate()
+        let clock = ManualClock()
+        var bodies: [Data] = []
+        let live = LiveSession(store: tempLiveStore(), origin: "http://127.0.0.1:9", transport: { request in
+            bodies.append(request.httpBody ?? Data())
+            if bodies.count == 1 { await gate.wait() }
+            throw URLError(.networkConnectionLost)
+        }, now: clock.now)
+        live.open()
+        if join { live.invite = "ABC234"; live.join() } else { live.create() }
+        try await waitFor { bodies.count == 1 }
+        live.goHome()
+        let at = try #require(live.view.retryAtMs)
+        #expect(!live.visible && live.view.pendingHttp)
+        await gate.open()
+        live.open()
+        clock.ms = at
+        live.tick()
+        try await waitFor { bodies.count == 2 }
+        #expect(bodies[0] == bodies[1])
+        live.setForeground(false)
     }
 
     @Test func backgroundInvalidatesInFlightCallback() async throws {
@@ -439,6 +481,48 @@ struct LiveServerTests {
         }
         #expect(hostFault.commands("rematch").count == 1 && guestFault.commands("rematch").count == 1)
         try await leave(host, guest)
+    }
+
+    @Test(arguments: ["race", "duel"])
+    func lostLeaveThenBackgroundRetriesLeaveWithoutResume(mode: String) async throws {
+        let (host, guest, fault, _) = try await startMatch(mode: mode, size: 6)
+        let path = "/v1/rooms/\(try #require(host.snapshot?.roomCode))/leave"
+        fault.dropNextPath = path
+        let mark = fault.calls.count
+        host.confirmLeave()
+        try await waitFor { fault.dropNextPath == nil && host.view.retryAtMs != nil }
+        host.setForeground(false)
+        host.setForeground(true)
+        try await pump([host, guest]) { host.view.voluntarilyLeft }
+        #expect(!host.visible)
+        let calls = Array(fault.calls.dropFirst(mark))
+        #expect(calls.count >= 2 && calls.allSatisfy { $0.path == path })
+        #expect(calls.allSatisfy { $0.body == calls[0].body })
+        try await pump([guest]) { guest.snapshot?.phase == "finished" }
+        #expect(guest.snapshot?.result?.winner == guest.snapshot?.own.seat)
+        guest.confirmLeave()
+        try await pump([guest]) { guest.view.voluntarilyLeft }
+    }
+
+    @Test(arguments: ["race", "duel"])
+    func verifiedResultSurvivesExpiryPollAndResume(mode: String) async throws {
+        let (host, guest, hostFault, guestFault) = try await startMatch(mode: mode, size: 6)
+        host.command("resign")
+        try await pump([host, guest]) { host.snapshot?.result != nil && guest.snapshot?.result != nil }
+        let known = try #require(host.snapshot)
+        let guestResult = guest.snapshot?.result
+        hostFault.expireRoom = true
+        try await pump([host]) { host.view.connection == "session_lost" }
+        #expect(host.snapshot == known)
+        let restored = LiveSession(store: host.store, origin: origin, transport: hostFault.transport)
+        #expect(restored.snapshot == known && restored.view.connection == "session_lost")
+        guestFault.expireRoom = true
+        guest.setForeground(false)
+        guest.setForeground(true)
+        try await pump([guest]) { guest.view.connection == "session_lost" }
+        #expect(guest.snapshot?.phase == "finished" && guest.snapshot?.result == guestResult)
+        host.setForeground(false)
+        guest.setForeground(false)
     }
 
     func leave(_ a: LiveSession, _ b: LiveSession) async throws {

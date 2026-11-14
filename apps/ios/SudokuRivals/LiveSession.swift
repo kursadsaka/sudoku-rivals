@@ -263,6 +263,7 @@ final class LiveSession {
         visible = false
         foreground = false
         cancelTransport()
+        if view.pendingHttp { dispatch(["type": "network_failed"], quiet: true) }
         persist()
         onHome()
     }
@@ -357,7 +358,7 @@ final class LiveSession {
         refresh()
         let time = now()
         if activeId != nil || deferred != nil || storageError { return }
-        if resumeRequired, snapshot != nil, view.connection != "session_lost" {
+        if resumeRequired, !leaving, snapshot != nil, view.connection != "session_lost" {
             if view.retryAtMs.map({ time >= $0 }) ?? true, dispatch(["type": "resume"], quiet: true) {
                 resumeRequired = false
             }

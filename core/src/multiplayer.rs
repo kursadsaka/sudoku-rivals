@@ -286,7 +286,10 @@ impl MultiplayerClient {
             }
             Action::Resume {} => {
                 if self.pending_http.as_ref().is_some_and(|http| {
-                    matches!(http.operation, Operation::Create | Operation::Join)
+                    matches!(
+                        http.operation,
+                        Operation::Create | Operation::Join | Operation::Leave
+                    )
                 }) {
                     return Err(ClientError::Busy);
                 }
@@ -629,6 +632,14 @@ impl MultiplayerClient {
             if matches!(http.operation, Operation::Create | Operation::Join) {
                 // A refused room start never touches the current session.
                 self.pending_http = None;
+                self.retry_index = 0;
+                if self.voluntarily_left {
+                    self.retry_at = None;
+                    self.connection = ConnectionState::SessionLost;
+                } else if self.auth.is_none() {
+                    self.retry_at = None;
+                    self.connection = ConnectionState::Disconnected;
+                }
                 self.last_error = Some(failure.error);
                 return Ok(true);
             }
@@ -776,6 +787,20 @@ impl MultiplayerClient {
             {
                 return Err(ClientError::InvalidSnapshot);
             }
+        }
+        // Room expiry cannot revoke a result already verified for this match.
+        if new_auth.is_none()
+            && snapshot.phase == Phase::Closed
+            && self.auth.as_ref().is_some_and(|a| {
+                a.snapshot.match_id == snapshot.match_id && a.snapshot.result.is_some()
+            })
+        {
+            self.connection = ConnectionState::SessionLost;
+            self.pending_http = None;
+            self.pending_command = None;
+            self.retry_at = None;
+            self.needs_resume = false;
+            return Ok(true);
         }
         let fresh_session = new_auth.is_some();
         if fresh_session {

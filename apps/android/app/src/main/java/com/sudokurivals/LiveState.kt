@@ -226,6 +226,7 @@ internal class LiveState(directory: File) {
         visible = false
         foreground = false
         cancelTransport()
+        if (view.optBoolean("pending_http")) dispatch(JSONObject().put("type", "network_failed"), quiet = true)
         persist()
         onHome()
     }
@@ -462,7 +463,7 @@ internal class LiveState(directory: File) {
         val time = SystemClock.elapsedRealtime()
         val retryAt = if (view.isNull("retry_at_ms")) null else view.optLong("retry_at_ms")
         if (activeId != null || deferredRequest != null || storageError) return
-        if (resumeRequired && snapshot() != null && view.optString("connection") != "session_lost") {
+        if (resumeRequired && !leaving && snapshot() != null && view.optString("connection") != "session_lost") {
             if (retryAt == null || time >= retryAt) {
                 if (dispatch(JSONObject().put("type", "resume"), quiet = true)) resumeRequired = false
             }

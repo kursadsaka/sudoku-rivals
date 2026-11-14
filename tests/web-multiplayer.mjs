@@ -257,3 +257,47 @@ if(process.argv.includes('--http')){
   client.stop();
   console.log('Web WASM pending setup: online resume rejected before/after failure, exact new-room retry succeeds');
 }
+
+// G14: rejected setup retry after leave must never resume the departed room,
+// including an online event; use the real WASM state and adapter.
+{
+  let time=0, failJoin=true;
+  const paths=[];
+  const t=new MultiplayerTransport(core,new Storage(),{now:()=>time,origin:'http://localhost',fetcher:async(url)=>{
+    paths.push(new URL(url).pathname);
+    if(url.endsWith('/leave'))return response({protocol:1,left:true});
+    if(url.endsWith('/join')){if(failJoin){failJoin=false;throw Error('lost');}return response({protocol:1,error:'room_missing'},404);}
+    if(url.endsWith('/v1/rooms'))return response(session);
+    throw Error('Unexpected resume of departed room');
+  }});
+  t.dispatch({type:'create',name:'A',mode:'race',size:6});await until(()=>t.active.size===0);
+  t.dispatch({type:'leave'});await until(()=>t.active.size===0);
+  t.dispatch({type:'join',invite:'222222',name:'A'});await until(()=>t.active.size===0);
+  time=t.view().retry_at_ms;t.tick();await until(()=>t.active.size===0);
+  assert.equal(t.view().last_error,'room_missing');
+  assert.equal(t.view().retry_at_ms,null);
+  time+=10000;t.tick();await sleep(20);
+  let online;
+  const handler=fs.readFileSync(new URL('../apps/web/main.js',import.meta.url),'utf8').split('\n').find(line=>line.startsWith("window.addEventListener('online'"));
+  assert(handler);
+  runInNewContext(handler,{window:{addEventListener:(_event,callback)=>online=callback},screen:'live',live:{view:()=>t.view(),transport:t}});
+  online();await sleep(20);
+  assert.equal(paths.filter(p=>p.endsWith('/resume')).length,0);
+  assert.equal(t.transportError,'room_missing');
+  t.stop();
+}
+// Known results take precedence over lost room connectivity in actual screen rendering.
+{
+  const {LiveScreens}=await import('../apps/web/live.js');
+  const oldDocument=globalThis.document,oldWindow=globalThis.window;
+  globalThis.document={activeElement:null};globalThis.window={scrollY:0};
+  try {
+    for(const result of [{winner:0,reason:'resigned',at_ms:4000},null]) {
+      let screen;
+      LiveScreens.prototype.render.call({view:()=>({connection:'session_lost',snapshot:{...snapshot(),phase:result?'finished':'closed',result}}),
+        transport:{protectedSave:false},content:{},renderResult:()=>screen='result',renderLost:()=>screen='lost'});
+      assert.equal(screen,result?'result':'lost');
+    }
+  } finally {globalThis.document=oldDocument;globalThis.window=oldWindow;}
+}
+console.log('G14 departed-room and verified-result regressions passed');

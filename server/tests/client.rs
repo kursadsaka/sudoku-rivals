@@ -994,3 +994,109 @@ fn finished_disconnected_setup_retries_identically_live_and_restored() {
         }
     }
 }
+
+#[test]
+fn refused_setup_after_lost_response_clears_departed_room_retry() {
+    let (mut service, mut a, _) = started(Mode::Race, 6);
+    drive(&mut service, &mut a, json!({"type":"leave"}), 4000);
+    let setup = req(
+        &mut a,
+        json!({"type":"join","invite":"222222","name":"A"}),
+        4001,
+    );
+    act(
+        &mut a,
+        json!({"type":"network_failed","request_id":setup.id}),
+        4002,
+    );
+    let at = view(&a, 4002)["retry_at_ms"].as_u64().unwrap();
+    let retry = req(&mut a, json!({"type":"retry"}), at);
+    assert_eq!(retry, setup);
+    let response = exchange(&mut service, &retry, at);
+    assert_eq!(response.0, 404);
+    receive(&mut a, &retry, response, at);
+    let v = view(&a, at);
+    assert_eq!(v["last_error"], "room_missing");
+    assert!(v["retry_at_ms"].is_null());
+    assert_eq!(v["connection"], "session_lost");
+    assert_eq!(
+        try_act(&mut a, json!({"type":"resume"}), at + 1000),
+        Err(ClientError::NoSession)
+    );
+}
+
+#[test]
+fn lost_leave_cannot_be_superseded_by_resume_and_retries_idempotently() {
+    for mode in [Mode::Race, Mode::Duel] {
+        let (mut service, mut a, mut b) = started(mode, 6);
+        let leave = req(&mut a, json!({"type":"leave"}), 4000);
+        assert_eq!(exchange(&mut service, &leave, 4000).0, 200);
+        act(&mut a, json!({"type":"network_failed"}), 4100);
+        let at = view(&a, 4100)["retry_at_ms"].as_u64().unwrap();
+        assert_eq!(
+            try_act(&mut a, json!({"type":"resume"}), at),
+            Err(ClientError::Busy)
+        );
+        let retry = req(&mut a, json!({"type":"retry"}), at);
+        assert_eq!(retry, leave);
+        let answer = exchange(&mut service, &retry, at);
+        receive(&mut a, &retry, answer, at);
+        assert_eq!(view(&a, at)["voluntarily_left"], true);
+        drive(&mut service, &mut b, json!({"type":"poll"}), at);
+        assert_eq!(view(&b, at)["snapshot"]["result"]["winner"], 1);
+        assert_eq!(view(&b, at)["snapshot"]["result"]["reason"], "resigned");
+    }
+}
+
+#[test]
+fn verified_result_survives_room_expiry_poll_resume_and_restore() {
+    for mode in [Mode::Race, Mode::Duel] {
+        let (mut service, mut a, mut b) = started(mode, 6);
+        drive(
+            &mut service,
+            &mut a,
+            json!({"type":"command","command":{"type":"resign"}}),
+            4000,
+        );
+        drive(&mut service, &mut b, json!({"type":"poll"}), 4001);
+        let known = view(&b, 4001)["snapshot"].clone();
+        drive(&mut service, &mut b, json!({"type":"poll"}), 604000);
+        assert_eq!(view(&b, 604000)["connection"], "session_lost");
+        assert_eq!(view(&b, 604000)["snapshot"], known);
+        let restored = MultiplayerClient::load(&b.save().unwrap()).unwrap();
+        assert_eq!(view(&restored, 0)["snapshot"], known);
+        let result = view(&a, 4000)["snapshot"]["result"].clone();
+        drive(&mut service, &mut a, json!({"type":"resume"}), 604001);
+        assert_eq!(view(&a, 604001)["connection"], "session_lost");
+        assert_eq!(view(&a, 604001)["snapshot"]["result"], result);
+    }
+}
+
+#[test]
+fn rejected_setup_retry_keeps_recovery_of_a_room_not_left() {
+    let (mut service, mut a, _) = started(Mode::Duel, 6);
+    drive(
+        &mut service,
+        &mut a,
+        json!({"type":"command","command":{"type":"resign"}}),
+        4000,
+    );
+    let old = snapshot(&a, 4000);
+    let setup = req(
+        &mut a,
+        json!({"type":"join","invite":"222222","name":"A"}),
+        4001,
+    );
+    act(
+        &mut a,
+        json!({"type":"network_failed","request_id":setup.id}),
+        4002,
+    );
+    let at = view(&a, 4002)["retry_at_ms"].as_u64().unwrap();
+    let retry = req(&mut a, json!({"type":"retry"}), at);
+    let answer = exchange(&mut service, &retry, at);
+    receive(&mut a, &retry, answer, at);
+    drive(&mut service, &mut a, json!({"type":"resume"}), at + 1);
+    assert_eq!(view(&a, at + 1)["connection"], "connected");
+    assert_eq!(snapshot(&a, at + 1).match_id, old.match_id);
+}

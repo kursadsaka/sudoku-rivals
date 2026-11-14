@@ -363,7 +363,7 @@ document.addEventListener('visibilitychange',() => {
 });
 window.addEventListener('pagehide',() => { if (session?.game) session.pause();live?.persist(); });
 // Best effort only: a not-yet-due resume is retried by tick(), so it must not show an error.
-window.addEventListener('online',()=>{ if(screen==='live' && live?.view()?.snapshot)live.transport?.dispatch({type:'resume'},{quiet:true}); });
+window.addEventListener('online',()=>{ if(screen==='live' && live?.view()?.snapshot && !live.view().voluntarily_left && !live.view().pending_http && live.view().connection!=='session_lost')live.transport?.dispatch({type:'resume'},{quiet:true}); });
 setInterval(()=>live?.tick(),250);
 setInterval(() => {
   if (screen === 'solo-game' && session?.running) {
