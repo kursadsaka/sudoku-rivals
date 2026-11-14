@@ -1,9 +1,12 @@
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id("org.jetbrains.kotlin.plugin.compose") }
 android {
     namespace = "com.sudokurivals"
-    compileSdk = 35
+    compileSdk = 36
+    buildToolsVersion = "36.0.0"
+    ndkVersion = "28.2.13676358"
     defaultConfig {
-        applicationId = "com.sudokurivals"; minSdk = 26; targetSdk = 35; versionCode = 1; versionName = "0.1"
+        applicationId = "com.sudokurivals"; minSdk = 26; targetSdk = 36; versionCode = 1; versionName = "0.1"
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         val serverUrl = providers.gradleProperty("sudokuMatchServerUrl").orElse("").get()
         buildConfigField("String", "MATCH_SERVER_URL", "\"" + serverUrl.replace("\\", "\\\\").replace("\"", "\\\"") + "\"")
     }

@@ -61,6 +61,8 @@ class MainActivity : ComponentActivity() {
         if (::live.isInitialized) live.setForeground(false)
         super.onStop()
     }
+    // Public Activity override; AndroidX marks its intermediate implementation restricted.
+    @android.annotation.SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val keyCode = event.keyCode
         if (::live.isInitialized && live.visible && event.action == KeyEvent.ACTION_DOWN && live.snapshot()?.optString("phase") == "playing" && !live.leaveConfirmation && !live.resetConfirmation) {
