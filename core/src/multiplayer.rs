@@ -285,6 +285,11 @@ impl MultiplayerClient {
                 )?);
             }
             Action::Resume {} => {
+                if self.pending_http.as_ref().is_some_and(|http| {
+                    matches!(http.operation, Operation::Create | Operation::Join)
+                }) {
+                    return Err(ClientError::Busy);
+                }
                 if self.connection == ConnectionState::SessionLost {
                     return Err(ClientError::NoSession);
                 }

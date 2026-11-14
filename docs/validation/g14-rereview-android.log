@@ -1,0 +1,76 @@
+[435436.185] launch Android
+[435438.611] launch Android
+[435440.553] tap friend-start
+[435443.428] tap mode-race
+[435445.847] tap board-size-6
+[435448.438] tap room-create
+[435453.297] tap live-save-retry
+[435457.381] tap ready-toggle
+[435470.168] tap cell-1-2
+[435474.220] launch Android
+[435477.581] tap reconcile-local
+[435480.685] tap cell-1-1
+[435488.054] tap rematch
+[435491.988] tap ready-toggle
+[435499.824] tap back
+[435502.084] tap leave-confirm
+[435506.874] tap friend-start
+[435509.138] tap room-create
+[435513.872] launch Android
+[435514.083] launch Android
+[435521.244] tap back
+[435523.557] tap leave-confirm
+Android post-leave setup: promised automatic retry, background/cold restore and exact lost-response replay passed
+Android ↔ WASM HTTP race 6x6: full match/rematch/leave passed
+[435528.359] tap friend-start
+[435530.754] tap room-join
+[435533.587] tap ready-toggle
+[435539.598] tap cell-1-1
+[435549.789] tap rematch
+[435553.773] tap ready-toggle
+[435572.205] tap home
+Android ↔ WASM HTTP race 9x9: full match/rematch/leave passed
+[435576.592] tap friend-start
+[435578.921] tap live-recover
+[435581.198] tap live-reset-confirm
+[435583.694] tap mode-duel
+[435586.063] tap board-size-6
+[435588.487] tap room-create
+[435592.520] tap ready-toggle
+[435599.103] tap cell-1-1
+[435616.181] launch Android
+[435622.678] tap back
+[435624.982] tap leave-confirm
+Android duel 6x6: verified final score survives departure and cold restore
+[435629.715] tap friend-start
+[435632.144] tap room-join
+[435634.961] tap ready-toggle
+[435640.942] tap cell-1-4
+[435644.563] launch Android
+[435738.175] tap rematch
+[435742.582] tap ready-toggle
+[435761.687] tap home
+Android ↔ WASM HTTP duel 9x9: full match/rematch/leave passed
+[435766.044] tap friend-start
+[435768.365] tap live-recover
+[435770.640] tap live-reset-confirm
+[435773.159] tap mode-race
+[435775.503] tap board-size-6
+[435777.958] tap room-create
+[435781.888] tap ready-toggle
+[435809.413] tap home
+Android race: disconnect and unrecoverable-session copy passed
+[435811.673] tap friend-start
+[435813.999] tap live-recover
+[435816.271] tap live-reset-confirm
+[435818.799] tap mode-duel
+[435821.143] tap board-size-6
+[435823.648] tap room-create
+[435827.089] tap ready-toggle
+[435854.199] tap home
+Android duel: disconnect and unrecoverable-session copy passed
+[435856.557] launch Android
+[435858.402] tap friend-start
+[435863.170] tap live-recover
+[435865.554] tap live-reset-confirm
+Android multiplayer passed: two modes/two sizes, deep links, exact lost-response retry, 40 offline edits/single sync, cold restart, explicit reconciliation, failed-save retry, corrupt-record preservation, 90-second timer, mutual rematch, missing-opponent score/rematch, verified-result preservation, mode-specific failure copy, explicit leave and server restart

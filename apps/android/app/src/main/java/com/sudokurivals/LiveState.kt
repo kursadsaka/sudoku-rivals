@@ -140,8 +140,8 @@ internal class LiveState(directory: File) {
             }
         }
         refresh()
-        visible = snapshot() != null && !view.optBoolean("voluntarily_left")
-        resumeRequired = visible && view.optString("connection") != "session_lost"
+        visible = view.optBoolean("pending_http") || (snapshot() != null && !view.optBoolean("voluntarily_left"))
+        resumeRequired = visible && !view.optBoolean("pending_http") && view.optString("connection") != "session_lost"
     }
 
     private fun now() = SystemClock.elapsedRealtime().toULong()
@@ -191,7 +191,7 @@ internal class LiveState(directory: File) {
         if (!active) {
             if (snapshot() != null && !view.optBoolean("voluntarily_left") && view.optString("connection") != "session_lost") resumeRequired = true
             cancelTransport()
-            if (!view.optBoolean("voluntarily_left") && (snapshot() != null || view.optBoolean("pending_http"))) dispatch(JSONObject().put("type", "network_failed"), quiet = true)
+            if (view.optBoolean("pending_http") || (!view.optBoolean("voluntarily_left") && snapshot() != null)) dispatch(JSONObject().put("type", "network_failed"), quiet = true)
             persist()
         } else if (visible) {
             if (!resumeRequired && !storageError) {
@@ -278,12 +278,12 @@ internal class LiveState(directory: File) {
     }
     fun create() {
         if (!isConfigured()) { message = "Canlı oyun sunucusu henüz yapılandırılmadı."; return }
-        dispatch(JSONObject().put("type", "create").put("guest", guest).put("name", name).put("mode", mode).put("size", size))
+        if (dispatch(JSONObject().put("type", "create").put("guest", guest).put("name", name).put("mode", mode).put("size", size))) resumeRequired = false
     }
     fun join() {
         if (!isConfigured()) { message = "Canlı oyun sunucusu henüz yapılandırılmadı."; return }
         val raw = if (invite.isNotBlank()) invite else pendingInvite.orEmpty()
-        dispatch(JSONObject().put("type", "join").put("guest", guest).put("invite", raw).put("name", name))
+        if (dispatch(JSONObject().put("type", "join").put("guest", guest).put("invite", raw).put("name", name))) resumeRequired = false
     }
     fun command(type: String, ready: Boolean? = null) {
         val command = JSONObject().put("type", type)
@@ -456,9 +456,9 @@ internal class LiveState(directory: File) {
         }
     }
     fun tick() {
-        if (!foreground || destroyed || protectedSave || !visible || view.optBoolean("voluntarily_left")) return
+        if (!foreground || destroyed || protectedSave || !visible) return
         refresh()
-        if (view.optString("connection") == "session_lost") return
+        if (!view.optBoolean("pending_http") && (view.optBoolean("voluntarily_left") || view.optString("connection") == "session_lost")) return
         val time = SystemClock.elapsedRealtime()
         val retryAt = if (view.isNull("retry_at_ms")) null else view.optLong("retry_at_ms")
         if (activeId != null || deferredRequest != null || storageError) return

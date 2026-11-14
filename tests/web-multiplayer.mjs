@@ -220,3 +220,40 @@ if(process.argv.includes('--http')){
   assert.equal(requests,calls,'Lost sessions issued more HTTP requests');
   console.log('Web WASM terminal session loss: retry cleared, tick/online resume and cold restore stay terminal');
 }
+
+// An online callback must not replace a new setup with a resume of the old room.
+{
+  let clock=0, setupAttempts=0, rejectSetup;
+  const saved=new Storage(), bodies=[];
+  const nextSession=structuredClone(session);
+  nextSession.snapshot.match_id='d'.repeat(64);
+  nextSession.snapshot.room_code='DEF567';nextSession.invite_path='/r/DEF567';
+  const client=new MultiplayerTransport(core,saved,{now:()=>clock,origin:'http://localhost',onError:()=>{},fetcher:async(url,options)=>{
+    if(url.endsWith('/leave'))return response({protocol:1,left:true});
+    assert(url.endsWith('/v1/rooms'),'Old-room resume escaped while setup pending');
+    setupAttempts++;
+    if(setupAttempts===1)return response(session);
+    bodies.push(options.body);
+    if(setupAttempts===2)return new Promise((_,reject)=>{rejectSetup=reject;});
+    return response(nextSession);
+  }});
+  client.dispatch({type:'create',guest:session.guest,name:'A',mode:'race',size:6});
+  await until(()=>client.active.size===0);
+  clock=10;client.dispatch({type:'leave'});await until(()=>client.active.size===0);
+  clock=20;client.dispatch({type:'create',name:'A',mode:'race',size:6});
+  await until(()=>!!rejectSetup);
+  const pending=client.client.save();
+  assert(!client.dispatch({type:'resume'}));
+  assert.equal(client.client.save(),pending,'In-flight setup was overwritten');
+  rejectSetup(new Error('offline'));await until(()=>client.active.size===0);
+  clock=10000;
+  const failed=client.client.save();
+  assert(!client.dispatch({type:'resume'}));
+  assert.equal(client.client.save(),failed,'Failed setup was overwritten');
+  client.tick();await until(()=>client.active.size===0);
+  assert.equal(client.view().snapshot.match_id,nextSession.snapshot.match_id);
+  assert.equal(client.view().voluntarily_left,false);
+  assert.equal(bodies.length,2);assert.equal(bodies[0],bodies[1]);
+  client.stop();
+  console.log('Web WASM pending setup: online resume rejected before/after failure, exact new-room retry succeeds');
+}

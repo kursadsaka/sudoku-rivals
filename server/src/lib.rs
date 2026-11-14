@@ -646,12 +646,7 @@ impl Room {
             receipt: receipt.clone(),
         });
         self.last_activity = now;
-        if (matches!(envelope.command, Command::Rematch)
-            && self.phase == Phase::Finished
-            && self
-                .seats
-                .iter()
-                .all(|s| s.as_ref().is_some_and(|s| s.rematch && s.connected)))
+        if (matches!(envelope.command, Command::Rematch) && self.rematch_ready())
             || (matches!(envelope.command, Command::Ready { ready: true })
                 && self.phase == Phase::Lobby
                 && self.result.is_some()
@@ -666,6 +661,13 @@ impl Room {
             receipt,
             snapshot: self.snapshot(index, now),
         })
+    }
+    fn rematch_ready(&self) -> bool {
+        self.phase == Phase::Finished
+            && self
+                .seats
+                .iter()
+                .all(|s| s.as_ref().is_some_and(|s| s.rematch && s.connected))
     }
     fn new_match(&mut self, now: u64) -> Result<(), Error> {
         let next_id = random_hex()?;
@@ -1006,6 +1008,9 @@ impl Service {
         seat.connected = true;
         seat.last_seen = now;
         seat.disconnected_at = None;
+        if room.rematch_ready() {
+            room.new_match(now)?;
+        }
         Ok(room.snapshot(index, now))
     }
     pub fn state(
