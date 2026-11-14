@@ -1121,6 +1121,11 @@ fn pending_leave_survives_process_death_before_or_after_server_acceptance() {
             let mut restored = MultiplayerClient::load(&a.save().unwrap()).unwrap();
             assert_eq!(view(&restored, 0)["pending_leave"], true);
             assert_eq!(
+                try_act(&mut restored, json!({"type":"poll"}), 0),
+                Err(ClientError::Busy)
+            );
+            assert_eq!(view(&restored, 0)["pending_leave"], true);
+            assert_eq!(
                 try_act(&mut restored, json!({"type":"resume"}), 0),
                 Err(ClientError::Busy)
             );

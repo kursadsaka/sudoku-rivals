@@ -378,7 +378,7 @@ try {
   await init();
   session = new SoloSession(core,storage);
   live = new LiveScreens({engine:core,storage,content,renderBoard,svg,escape,language:()=>preferences.language,announce,
-    onUpdate:()=>{if(screen==='live')render();},onHome:()=>{screen='home';history.replaceState({},'', '/');render();focusContent();}});
+    onUpdate:()=>{if(screen==='live')render();},onHome:()=>{if(screen==='live'){screen='home';history.replaceState({},'', '/');render();focusContent();}}});
   ready = true;
   if(location.pathname.startsWith('/r/')) {screen='live';live.enter(location.pathname);}
   else render();

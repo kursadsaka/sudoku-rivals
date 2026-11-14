@@ -312,6 +312,13 @@ impl MultiplayerClient {
                 request = Some(self.start(Operation::Resume, path, body, now)?);
             }
             Action::Poll {} => {
+                if self
+                    .pending_http
+                    .as_ref()
+                    .is_some_and(|p| matches!(p.operation, Operation::Leave))
+                {
+                    return Err(ClientError::Busy);
+                }
                 if self.connection == ConnectionState::SessionLost {
                     return Err(ClientError::NoSession);
                 }

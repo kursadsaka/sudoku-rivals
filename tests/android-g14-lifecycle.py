@@ -204,7 +204,7 @@ def expiry_result(proxy, mode):
     assert node('result-heading').attrib.get('text') == heading, 'cold restore lost verified result'
     proxy.expire_room = False
     def backups():
-        return {name for name in adb('exec-out', 'run-as', PKG, 'ls', 'files').decode().splitlines()
+        return {name for name in adb('exec-out', 'run-as', PKG, 'ls', '-1', 'files').decode().splitlines()
                 if name.startswith('live-session-recovery-') and name.endswith('.json')}
     before = backups()
     tap('live-recover', True)
