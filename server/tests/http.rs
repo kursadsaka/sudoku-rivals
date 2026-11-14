@@ -12,6 +12,9 @@ struct Server {
 }
 impl Server {
     fn start() -> Self {
+        Self::start_with_config(sudoku_server::http::Config::default())
+    }
+    fn start_with_config(config: sudoku_server::http::Config) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let address = listener.local_addr().unwrap();
@@ -23,7 +26,10 @@ impl Server {
                 .unwrap();
             runtime.block_on(async move {
                 let listener = tokio::net::TcpListener::from_std(listener).unwrap();
-                let app = sudoku_server::http::router(sudoku_server::shared_service());
+                let app = sudoku_server::http::router_with_config(
+                    sudoku_server::shared_service(),
+                    config,
+                );
                 axum::serve(
                     listener,
                     app.into_make_service_with_connect_info::<SocketAddr>(),
@@ -67,12 +73,15 @@ impl Server {
         (status, headers.to_owned(), body.to_owned())
     }
     fn post(&self, path: &str, body: Value) -> (u16, Value) {
+        self.post_with_headers(path, body, "")
+    }
+    fn post_with_headers(&self, path: &str, body: Value, headers: &str) -> (u16, Value) {
         let body = body.to_string();
         let mut socket = TcpStream::connect(self.address).unwrap();
         socket
             .set_read_timeout(Some(Duration::from_secs(5)))
             .unwrap();
-        let request = format!("POST {path} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", self.address, body.len(), body);
+        let request = format!("POST {path} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n{headers}Connection: close\r\n\r\n{}", self.address, body.len(), body);
         socket.write_all(request.as_bytes()).unwrap();
         let mut response = String::new();
         socket.read_to_string(&mut response).unwrap();
@@ -246,6 +255,15 @@ fn web_and_invites_use_one_origin_without_exposing_repository_files() {
     let (status, _, invite) = server.get("/r/ABC234");
     assert_eq!(status, 200);
     assert_eq!(html, invite);
+    assert_eq!(server.get("/r/abc234").0, 200);
+    for path in [
+        "/r/ABC012",
+        "/r/ABC234/",
+        "/r/ABC234?token=secret",
+        "/r/%41BC234",
+    ] {
+        assert_eq!(server.get(path).0, 404, "{path}");
+    }
     let (status, headers, script) = server.get("/main.js");
     assert_eq!(status, 200);
     assert!(headers.to_ascii_lowercase().contains("text/javascript"));
@@ -261,4 +279,71 @@ fn web_and_invites_use_one_origin_without_exposing_repository_files() {
     ] {
         assert_eq!(server.get(path).0, 404, "{path}");
     }
+}
+
+#[test]
+fn public_ingress_cannot_bypass_shared_quotas_with_forged_ip_headers() {
+    let server = Server::start_with_config(sudoku_server::http::Config {
+        public_ingress: true,
+        ..Default::default()
+    });
+    for i in 0..6 {
+        let (status, body) = server.post_with_headers(
+            "/v1/rooms",
+            json!({"protocol":1,"name":"Staging","mode":"race","size":6}),
+            &format!("X-Forwarded-For: 127.0.0.1, 198.51.100.{i}\r\nX-Real-IP: 203.0.113.{i}\r\nForwarded: for=203.0.113.{i}\r\n"),
+        );
+        assert_eq!(status, if i < 5 { 200 } else { 429 });
+        if i == 5 {
+            assert_eq!(body["error"], "rate_limited");
+        }
+    }
+    for i in 0..11 {
+        let (status, body) = server.post_with_headers(
+            "/v1/rooms/ABC234/join",
+            json!({"protocol":1,"name":"Staging"}),
+            &format!("X-Forwarded-For: 127.0.0.{i}\r\n"),
+        );
+        assert_eq!(status, if i < 10 { 404 } else { 429 });
+        if i == 10 {
+            assert_eq!(body["error"], "rate_limited");
+        }
+    }
+    let (_, headers, _) = server.get("/health");
+    assert!(headers
+        .to_ascii_lowercase()
+        .contains("cache-control: no-store"));
+}
+
+#[test]
+fn configured_web_root_is_used_without_exposing_other_files() {
+    let root = std::env::temp_dir().join(format!(
+        "sudoku-web-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir(&root).unwrap();
+    std::fs::write(root.join("index.html"), "portable web fixture").unwrap();
+    std::fs::write(root.join(".env"), "private fixture").unwrap();
+    let config = sudoku_server::http::Config {
+        web_root: root.clone(),
+        public_ingress: false,
+    };
+    assert!(
+        config.validate_assets().is_err(),
+        "Incomplete package must fail readiness at startup"
+    );
+    let server = Server::start_with_config(config);
+    assert_eq!(server.get("/r/ABC234").2, "portable web fixture");
+    assert_eq!(server.get("/.env").0, 404);
+    assert_eq!(
+        server.get("/main.js").0,
+        503,
+        "Never fall back to the build checkout"
+    );
+    drop(server);
+    std::fs::remove_dir_all(root).unwrap();
 }

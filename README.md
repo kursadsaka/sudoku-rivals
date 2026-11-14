@@ -10,3 +10,6 @@ Web kaynakları `apps/web` içindedir. WASM üretildikten sonra `node tests/wasm
 `node tests/web-solo.mjs` ve `node tests/ui-contract.mjs` çalıştırılır. Offline
 solo ilk başarılı varlık yüklemesinden sonra kullanılabilir. Native/gerçek cihaz
 ve mağaza durumları ilerleme kaydında ayrı belirtilir.
+
+Render Free staging paketi ve sınırlı ortak giriş kotası:
+[G16 kurulum ve doğrulama](docs/staging-render.md).

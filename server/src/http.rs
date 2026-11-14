@@ -4,10 +4,62 @@ use axum::{
     http::{StatusCode, Uri},
     response::{IntoResponse, Response},
     routing::{get, post},
-    Json, Router,
+    Extension, Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
+
+const WEB_ASSETS: &[(&str, &str)] = &[
+    ("index.html", "text/html; charset=utf-8"),
+    ("main.js", "text/javascript; charset=utf-8"),
+    ("session.js", "text/javascript; charset=utf-8"),
+    ("live.js", "text/javascript; charset=utf-8"),
+    ("styles.css", "text/css; charset=utf-8"),
+    ("sw.js", "text/javascript; charset=utf-8"),
+    ("manifest.webmanifest", "application/manifest+json"),
+    ("icon.svg", "image/svg+xml"),
+    ("pkg/sudoku_wasm.js", "text/javascript; charset=utf-8"),
+    ("pkg/sudoku_wasm_bg.wasm", "application/wasm"),
+];
+
+#[derive(Clone)]
+pub struct Config {
+    pub web_root: std::path::PathBuf,
+    pub public_ingress: bool,
+}
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            web_root: std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../apps/web"),
+            public_ingress: false,
+        }
+    }
+}
+impl Config {
+    pub fn validate_assets(&self) -> std::io::Result<()> {
+        for (file, _) in WEB_ASSETS {
+            let path = self.web_root.join(file);
+            if !std::fs::metadata(&path)?.is_file() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("Not a web asset: {}", path.display()),
+                ));
+            }
+            std::fs::File::open(path)?;
+        }
+        Ok(())
+    }
+
+    fn quota_peer(&self, peer: SocketAddr) -> String {
+        // shortcut: shared staging quota until the ingress IP-header contract is verified.
+        // Never trust forwarded headers or grant a proxy the local-test quota.
+        if self.public_ingress {
+            "public-ingress".into()
+        } else {
+            peer.ip().to_string()
+        }
+    }
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -94,11 +146,12 @@ async fn validate(Json(board): Json<Board>) -> Json<ResultBody> {
 }
 async fn create(
     State(shared): State<SharedService>,
+    Extension(config): Extension<Config>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Json(body): Json<CreateRequest>,
 ) -> Result<Json<Session>, ApiError> {
     version(body.protocol)?;
-    let peer = peer.ip().to_string();
+    let peer = config.quota_peer(peer);
     Ok(Json(
         shared
             .call(move |state, at| {
@@ -109,12 +162,13 @@ async fn create(
 }
 async fn join(
     State(shared): State<SharedService>,
+    Extension(config): Extension<Config>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Path(code): Path<String>,
     Json(body): Json<JoinRequest>,
 ) -> Result<Json<Session>, ApiError> {
     version(body.protocol)?;
-    let peer = peer.ip().to_string();
+    let peer = config.quota_peer(peer);
     Ok(Json(
         shared
             .call(move |state, at| state.join(&peer, &code, body.guest, body.name, at))
@@ -179,26 +233,20 @@ async fn command(
 
 // Only known public build assets can be read; no request path is joined onto
 // the filesystem. Credentials, saves, sources and arbitrary files stay private.
-async fn web_asset(uri: Uri) -> Response {
+async fn web_asset(Extension(config): Extension<Config>, uri: Uri) -> Response {
     let path = uri.path();
-    let invite = path
-        .strip_prefix("/r/")
-        .is_some_and(|code| code.len() == 6 && code.bytes().all(|c| c.is_ascii_alphanumeric()));
-    let (file, mime) = match path {
-        "/" | "/index.html" => ("index.html", "text/html; charset=utf-8"),
-        _ if invite => ("index.html", "text/html; charset=utf-8"),
-        "/main.js" => ("main.js", "text/javascript; charset=utf-8"),
-        "/session.js" => ("session.js", "text/javascript; charset=utf-8"),
-        "/live.js" => ("live.js", "text/javascript; charset=utf-8"),
-        "/styles.css" => ("styles.css", "text/css; charset=utf-8"),
-        "/sw.js" => ("sw.js", "text/javascript; charset=utf-8"),
-        "/manifest.webmanifest" => ("manifest.webmanifest", "application/manifest+json"),
-        "/icon.svg" => ("icon.svg", "image/svg+xml"),
-        "/pkg/sudoku_wasm.js" => ("pkg/sudoku_wasm.js", "text/javascript; charset=utf-8"),
-        "/pkg/sudoku_wasm_bg.wasm" => ("pkg/sudoku_wasm_bg.wasm", "application/wasm"),
-        _ => return StatusCode::NOT_FOUND.into_response(),
+    let invite = path.starts_with("/r/")
+        && uri.query().is_none()
+        && sudoku_core::multiplayer::parse_invite(path).is_ok();
+    let file = if path == "/" || invite {
+        "index.html"
+    } else {
+        path.trim_start_matches('/')
     };
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../apps/web");
+    let Some(&(file, mime)) = WEB_ASSETS.iter().find(|(asset, _)| *asset == file) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let root = config.web_root;
     match tokio::task::spawn_blocking(move || std::fs::read(root.join(file))).await {
         Ok(Ok(bytes)) => (
             [
@@ -231,6 +279,10 @@ async fn health(State(shared): State<SharedService>) -> Result<Json<Health>, Api
 }
 
 pub fn router(shared: SharedService) -> Router {
+    router_with_config(shared, Config::default())
+}
+
+pub fn router_with_config(shared: SharedService, config: Config) -> Router {
     Router::new()
         .route("/health", get(health))
         .fallback(get(web_asset))
@@ -242,5 +294,19 @@ pub fn router(shared: SharedService) -> Router {
         .route("/v1/rooms/{code}/state", post(state))
         .route("/v1/rooms/{code}/command", post(command))
         .layer(DefaultBodyLimit::max(16 * 1024))
+        .layer(axum::middleware::map_response(
+            |mut response: Response| async move {
+                response
+                    .headers_mut()
+                    .entry("cache-control")
+                    .or_insert(axum::http::HeaderValue::from_static("no-store"));
+                response.headers_mut().insert(
+                    "referrer-policy",
+                    axum::http::HeaderValue::from_static("no-referrer"),
+                );
+                response
+            },
+        ))
+        .layer(Extension(config))
         .with_state(shared)
 }

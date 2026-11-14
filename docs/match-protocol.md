@@ -4,7 +4,7 @@ Durum: yerel uygulama ve otomatik test. Puanlar, süre eşikleri ve boş hücre 
 
 ## Çalıştırma ve sınır
 
-`cargo run --locked -p sudoku-server`; varsayılan `127.0.0.1:3000`. Bağımsız test sunucusu için `SUDOKU_PORT=3001` seçilebilir; adres her zaman loopback kalır. Mevcut `POST /validate` aynen korunur. Ek protokol HTTP JSON'dur; WebSocket gerekmez. Taşıma adapteri her platformda HTTP isteğini gerçekleştirir, ortak DTO'lar `core/src/protocol.rs` içindedir. CORS genişletmesi, TLS, dağıtım ve kalıcı veritabanı eklenmedi. Web istemcisi bu API'ye aynı origin üzerinden eriştirilmelidir; staging düzeni G16 işidir.
+`cargo run --locked -p sudoku-server`; varsayılan `127.0.0.1:3000`. Bağımsız test sunucusu için `SUDOKU_PORT=3001` seçilebilir. G16'da açık `SUDOKU_BIND` IP ayarı ve öncelikli `PORT` eklendi; varsayılan bind loopback kalır. Loopback dışı bind, doğrulanmamış proxy başlıklarına güvenmeden ortak 5 create/10 join denemesi/10 dakika staging kotası kullanır. Taşınabilir web paketi ve Render Free kurulumu: [staging-render.md](staging-render.md). Mevcut `POST /validate` aynen korunur. Ek protokol HTTP JSON'dur; WebSocket gerekmez. Taşıma adapteri her platformda HTTP isteğini gerçekleştirir, ortak DTO'lar `core/src/protocol.rs` içindedir. CORS genişletmesi ve kalıcı veritabanı eklenmedi; TLS staging sağlayıcısında sonlanır. Web istemcisi API'ye aynı origin üzerinden erişir.
 
 `Service` bir monotonik saat akışıyla sınanabilir durum makinesidir. HTTP adapteri kısa bir giriş kilidi altında `Instant` saatini kaydederek isteği en fazla 256 öğelik FIFO kuyruğa ekler. Ayrı bir sahip iş parçacığı maç durumunu bu sırada işler; bulmaca üretimi giriş kilidini tutmaz. Kuyruk doluysa kabul edilmemiş istek `capacity` alır. **Yetkili varış noktası**, JSON isteğinin bu sıraya kabul edildiği andır; soketin ilk byte'ının gelişi değildir. İşleme aynı sırada senkron ilerler; bir zaman aşımı daha önce kabul edilmiş hamleyi geçemez. İstemci zaman damgası kabul edilmez. Aynı milisaniyede ilk olay önce işlenir.
 
@@ -121,6 +121,6 @@ The loopback server also serves the allowlisted public web build at `/`, and
 CORS policy is enabled. `/health` returns `{status:"ok",protocol:1}`. Known build
 assets are loaded from this checkout's `apps/web`; arbitrary URI paths are never
 joined to a filesystem path. Missing built assets return 503. This checkout-based
-asset location is local development only; G16 packaging must provide deployed
-assets explicitly. No saved games, credentials, source files or dotfiles are
+asset location is the local default; G16 uses an explicit `SUDOKU_WEB_ROOT` and
+validates all required assets before listening. No saved games, credentials, source files or dotfiles are
 served. Static responses carry their MIME type, `nosniff` and revalidation headers.

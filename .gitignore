@@ -1,6 +1,7 @@
 /tools
 /.tools
 /target
+/dist
 /apps/web/pkg
 /apps/android/.gradle
 /apps/android/.kotlin

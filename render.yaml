@@ -1,0 +1,20 @@
+# Apply only to a new staging service after checking workspace quotas and billing.
+services:
+  - type: web
+    name: sudoku-rivals-g16-staging
+    runtime: rust
+    plan: free
+    region: frankfurt
+    branch: agent/g16-render-free
+    numInstances: 1
+    autoDeployTrigger: 'off'
+    buildCommand: sh scripts/staging-build.sh
+    startCommand: ./dist/sudoku-server
+    healthCheckPath: /health
+    envVars:
+      - key: RUSTUP_TOOLCHAIN
+        value: 1.100.0
+      - key: SUDOKU_BIND
+        value: 0.0.0.0
+      - key: SUDOKU_WEB_ROOT
+        value: ./dist/web
