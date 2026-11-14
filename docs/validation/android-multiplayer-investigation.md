@@ -55,10 +55,14 @@ The AVD is `api36-16k-prep`, API36, PAGE_SIZE=16384, 320x640/density160. App dat
 - Corrected full Android matrix, API36 APK: PASS (exit 0), all four combinations plus final loss/corruption checks, approximately 449 s on the same AVD with SDK=36 and PAGE_SIZE=16384 verified before launch.
 - Both full runs include explicit reconcile, 40 offline edits / one sync, deep links, durable setup replay, failed-save retry, authoritative 90-second duel, mutual rematch, missing-opponent score/rematch, verified-result preservation, mode-specific failure copy, explicit leave, server restart and corrupt-record preservation.
 - Restored the owned AVD's archived pre-comparison app files and byte-verified them before shutting down only that AVD. No user service or data was replaced.
-- No current acceptance blocker remains in these automated suites; the historical-log limitation below remains explicit.
+- Independent review reproduced an intermittent focused-test failure: offline UI steps can exceed the server’s 15-second heartbeat, so the foreign command receives a `disconnected` receipt. The earlier matrix passes do not establish fixture stability. The fixture now resumes the foreign seat before its sync, using the returned generation and sequence.
 
 Local ignored evidence under `.tools/`: `baseline-build.log`, `baseline-install.log`, `reconcile-setup.log`, `reconcile-{g14,api36}-original.log`, `reconcile-{g14-core,core}-regression.log`, `reconcile-fixture-{tests,red}.log`, `reconcile-comparison-status.log`, `matrix-{g14,api36}-final.log`, `matrix-api36-diagnostic.log`, `multiplayer-workspace-tests.log`, `multiplayer-web.log`. Early System UI/dirty-start attempts are not passing evidence. No credentials are printed in acceptance diagnostics.
 
 ## Limits
 
-The precise cause of the single historical reconcile timeout cannot be reconstructed from the old log. The test ambiguity is independently reproducible; the new acceptance preconditions make any recurrence distinguishable from it. No product workaround was introduced without evidence. Physical ARM64, TalkBack, staging, accounts, signing, merge and publication are outside this follow-up.
+The precise cause of the single historical reconcile timeout cannot be reconstructed from the old log. The pending-ACK ambiguity and heartbeat timeout are separate fixture concerns. No product workaround was introduced without evidence. Physical ARM64, TalkBack, staging, accounts, signing, merge and publication are outside this follow-up.
+
+## Independent review follow-up
+
+The resumed-seat fixture passed five consecutive `--reconcile-only` runs on the API 36 / 16 KB emulator. The fixture unit test and Python syntax check passed. Two initial emulator attempts did not reach the app because a System UI ANR dialog covered it; they are not counted. The full matrix was not rerun after this fixture-only change.

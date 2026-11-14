@@ -373,10 +373,17 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
                         # Another authorized connection changes the same seat while this one is offline.
                         offline_client = saved_client()
                         auth = offline_client['auth']
-                        foreign, foreign_index = divergent_cells(auth['snapshot'], before, offline_client.get('pending'))
-                        envelope = {'protocol':1,'token':auth['token'],'generation':auth['snapshot']['generation'],
-                                    'match_id':auth['snapshot']['match_id'],'sequence':auth['snapshot']['own']['next_sequence'],
-                                    'command':{'type':'sync','base_version':auth['snapshot']['own']['board_version'],'cells':foreign}}
+                        # The offline UI steps can exceed the server heartbeat. Take over
+                        # the seat before editing, just as another real device would.
+                        resume = urllib.request.Request(UPSTREAM+'/v1/rooms/'+auth['snapshot']['room_code']+'/resume',
+                            json.dumps({'protocol':1,'token':auth['token']}).encode(),
+                            {'Content-Type':'application/json'},method='POST')
+                        with urllib.request.urlopen(resume,timeout=10) as response:
+                            resumed = json.load(response)
+                        foreign, foreign_index = divergent_cells(resumed, before, offline_client.get('pending'))
+                        envelope = {'protocol':1,'token':auth['token'],'generation':resumed['generation'],
+                                    'match_id':resumed['match_id'],'sequence':resumed['own']['next_sequence'],
+                                    'command':{'type':'sync','base_version':resumed['own']['board_version'],'cells':foreign}}
                         request = urllib.request.Request(UPSTREAM+'/v1/rooms/'+auth['snapshot']['room_code']+'/command',json.dumps(envelope).encode(),{'Content-Type':'application/json'},method='POST')
                         with urllib.request.urlopen(request,timeout=10) as response:
                             assert response.status == 200
@@ -385,16 +392,16 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
                             'code': foreign_response['receipt']['code'],
                             'base_version': envelope['command']['base_version'],
                             'server_version': foreign_response['snapshot']['own']['board_version'],
-                            'index': foreign_index, 'prior': auth['snapshot']['own']['cells'][foreign_index],
+                            'index': foreign_index, 'prior': resumed['own']['cells'][foreign_index],
                             'local': before['cells'][foreign_index]['value'], 'foreign': foreign[foreign_index],
-                            'same_server_board': foreign == auth['snapshot']['own']['cells'],
+                            'same_server_board': foreign == resumed['own']['cells'],
                             'same_local_board': foreign == [cell['value'] for cell in before['cells']],
                             'pending_type': ((offline_client.get('pending') or {}).get('envelope') or {}).get('command', {}).get('type'),
                             'pending_matches_foreign': ((offline_client.get('pending') or {}).get('envelope') or {}).get('command', {}).get('cells') == foreign,
                         }, flush=True)
                         assert foreign_response['receipt']['code'] == 'ok', 'Foreign sync was not accepted'
                         assert foreign_response['snapshot']['own']['cells'] == foreign, 'Foreign board was not applied'
-                        assert foreign_response['snapshot']['own']['board_version'] == auth['snapshot']['own']['board_version'] + 1
+                        assert foreign_response['snapshot']['own']['board_version'] == resumed['own']['board_version'] + 1
                         proxy.offline = False
                         until(lambda: saved_client().get('reconcile'),20,'Divergent race board did not require explicit choice')
                         assert json.loads(saved_client()['draft'])['cells'] == before['cells'], 'Reconcile silently overwrote local work'
