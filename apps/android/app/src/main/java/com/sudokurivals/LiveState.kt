@@ -490,7 +490,11 @@ internal class LiveState(directory: File) {
         require(uri.userInfo == null && uri.query == null && uri.fragment == null && (uri.path.isNullOrEmpty() || uri.path == "/") && !uri.host.isNullOrEmpty())
         require(uri.scheme == "https" || (BuildConfig.DEBUG && uri.scheme == "http" && uri.host in listOf("localhost", "127.0.0.1", "10.0.2.2")))
         require(uri.port == -1 || uri.port in 1..65535)
-        return URI(uri.scheme, null, uri.host, uri.port, null, null, null).toString()
+        val origin = URI(uri.scheme, null, uri.host, uri.port, null, null, null).toString()
+        // The staging build talks to exactly one compiled-in HTTPS origin; saved records
+        // or intents naming any other origin are rejected (and the record stays preserved).
+        if (BuildConfig.STAGING) { require(origin.equals(BuildConfig.MATCH_SERVER_URL, ignoreCase = true)); return BuildConfig.MATCH_SERVER_URL }
+        return origin
     }
     private fun safeServerMessage(raw: String): String = when (runCatching { JSONObject(raw).optString("error") }.getOrNull()) {
         "room_full" -> "Oda dolu. Başka bir davet kullanabilirsin."

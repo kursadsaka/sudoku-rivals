@@ -94,7 +94,8 @@ private fun LiveSetup(live: LiveState) {
         var server by remember(live.origin) { mutableStateOf(live.origin) }
         OutlinedTextField(server, { server = it }, label = { Text("Deneme sunucusu (geliştirme)") }, modifier = Modifier.fillMaxWidth().testTag("live-server"), singleLine = true, enabled = !busy)
         TextButton(onClick = { live.configureServer(server) }, modifier = Modifier.testTag("live-server-apply"), enabled = !busy) { Text("Sunucuyu uygula") }
-    } else if (!live.isConfigured()) Text("Canlı oyun sunucusu henüz yapılandırılmadı.")
+    } else if (BuildConfig.STAGING) Text("Test sunucusu: " + BuildConfig.MATCH_SERVER_URL.removePrefix("https://"), Modifier.testTag("live-server-fixed"))
+    else if (!live.isConfigured()) Text("Canlı oyun sunucusu henüz yapılandırılmadı.")
     OutlinedTextField(live.name, { live.name = it }, label = { Text("Görünen ad (1–16 karakter)") }, modifier = Modifier.fillMaxWidth().testTag("guest-name"), singleLine = true, enabled = !busy)
     Row(Modifier.testTag("game-mode"), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         FilterChip(live.mode == "race", { live.mode = "race" }, label = { Text("Klasik yarış") }, enabled = !busy, modifier = Modifier.testTag("mode-race").heightIn(min = 48.dp))

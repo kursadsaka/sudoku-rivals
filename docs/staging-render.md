@@ -130,12 +130,31 @@ soğuk açılışta sonuç uydurulmadığını doğrula. Tam Node HTTP suite'i b
 oda ve kayıp yanıt tekrarları oluşturur; yeni kodla boş public kota penceresine
 sığar. Mevcut staging'de izinsiz çalıştırma; ortak kotayı tamamen tüketir.
 
-iOS/Android API origin'i ancak gerçek HTTPS servis URL'si belli olduğunda
-ayarlanabilir. Universal/App Links için gerçek imzalı app identifier ve APK
-sertifika fingerprint'i gerekir; bu değişiklikler uydurma association dosyası
-yayımlamaz. İki `.well-known` yolu halen 404; OS link doğrulaması tamamlandı
-sayılmaz. Web daveti kurulum olmadan çalışır. Native otomatik açılış ayrı
-G16 devam işidir; bu commit native uygulamaları değiştirmez.
+## Android staging build
+
+Android için ayrı `staging` build type vardır: `scripts/android-build.sh assembleStaging`
+→ `apps/android/app/build/outputs/apk/staging/app-staging.apk`. Origin
+`https://sudoku-rivals-g16-staging.onrender.com` olarak derlemeye sabittir;
+`-PsudokuMatchServerUrl` ve `dev_server_url` intent'i bunu değiştiremez, uygulamada
+sunucu alanı yoktur ve kayıtlı/gelen başka bir origin reddedilir (kayıt korunur,
+üzerine yazılmaz). Release'ten türer: debug değildir, `src/debug` manifest ve
+loopback `networkSecurityConfig` yoktur, cleartext kapalıdır, VIEW/autoVerify
+filtresi yoktur. Application ID `com.sudokurivals.staging` olduğundan debug/release
+kayıtlarına dokunmaz; ikisi yan yana kurulur. Debug hâlâ `10.0.2.2:3000` loopback,
+release hâlâ boş `MATCH_SERVER_URL` kullanır.
+
+APK yerel debug keystore ile imzalanır ve yalnız emülatör/test kurulumu içindir:
+imzalı yayın, mağaza veya App Links sertifika parmak izi değildir. Render
+ayarları/servisi değişmez. Doğrulama: `python3 tests/android-staging.py --aapt2 <aapt2>`
+(statik) ve `--adb <adb> --serial <emulator> --live` (emülatör; tek create + leave
+gönderir, ortak 5 create/10 dk kotasından birini kullanır; Free servis soğuksa
+~1 dk sürebilir).
+
+iOS API origin'i ayrıdır (releaseOrigin halen boş). Universal/App Links için gerçek
+imzalı app identifier ve APK sertifika parmak izi gerekir; bu değişiklikler uydurma
+association dosyası yayımlamaz. İki `.well-known` yolu halen 404; OS link doğrulaması
+tamamlandı sayılmaz. Web daveti kurulum olmadan çalışır. Native otomatik açılış ayrı
+G16 devam işidir; Android staging build'i HTTPS VIEW filtresi eklemez.
 
 ## Geri alma
 
