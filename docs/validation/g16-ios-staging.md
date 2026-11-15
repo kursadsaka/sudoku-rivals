@@ -2,8 +2,8 @@
 
 15 Kasım 2026. Taban `agent/g16-render-free` / `8dc89cc`; çalışma dalı `agent/g16-ios-store-prep`
 (ayrı temiz klon). Render servisi/ayarları, hesap, imza, ödeme, App Store, production,
-Notes ve mevcut checkout'lara dokunulmadı; push yok. Staging servisine **hiç istek
-atılmadı** (askıda olduğu için; Android turundaki canlı create/leave iOS'ta yapılmadı).
+Notes ve mevcut checkout'lara dokunulmadı; push yok. Staging servisine ilk turda **hiç istek
+atılmadı**; canlı duman testi aşağıdaki "Canlı HTTPS duman testi" bölümündedir.
 
 ## Değişiklik
 
@@ -38,6 +38,16 @@ atılmadı** (askıda olduğu için; Android turundaki canlı create/leave iOS't
   `SUDOKU_WEB_ROOT` ile geçici bir taslak web köküne yönlendirildi (iOS testleri statik varlık
   kullanmaz); wasm32 hedefi kurulmadı, web/WASM testleri bu turda çalıştırılmadı.
 
+## Canlı HTTPS duman testi (15 Kasım 2026, kullanıcı yetkisiyle, Render ayarlarına dokunulmadan)
+
+- `GET /health` 1 kez: 200, ~0,6 sn (servis uyanıktı). Yeni simülatörde (iOS 27.2) imzasız
+  Staging .app: sabit host görünür → "Create room" 1 kez (klasik yarış 6×6) → lobi "Connected",
+  oda kodu görüldü → Home → "Leave" onayı → ana ekrana dönüldü. Kota/erişim engeli yok.
+- Toplam: 1 health GET (+1 HEAD), 1 create, 1 leave; ortak 5 create/10 dk kotasından biri
+  kullanıldı. Oda açık bırakılmadı. Sınır: leave'in sunucu tarafı onayı uygulama arayüzünden
+  (bekleyen durum olmadan ana ekran) çıkarıldı; sunucu günlüğü okunmadı. Oda kodu rapora
+  yazılmadı; secret/guest taşıyan yanıt kaydedilmedi. Join, ikinci oyuncu, maç ve rövanş denenmedi.
+
 ## Kullanıcı kararı gerektirenler / yapılmayanlar
 
 - Gerçek bundle ID, Team, imza/provisioning, App Store Connect kaydı; Universal Links
@@ -47,5 +57,4 @@ atılmadı** (askıda olduğu için; Android turundaki canlı create/leave iOS't
 - `ITSAppUsesNonExemptEncryption` (ihracat uyumu beyanı) eklenmedi.
 - Uygulama ikonu (1024 px) ve asset catalog yok; tasarım kararı. Ekran görüntüleri,
   sürüm/marketing numarası, yaş derecelendirmesi, destek/gizlilik URL'si.
-- Staging'e gerçek create/join denemesi (ortak 5 create/10 dk kotasını kullanır; servis
-  askıda). Gerçek cihaz, VoiceOver.
+- Staging'e iki oyunculu gerçek maç (join/sonuç/rövanş). Gerçek cihaz, VoiceOver.
