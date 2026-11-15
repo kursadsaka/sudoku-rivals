@@ -171,5 +171,7 @@ enum Theme {
     static let onAccent = dynamic(0xffffff, 0x111827)
     static let selected = dynamic(0xdbeafe, 0x1e3a5f)
     static let error = dynamic(0xb91c1c, 0xfca5a5)
+    /// Healthy-connection dot; 5.0:1 on white.
+    static let ok = dynamic(0x15803d, 0x86efac)
     static let border = dynamic(0x6b7280, 0x9ca3af)
 }

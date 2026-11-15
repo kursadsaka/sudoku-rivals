@@ -10,9 +10,10 @@ final class SoloUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
 
     @discardableResult
-    func launch(reset: Bool = false, language: String = "en", _ env: [String: String] = [:]) -> XCUIApplication {
+    func launch(reset: Bool = false, language: String = "en", debug: Bool = false, _ env: [String: String] = [:]) -> XCUIApplication {
         app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(\(language))", "-AppleLocale", language == "tr" ? "tr_TR" : "en_US"]
+            + (debug ? ["-SudokuDebug"] : [])
         app.launchEnvironment = env.merging(["SOLO_TEST_SEED": seed]) { a, _ in a }
         if reset { app.launchEnvironment["SOLO_TEST_RESET"] = "1" }
         app.launch()
@@ -50,6 +51,40 @@ final class SoloUITests: XCTestCase {
         let element = cells(where: "label CONTAINS 'editable, empty'").firstMatch
         XCTAssertTrue(element.exists)
         return element
+    }
+
+    // MARK: One-screen game layout
+
+    func testGameScreenFitsOnePhoneScreenInBothSizes() {
+        for size in [6, 9] {
+            launch(reset: true)
+            startGame(size: size)
+            assertOneScreenGameLayout(app, size: size, tools: ["notes-toggle", "erase", "undo", "redo", "hint"])
+            XCTAssertTrue(el("pause").isHittable)
+            XCTAssertEqual(el("game-status").label, "Game in progress") // present for screen readers, not drawn
+            XCTAssertEqual(el("storage-status").label, "Saved on this device")
+            XCTAssertLessThanOrEqual(el("storage-status").frame.height, 1)
+            XCTAssertTrue(el("timer").label.hasPrefix("Elapsed: "))
+            add(screenshot("one-screen-\(size)"))
+        }
+    }
+
+    func testDebugFlagShowsDeveloperText() {
+        launch(reset: true, debug: true)
+        startGame(size: 6)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Keyboard:'")).firstMatch.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(el("storage-status").frame.height, 1)
+        XCTAssertTrue(el("game-status").isHittable || el("game-status").exists)
+    }
+
+    func testLandscapeKeepsBoardDigitsAndToolsWithoutScrolling() {
+        launch(reset: true)
+        startGame(size: 9)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        XCTAssertTrue(el("game-board").waitForExistence(timeout: 5))
+        assertOneScreenGameLayout(app, size: 9, tools: ["notes-toggle", "erase", "undo", "redo", "hint"], landscape: true)
+        add(screenshot("one-screen-landscape-9"))
     }
 
     // MARK: Full play
