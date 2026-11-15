@@ -54,3 +54,7 @@ Kullanıcının Chromium Modern Web Guidance 1.0 ve Vercel UI SDK sorusu resmî 
 ## G16 Render Free — Fable sonrası takip
 
 Kullanıcının bildirdiği kartsız Render Free staging kurulmuş ve testten sonra askıya alınmış durumda; auto deploy kapalı. `agent/g16-render-free` üzerinde public oda sınırı 32, bellekte statik varlıklar/ETag ve 128 MiB süreç bütçesi, aynı lobi kurulum tekrarında kota tüketmeme eklendi. 89 Rust testi ve izole gerçek public bind üzerinde statik bütçe tükenmesi sonrası dört HTTP maç kombinasyonu geçti. Render ayarı/servisi değiştirilmedi; final gönderim incelemesi Fable için bekliyor. Native linklerin eksik adımları ve kanıt: [G16 takip](validation/g16-render-hardening.md).
+
+## Web görsel yenileme ve isteğe bağlı sesler (15 Kasım)
+
+Kullanıcı web görünümünü zayıf bulduğu için yalnız `apps/web` yeniden tasarlandı: kâğıt/mürekkep paleti (marka mavisi simgeyle aynı, kehribar rakip), yeni ana ekran, oyun ekranında süre + doluluk/rakip/kalan süre göstergesi, eksik sayı sayaçlı büyük tuşlar, yeni kurulum/lobi/sonuç/ayarlar. Üç mod, iki boyut, kimlikler, klavye ve ekran okuyucu etiketleri korunur. Ayarlar'a varsayılanı kapalı ses anahtarı eklendi (Cuelume 0.2.8, tek dosya, yalnız açılınca yüklenir; etkileşimden önce ses çalmaz). 320×568 ve 375×553 dahil ölçülen telefon görünümlerinde oyun ekranı kaydırmasızdır. Gerçek cihaz ve insan kulağı/gözü onayı bekler; iOS/Android değişmedi. Ayrıntı ve ölçüm: [web-visual-redesign](validation/web-visual-redesign.md).

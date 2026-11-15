@@ -1,7 +1,9 @@
 // Bump this version when shipping changed app or WASM assets.
-const CACHE = 'sudoku-rivals-app-v9';
-const ASSETS = ['/', '/index.html', '/main.js', '/session.js', '/live.js', '/styles.css',
+const CACHE = 'sudoku-rivals-app-v10';
+const ASSETS = ['/', '/index.html', '/main.js', '/session.js', '/live.js', '/sound.js', '/styles.css',
   '/icon.svg', '/icon-192.png', '/icon-512.png', '/icon-maskable-512.png', '/apple-touch-icon.png', '/manifest.webmanifest', '/pkg/sudoku_wasm.js', '/pkg/sudoku_wasm_bg.wasm'];
+// Only fetched once sound is switched on; kept for offline play from then on.
+const LAZY = ['/cuelume.js'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));
 });
@@ -17,5 +19,13 @@ self.addEventListener('fetch', event => {
     event.respondWith(fetch(event.request).catch(() => caches.open(CACHE).then(cache => cache.match('/index.html'))));
   } else if (ASSETS.includes(url.pathname) && !url.search) {
     event.respondWith(caches.open(CACHE).then(async cache => (await cache.match(event.request)) || fetch(event.request)));
+  } else if (LAZY.includes(url.pathname) && !url.search) {
+    event.respondWith(caches.open(CACHE).then(async cache => {
+      const cached = await cache.match(event.request);
+      if (cached) return cached;
+      const response = await fetch(event.request);
+      if (response.ok) cache.put(event.request, response.clone());
+      return response;
+    }));
   }
 });

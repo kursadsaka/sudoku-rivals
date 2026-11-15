@@ -165,8 +165,8 @@ const words = {
 };
 
 export class LiveScreens {
-  constructor({engine,storage,content,renderBoard,svg,escape,language,onHome,onUpdate,announce,debug=false}) {
-    Object.assign(this,{engine,storage,content,renderBoard,svg,escape,language,onHome,onUpdate,announce,debug});
+  constructor({engine,storage,content,renderBoard,numberPad,progress,cue=()=>{},svg,escape,language,onHome,onUpdate,announce,debug=false}) {
+    Object.assign(this,{engine,storage,content,renderBoard,numberPad,progress,cue,svg,escape,language,onHome,onUpdate,announce,debug});
     this.selected = 0;
     this.notesMode = false;
     this.form = {name:language() === 'tr' ? 'Misafir':'Guest',mode:'race',size:6,invite:''};
@@ -228,12 +228,13 @@ export class LiveScreens {
   }
   renderSetup(view) {
     const busy = view.pending_http;
+    const segments=(name,field,values,label)=>`<div class="segmented">${values.map(value=>`<label class="segment"><input type="radio" name="${name}" data-live-field="${field}" value="${value}" ${this.form[field]===value?'checked':''} ${busy?'disabled':''}>${label(value)}</label>`).join('')}</div>`;
     this.content.innerHTML = `<section class="panel" data-screen="friend-setup"><button class="back-button" data-action="live-home" data-testid="back">${this.svg('back')}${this.t('back')}</button><p class="eyebrow">${this.t('title')}</p><h1>${this.t('setup')}</h1><p class="lede">${this.t('intro')}</p>${this.noticeHTML()}${this.storageNotice()}${this.transport.transportError&&busy?`<button class="text-button" data-action="live-recover">${this.t('recover')}</button>`:''}
-      <label class="form-label" for="live-name">${this.t('name')}</label><input id="live-name" class="text-input" data-live-field="name" value="${this.escape(this.form.name)}" maxlength="32" autocomplete="nickname" ${busy?'disabled':''}>
-      <fieldset data-testid="game-mode"><legend>${this.t('mode')}</legend><div class="size-options">${['race','duel'].map(mode=>`<label class="size-option compact-option"><input type="radio" name="live-mode" data-live-field="mode" value="${mode}" ${this.form.mode===mode?'checked':''} ${busy?'disabled':''}><strong>${this.t(mode)}</strong></label>`).join('')}</div></fieldset>
-      <fieldset data-testid="board-size"><legend>${this.t('size')}</legend><div class="size-options">${[6,9].map(size=>`<label class="size-option compact-option"><input type="radio" name="live-size" data-live-field="size" value="${size}" ${this.form.size===size?'checked':''} ${busy?'disabled':''}><strong>${size}×${size}</strong></label>`).join('')}</div></fieldset>
+      <label class="form-label" for="live-name">${this.t('name')}</label><input id="live-name" name="display-name" class="text-input" data-live-field="name" value="${this.escape(this.form.name)}" maxlength="32" autocomplete="nickname" enterkeyhint="done" ${busy?'disabled':''}>
+      <fieldset data-testid="game-mode"><legend>${this.t('mode')}</legend>${segments('live-mode','mode',['race','duel'],mode=>this.t(mode))}</fieldset>
+      <fieldset data-testid="board-size"><legend>${this.t('size')}</legend>${segments('live-size','size',[6,9],size=>`${size}×${size}`)}</fieldset>
       <p class="note">${this.t('modeHelp')}</p><button class="primary-button full" data-action="live-create" data-testid="room-create" ${busy?'disabled':''}>${busy?this.t('pending'):this.t('create')}</button>
-      <div class="join-section"><h2>${this.t('or')}</h2><label class="form-label" for="live-invite">${this.t('invite')}</label><input class="text-input" id="live-invite" data-live-field="invite" data-testid="room-code" value="${this.escape(this.form.invite)}" autocapitalize="characters" autocomplete="off" spellcheck="false" ${busy?'disabled':''}><button class="secondary-button full" data-action="live-join" data-testid="room-join" ${busy?'disabled':''}>${this.t('join')}</button></div>
+      <div class="join-section"><h2>${this.t('or')}</h2><label class="form-label" for="live-invite">${this.t('invite')}</label><div class="join-row"><input class="text-input" id="live-invite" name="invite" data-live-field="invite" data-testid="room-code" value="${this.escape(this.form.invite)}" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="go" ${busy?'disabled':''}><button class="secondary-button" data-action="live-join" data-testid="room-join" ${busy?'disabled':''}>${this.t('join')}</button></div></div>
     </section>`;
   }
   leaveButton(view) {
@@ -242,9 +243,10 @@ export class LiveScreens {
   renderLobby(view) {
     const snapshot = view.snapshot;
     const countdown = snapshot.phase === 'countdown';
+    const seat=(kind,player,sub='')=>`<li class="${kind}${player?'':' empty'}"><span class="player"><span class="avatar" aria-hidden="true">${player?this.escape([...player.name.trim()][0]||'·'):'+'}</span><span class="player-name">${player?this.escape(player.name):this.t('noOpponent')}${sub?` <small>${sub}</small>`:''}</span></span><span class="seat-state ${player?.ready?'is-ready':''}">${player?this.t(player.ready?'readyLabel':'notReady'):'—'}</span></li>`;
     this.content.innerHTML = `<section class="panel" data-screen="lobby">${this.leaveButton(view)}<p class="eyebrow">${this.t(snapshot.mode)} · ${snapshot.size}×${snapshot.size}</p><h1>${this.t(countdown?'starting':'waiting')}</h1>${this.connection(view)}${this.noticeHTML()}${this.storageNotice()}
-      <div class="invite-card"><span class="section-label">${this.t('room')}</span><strong class="room-code" data-testid="room-code">${this.escape(snapshot.room_code)}</strong><button class="secondary-button" data-action="live-share" data-testid="invite-share">${this.t('share')}</button>${this.shareLink?`<input class="text-input" value="${this.escape(this.shareLink)}" readonly aria-label="${this.t('invite')}">`:''}</div>
-      <ul class="players" data-testid="players"><li><span>${this.escape(snapshot.own.name)} <small>${this.t('you')}</small></span><span>${this.t(snapshot.own.ready?'readyLabel':'notReady')}</span></li><li><span>${snapshot.opponent?this.escape(snapshot.opponent.name):this.t('noOpponent')}</span><span>${snapshot.opponent?this.t(snapshot.opponent.ready?'readyLabel':'notReady'):'—'}</span></li></ul>
+      <div class="invite-card"><span class="section-label">${this.t('room')}</span><strong class="room-code" data-testid="room-code" translate="no">${[...snapshot.room_code].map(letter=>`<span>${this.escape(letter)}</span>`).join('')}</strong><button class="secondary-button" data-action="live-share" data-testid="invite-share">${this.t('share')}</button>${this.shareLink?`<input class="text-input" value="${this.escape(this.shareLink)}" readonly aria-label="${this.t('invite')}">`:''}</div>
+      <ul class="players" data-testid="players">${seat('you',snapshot.own,this.t('you'))}${seat('rival',snapshot.opponent)}</ul>
       ${countdown?`<p class="countdown" data-testid="timer" role="timer">${this.countdown(view)}</p>`:''}
       <button class="primary-button full" data-action="live-ready" data-testid="ready-toggle" role="switch" aria-checked="${snapshot.own.ready}" ${!snapshot.opponent||view.pending_command||view.connection!=='connected'?'disabled':''}>${this.t(snapshot.own.ready?'unready':'ready')}</button>
     </section>`;
@@ -283,10 +285,16 @@ export class LiveScreens {
       view.reconcile_required?`<div class="notice error" role="alert"><p>${this.t('reconcile')}</p><button data-action="live-keep">${this.t('keep')}</button> <button data-action="live-accept">${this.t('accept')}</button></div>`:'',
       feedback?`<p class="notice" role="status">${this.escape(feedback)}</p>`:''].join('');
     const info=this.debug?`<p class="selection-info debug-only">${fixed?this.t('given'):this.t('selected',{row:Math.floor(this.selected/s.size)+1,column:this.selected%s.size+1})}${race&&view.race.notes[this.selected]?.length?`<br>${this.t('notesList',{notes:view.race.notes[this.selected].join(', ')})}`:''}</p>`:'';
-    this.content.innerHTML=`<section class="game" data-screen="${race?'race-game':'duel-game'}" data-size="${s.size}"><div class="game-top">${this.leaveButton(view)}<div class="game-heading"><h1>${this.t(s.mode)} · ${s.size}×${s.size}</h1><span class="timer" data-testid="timer" role="timer" aria-label="${this.t(race?'elapsed':'remaining')}">${this.timer(view)}</span></div><div class="game-trailing"><span class="opponent-name">${this.escape(s.opponent?.name||this.t('opponent'))}</span></div></div>
-      <div class="status-row">${this.connection(view,true)}${race?`<span class="live-stat" data-testid="opponent-progress">${this.t('progress')}: ${s.opponent?.progress_percent||0}%</span>`:`<span class="live-stat" data-testid="own-score">${this.t('score')}: <strong>${s.own.score}</strong></span><span class="live-stat" data-testid="opponent-score">${this.t('opponentScore')}: <strong>${s.opponent?.score||0}</strong></span><span class="live-stat" data-testid="combo">${this.t('combo')}: ${s.own.combo}</span>`}<p class="game-status ${conflicts.size?'conflict':''}" data-testid="game-status" role="status">${status}</p>${race?'':`<span data-testid="input-lock" class="input-lock" role="status">${this.lockLabel(view)}</span>`}</div>
+    // You on the left in blue, the rival mirrored on the right in amber: filled share in a race, score in a duel.
+    const rivalName=this.escape(s.opponent?.name||this.t('opponent'));
+    const ownShare=this.progress(board),rivalShare=Math.min(100,s.opponent?.progress_percent||0)/100;
+    const hud=race?`<div class="hud race"><p class="hud-side you"><span class="hud-name">${this.t('you')}</span><strong>${Math.floor(ownShare*100)}%</strong></p><p class="hud-side rival live-stat" data-testid="opponent-progress"><span class="sr-only">${this.t('progress')}: </span><strong>${s.opponent?.progress_percent||0}%</strong><span class="hud-name opponent-name">${rivalName}</span></p><div class="meter" aria-hidden="true"><i style="--p:${ownShare.toFixed(3)}"></i></div><div class="meter rival" aria-hidden="true"><i style="--p:${rivalShare.toFixed(3)}"></i></div></div>`
+      :`<div class="hud duel"><p class="hud-side you"><span class="hud-name" aria-hidden="true">${this.t('you')}</span><span class="live-stat" data-testid="own-score"><span class="sr-only">${this.t('score')}: </span><strong>${s.own.score}</strong></span><span class="combo live-stat" data-testid="combo" ${s.own.combo>1?'':'hidden'}><span class="sr-only">${this.t('combo')}: </span><span aria-hidden="true">×</span>${s.own.combo}</span></p><p class="hud-side rival live-stat" data-testid="opponent-score"><span class="sr-only">${this.t('opponentScore')}: </span><strong>${s.opponent?.score||0}</strong><span class="hud-name opponent-name" aria-hidden="true">${rivalName}</span></p><div class="meter time ${this.timeLow(view)?'is-low':''}" aria-hidden="true"><i style="--p:${this.timeShare(view)}"></i></div></div>`;
+    this.content.innerHTML=`<section class="game" data-screen="${race?'race-game':'duel-game'}" data-size="${s.size}"><div class="game-top">${this.leaveButton(view)}<div class="game-heading"><h1>${this.t(s.mode)} · ${s.size}×${s.size}</h1><span class="timer" data-testid="timer" role="timer" aria-label="${this.t(race?'elapsed':'remaining')}">${this.timer(view)}</span></div><div class="game-trailing"></div></div>
+      ${hud}
+      <div class="status-row">${this.connection(view,true)}<p class="game-status ${conflicts.size?'conflict':''}" data-testid="game-status" role="status">${status}</p>${race?'':`<span data-testid="input-lock" class="input-lock" role="status">${this.lockLabel(view)}</span>`}</div>
       <div class="game-layout"><div class="board-wrap">${this.renderBoard(board,conflicts,this.selected)}</div>
-      <div class="input-panel"><div class="number-pad" data-size="${s.size}" role="group" aria-label="${this.t('numbers')}">${Array.from({length:s.size},(_,i)=>`<button class="number-button" data-action="live-digit" data-value="${i+1}" data-testid="number-${i+1}" aria-label="${i+1}" ${canInput?'':'disabled'}>${i+1}</button>`).join('')}</div>
+      <div class="input-panel">${this.numberPad(board,{action:'live-digit',group:this.t('numbers'),label:digit=>digit,disabled:!canInput,notes:race&&this.notesMode})}
       ${race?`<div class="tools live-tools">${tool('notes','notes',!this.canInput(view),`role="switch" aria-checked="${this.notesMode}"`)}${tool('erase','erase',!canInput)}${tool('undo','undo',!this.canInput(view)||!view.race.can_undo)}${tool('redo','redo',!this.canInput(view)||!view.race.can_redo)}</div>`:''}
       ${messages?`<div class="game-messages">${messages}</div>`:''}
       ${info}<p class="note debug-only">${race&&view.race.dirty?this.t('dirty'):this.t('saved')}</p>${race?'':`<p class="note debug-only">${this.t('noNotesDuel')}</p>`}
@@ -298,14 +306,20 @@ export class LiveScreens {
     if (view.snapshot.mode==='duel') return formatLiveTime(view.remaining_ms??90000,true);
     return formatLiveTime(Math.max(0,(view.estimated_server_ms||view.snapshot.server_ms)-(view.snapshot.start_ms||view.snapshot.server_ms)));
   }
+  timeShare(view) { return Math.max(0,Math.min(1,(view.remaining_ms??90000)/90000)).toFixed(3); }
+  timeLow(view) { return (view.remaining_ms??90000)<=10000; }
   lockLabel(view) { return view.locked_remaining_ms>0?this.t('inputLock',{seconds:Math.ceil(view.locked_remaining_ms/1000)}):''; }
   renderResult(view) {
     const s=view.snapshot;
     const result=s.result;
     const noContest=!result || (result.winner===null && ['both_disconnected','resource_limit'].includes(result.reason));
     const key=noContest?'noContest':result.winner===null?'draw':result.winner===s.own.seat?'win':'loss';
-    this.content.innerHTML=`<section class="result" data-screen="match-result"><p class="eyebrow">${this.t(s.mode)} · ${s.size}×${s.size}</p><h1 data-testid="result-heading">${this.t(key)}</h1>${view.connection==='session_lost'?`<p role="status">${this.t('room_closed')}</p>`:this.connection(view)}${this.noticeHTML()}${this.storageNotice()}<p data-testid="result-details">${s.mode==='duel'?`${this.escape(s.own.name)} ${s.own.score}${s.opponent?` — ${s.opponent.score} ${this.escape(s.opponent.name)}`:''}`:this.escape(s.opponent?.name||'')}</p>${result?`<p data-testid="result-reason">${this.t('reason_'+result.reason)}</p>`:''}
-      ${!s.opponent?`<p role="status">${this.t('opponentLeft')}</p>`:s.own.rematch?`<p role="status">${this.t('rematchWaiting')}</p>`:s.opponent?.rematch?`<p role="status">${this.t('rematchOpponent')}</p>`:''}
+    const details=s.mode==='duel'
+      ?`<p class="scoreline" data-testid="result-details"><span class="score-side"><span class="score-name">${this.escape(s.own.name)}</span> <strong>${s.own.score}</strong></span>${s.opponent?` <span class="score-sep" aria-hidden="true">—</span><span class="sr-only">—</span> <span class="score-side rival"><strong>${s.opponent.score}</strong> <span class="score-name">${this.escape(s.opponent.name)}</span></span>`:''}</p>`
+      :`<p class="result-note" data-testid="result-details">${this.escape(s.opponent?.name||'')}</p>`;
+    const note=text=>`<p class="result-note" role="status">${text}</p>`;
+    this.content.innerHTML=`<section class="result" data-screen="match-result" data-outcome="${key}"><div class="pause-symbol">${this.svg(key==='win'?'trophy':key==='loss'?'flag':'equal')}</div><p class="eyebrow">${this.t(s.mode)} · ${s.size}×${s.size}</p><h1 data-testid="result-heading">${this.t(key)}</h1>${view.connection==='session_lost'?note(this.t('room_closed')):this.connection(view)}${this.noticeHTML()}${this.storageNotice()}${details}${result?`<p class="result-note" data-testid="result-reason">${this.t('reason_'+result.reason)}</p>`:''}
+      ${!s.opponent?note(this.t('opponentLeft')):s.own.rematch?note(this.t('rematchWaiting')):s.opponent?.rematch?note(this.t('rematchOpponent')):''}
       <div class="action-stack"><button class="primary-button" data-action="live-rematch" data-testid="rematch" ${!s.opponent||s.own.rematch||view.pending_command||view.connection!=='connected'?'disabled':''}>${this.t('rematch')}</button><button class="secondary-button" data-action="live-leave" data-testid="home">${this.t('home')}</button></div></section>`;
   }
   renderLost(view) {
@@ -318,6 +332,8 @@ export class LiveScreens {
     if (timer && view.snapshot) timer.textContent=view.snapshot.phase==='countdown'?this.countdown(view):this.timer(view);
     const lock=this.content.querySelector('[data-testid="input-lock"]');
     if (lock) lock.textContent=this.lockLabel(view);
+    const timeBar=this.content.querySelector('.meter.time');
+    if (timeBar) { timeBar.firstElementChild.style.setProperty('--p',this.timeShare(view));timeBar.classList.toggle('is-low',this.timeLow(view)); }
     if (this.content.querySelector('[data-screen="duel-game"]')) {
       const board=this.board(view);
       const fixed=board.givens[this.selected] || board.cells[this.selected].value;
@@ -332,28 +348,30 @@ export class LiveScreens {
     const view=this.view();
     if (action==='live-home') {
       if (view?.snapshot && !view.voluntarily_left && view.connection!=='session_lost') return this.handle('live-leave',button);
-      this.entered=false;this.onHome();return;
+      this.cue('navigate',{direction:'back',emphasis:'subtle'});this.entered=false;this.onHome();return;
     }
     if (action==='live-recover') {
       if (window.confirm(this.t('confirmRecover'))) { this.transport.replaceSession();this.notice='';this.onUpdate(); }return;
     }
     if (action==='live-save') { this.transport.persist();this.onUpdate();return; }
     if (!this.transport || this.transport.protectedSave) return;
+    if (['live-create','live-join','live-rematch','live-keep'].includes(action)) this.cue('tap');
     if (action==='live-create') { this.dispatch({type:'create',name:this.form.name,mode:this.form.mode,size:this.form.size});return; }
     if (action==='live-join') { this.dispatch({type:'join',invite:this.form.invite,name:this.form.name});return; }
-    if (action==='live-ready') { this.dispatch({type:'command',command:{type:'ready',ready:!view.snapshot.own.ready}});return; }
+    if (action==='live-ready') { this.cue('toggle');this.dispatch({type:'command',command:{type:'ready',ready:!view.snapshot.own.ready}});return; }
     if (action==='live-rematch') { this.dispatch({type:'command',command:{type:'rematch'}});return; }
     if (action==='live-reconnect') { this.dispatch({type:'resume'});return; }
     if (action==='live-leave') {
       if (!view.snapshot) { this.entered=false;this.onHome();return; }
       if (view.snapshot.phase!=='finished' && !view.voluntarily_left && !window.confirm(this.t('confirmLeave'))) return;
+      this.cue('navigate',{direction:'back',emphasis:'subtle'});
       if(this.dispatch({type:'leave'})){this.leaving=true;this.notice=this.t('leaving');this.onUpdate();}return;
     }
     if (action==='live-share') {
       const url=new URL(`/r/${view.snapshot.room_code}`,location.origin).href;
       try {
         if (navigator.share) await navigator.share({title:'Sudoku Rivals',url});
-        else { await navigator.clipboard.writeText(url);this.notice=this.t('copied'); }
+        else { await navigator.clipboard.writeText(url);this.notice=this.t('copied');this.cue('success',{emphasis:'subtle'}); }
       } catch(error) { if (error.name!=='AbortError') {this.shareLink=url;this.notice=this.t('copyFailed');} }
       this.onUpdate();return;
     }
@@ -361,9 +379,9 @@ export class LiveScreens {
     if (action==='live-accept') { if(window.confirm(this.t('confirmAccept')))this.dispatch({type:'reconcile',keep_local:false});return; }
     if (!view.snapshot || view.snapshot.phase!=='playing') return;
     if (action==='select') { this.selected=Number(button.dataset.index);this.onUpdate();this.focusCell();return; }
-    if (action==='live-notes' && view.snapshot.mode==='race') { this.notesMode=!this.notesMode;this.onUpdate();return; }
+    if (action==='live-notes' && view.snapshot.mode==='race') { this.notesMode=!this.notesMode;this.cue('toggle');this.onUpdate();return; }
     if (['live-undo','live-redo','live-erase'].includes(action) && view.snapshot.mode==='race' && this.canInput(view)) {
-      this.dispatch({type:'edit',command:action==='live-erase'?{type:'erase',index:this.selected}:{type:action.slice(5)}});this.focusCell();return;
+      if(this.dispatch({type:'edit',command:action==='live-erase'?{type:'erase',index:this.selected}:{type:action.slice(5)}}))this.cue('tap',{emphasis:'subtle'});this.focusCell();return;
     }
     if (action==='live-digit') this.enterDigit(Number(button.dataset.value));
   }
@@ -372,8 +390,13 @@ export class LiveScreens {
     if (!this.canInput(view)) return;
     const board=this.board(view);
     if (board.givens[this.selected] || (view.snapshot.mode==='duel' && board.cells[this.selected].value)) return;
-    if (view.snapshot.mode==='race') this.dispatch({type:'edit',command:{type:this.notesMode?'toggle_note':'set',index:this.selected,value}});
-    else this.dispatch({type:'command',command:{type:'move',board_id:view.snapshot.own.board_id,index:this.selected,value}});
+    if (view.snapshot.mode==='race') {
+      if (this.dispatch({type:'edit',command:{type:this.notesMode?'toggle_note':'set',index:this.selected,value}})) {
+        if (this.notesMode) this.cue('type');
+        else if (this.view().race?.conflicts?.includes(this.selected)) this.cue('error',{emphasis:'subtle'});
+        else this.cue('tap');
+      }
+    } else if (this.dispatch({type:'command',command:{type:'move',board_id:view.snapshot.own.board_id,index:this.selected,value}})) this.cue('tap');
     this.focusCell();
   }
   focusCell() { this.content.querySelector(`[data-index="${this.selected}"]`)?.focus({preventScroll:true}); }

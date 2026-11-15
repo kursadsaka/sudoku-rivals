@@ -66,6 +66,8 @@ const WEB_ASSETS: &[(&str, &str)] = &[
     ("main.js", "text/javascript; charset=utf-8"),
     ("session.js", "text/javascript; charset=utf-8"),
     ("live.js", "text/javascript; charset=utf-8"),
+    ("sound.js", "text/javascript; charset=utf-8"),
+    ("cuelume.js", "text/javascript; charset=utf-8"),
     ("styles.css", "text/css; charset=utf-8"),
     ("sw.js", "text/javascript; charset=utf-8"),
     ("manifest.webmanifest", "application/manifest+json"),
