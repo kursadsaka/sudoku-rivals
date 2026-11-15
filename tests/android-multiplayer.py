@@ -20,10 +20,12 @@ import time
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
+from android_multiplayer_fixture import divergent_cells
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--adb', required=True)
 parser.add_argument('--trace', action='store_true', help='Log UI actions without session data')
+parser.add_argument('--reconcile-only', action='store_true', help='Run only the cold-restore divergent-board scenario')
 parser.add_argument('--serial', default='emulator-5554')
 parser.add_argument('--server-bin', default='/tmp/sudoku-shared-target/debug/sudoku-server')
 parser.add_argument('--server-port', type=int, default=3001)
@@ -77,9 +79,20 @@ def until(test, timeout=15, message='Condition did not become true'):
         time.sleep(.1)
 
 
+def background():
+    shell('input', 'keyevent', 'KEYCODE_HOME')
+    until(lambda: re.search(r'\bstate=STOPPED\b', shell('dumpsys', 'activity', 'activities', PKG)),
+          20, 'HOME did not stop the test Activity; lifecycle resume was not exercised')
+
+
 def hierarchy():
     shell('uiautomator', 'dump', '/sdcard/sudoku-live-check.xml')
     return ET.fromstring(adb('exec-out', 'cat', '/sdcard/sudoku-live-check.xml'))
+
+
+def scroll_up():
+    width, height = map(int, re.findall(r'(\d+)x(\d+)', shell('wm', 'size'))[-1])
+    shell('input', 'swipe', str(width//2), str(height*85//100), str(width//2), str(height*30//100), '160')
 
 
 def node(tag, scroll=False):
@@ -88,7 +101,7 @@ def node(tag, scroll=False):
         for item in hierarchy().iter('node'):
             resource = item.attrib.get('resource-id', '')
             if resource == tag or resource.endswith(':id/' + tag): return item
-        if scroll and attempt % 2: shell('input', 'swipe', '540', '1620', '540', '600', '160')
+        if scroll and attempt % 2: scroll_up()
         else: time.sleep(.3)
     raise AssertionError('UI node missing: ' + tag)
 
@@ -172,6 +185,8 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
             entry['status'] = status
             if status >= 400:
                 entry['error'] = json.loads(content).get('error')
+            elif command:
+                entry['receipt'] = json.loads(content).get('receipt', {}).get('code')
             if self.server.drop_next_setup and self.path == '/v1/rooms' and status == 200:
                 self.server.drop_next_setup = False
                 self.server.dropped_setup_room = json.loads(content)['snapshot']['room_code']
@@ -356,14 +371,37 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
                         stop(); launch()
                         until(lambda: json.loads(saved_client()['draft'])['cells'] == before['cells'])
                         # Another authorized connection changes the same seat while this one is offline.
-                        auth = saved_client()['auth']
-                        foreign = auth['snapshot']['own']['cells'].copy()
-                        foreign[blank] = 1
-                        envelope = {'protocol':1,'token':auth['token'],'generation':auth['snapshot']['generation'],
-                                    'match_id':auth['snapshot']['match_id'],'sequence':auth['snapshot']['own']['next_sequence'],
-                                    'command':{'type':'sync','base_version':auth['snapshot']['own']['board_version'],'cells':foreign}}
+                        offline_client = saved_client()
+                        auth = offline_client['auth']
+                        # The offline UI steps can exceed the server heartbeat. Take over
+                        # the seat before editing, just as another real device would.
+                        resume = urllib.request.Request(UPSTREAM+'/v1/rooms/'+auth['snapshot']['room_code']+'/resume',
+                            json.dumps({'protocol':1,'token':auth['token']}).encode(),
+                            {'Content-Type':'application/json'},method='POST')
+                        with urllib.request.urlopen(resume,timeout=10) as response:
+                            resumed = json.load(response)
+                        foreign, foreign_index = divergent_cells(resumed, before, offline_client.get('pending'))
+                        envelope = {'protocol':1,'token':auth['token'],'generation':resumed['generation'],
+                                    'match_id':resumed['match_id'],'sequence':resumed['own']['next_sequence'],
+                                    'command':{'type':'sync','base_version':resumed['own']['board_version'],'cells':foreign}}
                         request = urllib.request.Request(UPSTREAM+'/v1/rooms/'+auth['snapshot']['room_code']+'/command',json.dumps(envelope).encode(),{'Content-Type':'application/json'},method='POST')
-                        with urllib.request.urlopen(request,timeout=10) as response: assert response.status == 200
+                        with urllib.request.urlopen(request,timeout=10) as response:
+                            assert response.status == 200
+                            foreign_response = json.load(response)
+                        print('Foreign sync diagnostic:', {
+                            'code': foreign_response['receipt']['code'],
+                            'base_version': envelope['command']['base_version'],
+                            'server_version': foreign_response['snapshot']['own']['board_version'],
+                            'index': foreign_index, 'prior': resumed['own']['cells'][foreign_index],
+                            'local': before['cells'][foreign_index]['value'], 'foreign': foreign[foreign_index],
+                            'same_server_board': foreign == resumed['own']['cells'],
+                            'same_local_board': foreign == [cell['value'] for cell in before['cells']],
+                            'pending_type': ((offline_client.get('pending') or {}).get('envelope') or {}).get('command', {}).get('type'),
+                            'pending_matches_foreign': ((offline_client.get('pending') or {}).get('envelope') or {}).get('command', {}).get('cells') == foreign,
+                        }, flush=True)
+                        assert foreign_response['receipt']['code'] == 'ok', 'Foreign sync was not accepted'
+                        assert foreign_response['snapshot']['own']['cells'] == foreign, 'Foreign board was not applied'
+                        assert foreign_response['snapshot']['own']['board_version'] == resumed['own']['board_version'] + 1
                         proxy.offline = False
                         until(lambda: saved_client().get('reconcile'),20,'Divergent race board did not require explicit choice')
                         assert json.loads(saved_client()['draft'])['cells'] == before['cells'], 'Reconcile silently overwrote local work'
@@ -371,6 +409,9 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
                         until(lambda: app_snapshot()['generation'] >= 2 and app_snapshot()['own']['board_version'] >= 2, 20)
                         assert sum(c['type'] == 'sync' for c in proxy.calls)-before_sync == 1, 'Offline batch was not a single sync'
                         assert len(json.loads(saved_client()['draft'])['undo']) == 40
+                        if args.reconcile_only:
+                            print('Android divergent-board cold restore/reconcile passed', flush=True)
+                            raise SystemExit(0)
                     fill_native(app_snapshot(), solution)
                     until(lambda: app_snapshot()['phase'] == 'finished', 20, 'Native race did not complete')
                     assert app_snapshot()['result']['winner'] == app_snapshot()['own']['seat']
@@ -400,8 +441,7 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
                         # Native rendering must await server time/result; no local winner.
                         shell('input','keyevent','KEYCODE_N')
                         assert saved_client()['draft'] is None, 'Duel exposed a notes/undo draft'
-                        shell('input','keyevent','KEYCODE_HOME')
-                        time.sleep(1)
+                        background()
                         launch()
                         until(lambda: app_snapshot()['generation'] >= 2, 15)
                         until(lambda: app_snapshot()['phase'] == 'finished', 100, '90-second duel did not finish authoritatively')
@@ -467,7 +507,7 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
                     until(lambda: 'Yeniden bağlanılacak' in node('live-message', True).attrib.get('text', ''))
                     body = saved_client()['setup']['body'].encode()
                     expected_hash = hashlib.sha256(body).hexdigest()
-                    shell('input','keyevent','KEYCODE_HOME'); launch()
+                    background(); launch()
                     until(lambda: sum(c['path'] == '/v1/rooms' for c in proxy.calls[start:]) >= 2,
                           15, 'New setup did not retry after background/foreground')
                     stop(); launch()
