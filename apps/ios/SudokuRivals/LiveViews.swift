@@ -119,6 +119,10 @@ struct LiveSetupView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(L10n.t("home.friends")).font(.title2.bold()).accessibilityAddTraits(.isHeader)
             if !live.isConfigured { Text(L10n.t("live.notConfigured")).foregroundStyle(Theme.error) }
+            else if LiveSession.pinsOrigin, let host = live.origin.flatMap({ URL(string: $0)?.host }) {
+                Text(L10n.t("live.stagingServer") + host).font(.footnote).foregroundStyle(Theme.muted)
+                    .accessibilityIdentifier("live-server-fixed")
+            }
             Text(L10n.t("live.name")).font(.headline)
             TextField(L10n.t("live.name"), text: $live.name)
                 .textFieldStyle(.roundedBorder)

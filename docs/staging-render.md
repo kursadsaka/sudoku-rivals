@@ -150,11 +150,29 @@ ayarları/servisi değişmez. Doğrulama: `python3 tests/android-staging.py --aa
 gönderir, ortak 5 create/10 dk kotasından birini kullanır; Free servis soğuksa
 ~1 dk sürebilir).
 
-iOS API origin'i ayrıdır (releaseOrigin halen boş). Universal/App Links için gerçek
+Universal/App Links için gerçek
 imzalı app identifier ve APK sertifika parmak izi gerekir; bu değişiklikler uydurma
 association dosyası yayımlamaz. İki `.well-known` yolu halen 404; OS link doğrulaması
 tamamlandı sayılmaz. Web daveti kurulum olmadan çalışır. Native otomatik açılış ayrı
 G16 devam işidir; Android staging build'i HTTPS VIEW filtresi eklemez.
+
+## iOS staging yapılandırması
+
+`apps/ios/project.yml` içinde Release'ten türeyen `Staging` build configuration ve
+`SudokuRivalsStaging` şeması vardır (`xcodebuild -scheme SudokuRivalsStaging ...`).
+Derleme koşulu `STAGING`: `LiveSession.releaseOrigin` sabit
+`https://sudoku-rivals-g16-staging.onrender.com` olur ve origin sabitlenir; başka
+origin'li kayıtlı oturum yüklenmez (`protectedSave`, kayıt bayt bayt korunur). Uygulamada
+sunucu alanı yoktur; kurulum ekranı sabit host'u gösterir. Staging DEBUG ile derlenemez
+(`#error`), loopback HTTP ve test kancaları yoktur. Info.plist'te hiçbir
+`NSAppTransportSecurity` anahtarı yoktur (ATS varsayılanı: yalnız HTTPS). Bundle ID
+yer tutucu `com.example.sudokurivals.staging`, ad "Sudoku Rivals Staging": ayrı veri
+konteyneri, debug/release kayıtlarına dokunmaz. Debug (`LIVE_TEST_ORIGIN`/loopback) ve
+Release (boş origin, "yapılandırılmadı") davranışı değişmedi. İmza yoktur; gerçek bundle
+ID/Team sahibin kararıdır. `PrivacyInfo.xcprivacy` eklendi (izleme yok, system boot time
+API'si 35F9.1). Statik kontrol: `python3 tests/ios-staging.py`. Ayrıntı:
+[iOS staging kanıtı](validation/g16-ios-staging.md). Universal link/association hâlâ
+yoktur.
 
 ## Geri alma
 

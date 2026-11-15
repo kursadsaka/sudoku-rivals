@@ -43,7 +43,9 @@ final class AppModel {
     init() {
         var liveStore = LiveStore.standard
         var liveOrigin = LiveSession.releaseOrigin
-        #if DEBUG
+        #if DEBUG && STAGING
+        #error("The Staging configuration must not be built with DEBUG: it never allows loopback or test hooks.")
+        #elseif DEBUG
         let env = ProcessInfo.processInfo.environment
         // Simulator reaches the Mac's loopback; `cargo run -p sudoku-server` listens on :3000.
         liveOrigin = env["LIVE_TEST_ORIGIN"] ?? "http://127.0.0.1:3000"
