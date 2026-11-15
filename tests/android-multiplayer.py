@@ -29,12 +29,20 @@ parser.add_argument('--adb', required=True)
 parser.add_argument('--trace', action='store_true', help='Log UI actions without session data')
 parser.add_argument('--reconcile-only', action='store_true', help='Run only the cold-restore divergent-board scenario')
 parser.add_argument('--layout-check', type=pathlib.Path, help='Also check the live game layout at several display sizes and save screenshots here')
+parser.add_argument('--locale', default='tr-TR', choices=['tr-TR', 'en-US'], help='App language to run in; the suite checks texts of that language')
 parser.add_argument('--serial', default='emulator-5554')
 parser.add_argument('--server-bin', default='/tmp/sudoku-shared-target/debug/sudoku-server')
 parser.add_argument('--server-port', type=int, default=3001)
 parser.add_argument('--proxy-port', type=int, default=3002)
 args = parser.parse_args()
 assert args.server_port != 3000 and args.proxy_port != 3000, 'Never replace the web worker server.'
+LANG = 'en' if args.locale == 'en-US' else 'tr'
+STR, PLURALS = android_locale.load_strings(LANG)
+# Substrings of the UI texts this suite asserts, per language (full texts live in res/values*/strings.xml).
+NEEDLE = {'tr': dict(disconnected='kesildi', friend_disconnected='bağlantısı kesildi', won='kazandın', score_missing='Skor mevcut değil', lost_session='dönülemiyor',
+                     will_reconnect='Yeniden bağlanılacak', unreachable='Sunucuya ulaşılamıyor', local_race='Yerel yarış', cannot_continue='sürdürülemiyor', opponent_10='Rakip: 10', declared='ilan edilmedi'),
+          'en': dict(disconnected='Disconnected', friend_disconnected='is disconnected', won='You won', score_missing='Score unavailable', lost_session="Can't return",
+                     will_reconnect='Will reconnect', unreachable="Can't reach the server", local_race='local race', cannot_continue="can't continue", opponent_10='Opponent: 10', declared='declared')}[LANG]
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PKG = 'com.sudokurivals'
 UPSTREAM = f'http://127.0.0.1:{args.server_port}'
@@ -165,11 +173,50 @@ LAYOUT_VIEWPORTS = [('411x914dp', 1080, 2400, 420, True), ('411x731dp', 1080, 19
                     ('320x568dp', 640, 1136, 320, False), ('731x411dp-landscape', 1920, 1080, 420, True)]
 
 
+SEEN = {'countdown': 0, 'lock': 0}
+
+
+def plural_pattern(key):
+    """Regex for any quantity form of a plural resource, with the count as digits."""
+    return '|'.join(re.escape(text).replace(re.escape('%1$d'), r'\d+') for text in PLURALS[key].values())
+
+
+def label_check(mode, size):
+    """Visible texts and accessibility labels of the live game screen in the language under test."""
+    tags = nodes_by_tag(hierarchy())
+    shown = lambda tag, key: (tags[tag][4].get(key) or '') if tag in tags else None
+    n = size
+    race = mode == 'race'
+    expected = [
+        ('mode-label', 'text', [android_locale.fmt(STR['lobby_mode_size'], STR['mode_race'] if race else STR['mode_duel_short'], n)]),
+        ('back', 'content-desc', [STR['action_back']]),
+        ('connection-status', 'content-desc', [STR['conn_connected']]),
+    ]
+    if race:
+        expected += [('opponent-progress', 'text', [android_locale.fmt(STR['race_progress'], 0)]), ('opponent-progress', 'content-desc', [android_locale.fmt(STR['race_progress_desc'], 0)]),
+                     ('notes-toggle', 'content-desc', [STR['cd_notes']]), ('undo', 'content-desc', [STR['cd_undo']]), ('redo', 'content-desc', [STR['cd_redo']])]
+    else:
+        expected += [('own-score', 'text', [android_locale.fmt(STR['duel_you'], 0)]), ('own-score', 'content-desc', [android_locale.fmt(STR['duel_you_desc'], 0)]),
+                     ('opponent-score', 'text', [android_locale.fmt(STR['duel_rival'], '–'), android_locale.fmt(STR['duel_rival'], 0)]),
+                     ('combo', 'text', [android_locale.fmt(STR['duel_streak'], 0)]), ('combo', 'content-desc', [android_locale.fmt(STR['duel_streak_desc'], 0)])]
+    # uiautomator puts a clickable control's label on a child node, so for buttons look for it anywhere in the tree.
+    descriptions = {n.attrib.get('content-desc') for n in hierarchy().iter('node')}
+    clickable = {'back', 'notes-toggle', 'undo', 'redo'}
+    problems = [f'{tag} {key} is {shown(tag, key)!r}, expected one of {options}' for tag, key, options in expected
+                if not (set(options) & descriptions if tag in clickable else shown(tag, key) in options)]
+    if shown('timer', 'content-desc') is None or not shown('timer', 'content-desc').startswith(STR['live_time_desc'].split('%')[0]): problems.append('timer description')
+    if not (shown('cell-1-1', 'content-desc') or '').startswith(android_locale.fmt(STR['cell_label'].split(', %3$s')[0], 1, 1) + ', '): problems.append('cell label')
+    if race and shown('erase', 'text') is None and STR['action_erase'] not in [n.attrib.get('text') for n in hierarchy().iter('node')]: problems.append('erase label')
+    assert not problems, f'{mode} {size}x{size} {args.locale}: {problems}'
+    print('Labels ok   ' + json.dumps({'mode': mode, 'size': size, 'locale': args.locale}), flush=True)
+
+
 def layout_check(mode, size):
     """One-screen live layout: order, 48dp targets, digit rows, hidden debug text, no scrolling."""
     original_size = re.findall(r'(\d+x\d+)', shell('wm', 'size'))[0]
     original_density = re.findall(r'(\d+)', shell('wm', 'density'))[0]
     args.layout_check.mkdir(parents=True, exist_ok=True)
+    label_check(mode, size)
     try:
         for label, width, height, density, must_fit in LAYOUT_VIEWPORTS:
             shell('wm', 'size', f'{width}x{height}'); shell('wm', 'density', str(density))
@@ -313,6 +360,16 @@ def ready_match(bot):
     until(lambda: app_snapshot() and app_snapshot()['opponent'] is not None)
     tap('ready-toggle', True)
     bot.call({'type': 'command', 'command': {'type': 'ready', 'ready': True}})
+    if args.layout_check:  # the countdown is a plural string ("Starts in 3 seconds"): sample it while it runs
+        pattern = re.compile(plural_pattern('countdown_seconds'))
+        seen = None
+        for _ in range(4):
+            seen = (nodes_by_tag(hierarchy()).get('timer') or (0, 0, 0, 0, {}))[4].get('text', '')
+            if pattern.fullmatch(seen or '') or app_snapshot()['phase'] == 'playing': break
+        # A slow dump can miss the short countdown; the suite requires at least one observation overall.
+        if pattern.fullmatch(seen or ''):
+            SEEN['countdown'] += 1
+            print('Countdown ok ' + json.dumps({'text': seen, 'locale': args.locale}), flush=True)
     until(lambda: app_snapshot()['phase'] == 'playing', 12, 'Native countdown did not start match')
     snapshot = app_snapshot()
     partner = bot.call()['snapshot']
@@ -353,7 +410,7 @@ stop(); launch()
 original = {name: read(name) for name in private_files()}
 airplane = shell('settings', 'get', 'global', 'airplane_mode_on')
 locale_before = android_locale.get(shell, PKG)
-android_locale.set(shell, PKG, 'tr-TR')  # this suite reads Turkish UI text
+android_locale.set(shell, PKG, args.locale)  # this suite reads UI text in this language
 proxy = None
 server = None
 bots = []
@@ -405,7 +462,7 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
                 if mode == 'race':
                     if size == 6:
                         proxy.offline = True
-                        until(lambda: 'kesildi' in node('connection-status').attrib.get('text',''), 15, 'Native adapter did not report disconnect')
+                        until(lambda: NEEDLE['disconnected'] in node('connection-status').attrib.get('text',''), 15, 'Native adapter did not report disconnect')
                         select(blank, size)
                         before_sync = sum(c['type'] == 'sync' for c in proxy.calls)
                         keys = ['KEYCODE_1','KEYCODE_2']*20
@@ -472,6 +529,22 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
                         assert app_snapshot()['own']['score'] == 0 and app_snapshot()['own']['wrong'] == 1
                         until(lambda: time.monotonic() and app_snapshot()['own']['wrong'] == 1)
                         time.sleep(2.1)
+                        if args.layout_check:
+                            # Second wrong move, not dropped: the 2 s input lock is on screen right after it
+                            # (the first one's lock expires while its lost response is retried).
+                            wrong_again = next(v for v in range(1, size + 1) if v not in (solution[blank], wrong))
+                            shell('input','keyevent','KEYCODE_'+str(wrong_again))
+                            lock = None
+                            for _ in range(4):
+                                lock = nodes_by_tag(hierarchy()).get('input-lock')
+                                if lock is not None: break
+                            assert lock is not None, 'no input lock shown after a wrong duel move'
+                            assert re.fullmatch(plural_pattern('lock_seconds_desc'), lock[4].get('content-desc', '')), lock[4]
+                            assert lock[4].get('text', '').startswith(STR['status_lock'].split('%')[0]), lock[4]
+                            SEEN['lock'] += 1
+                            print('Lock ok     ' + json.dumps({'text': lock[4].get('text'), 'description': lock[4].get('content-desc'), 'locale': args.locale}), flush=True)
+                            until(lambda: app_snapshot()['own']['wrong'] == 2, 10, 'Second wrong move not acknowledged')
+                            time.sleep(2.1)
                         shell('input','keyevent','KEYCODE_'+str(solution[blank]))
                         until(lambda: app_snapshot()['own']['score'] == 10, 10, 'Native duel correct move not acknowledged')
                         partner = bot.call()['snapshot']
@@ -492,13 +565,13 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
                         assert app_snapshot()['result']['reason'] == 'time' and app_snapshot()['result']['winner'] is None
                 node('result-heading', True)
                 if mode == 'duel' and size == 6:
-                    assert 'Rakip: 10' in node('result-details', True).attrib.get('text', '')
+                    assert NEEDLE['opponent_10'] in node('result-details', True).attrib.get('text', '')
                     bot.call({'type':'leave'})
                     until(lambda: app_snapshot()['opponent'] is None)
-                    assert 'Rakip: 10' in node('result-details', True).attrib.get('text', ''), 'Verified final score lost on departure'
+                    assert NEEDLE['opponent_10'] in node('result-details', True).attrib.get('text', ''), 'Verified final score lost on departure'
                     stop(); launch()
                     until(lambda: app_snapshot()['opponent'] is None and app_snapshot()['phase'] == 'finished')
-                    assert 'Rakip: 10' in node('result-details', True).attrib.get('text', ''), 'Final score lost on cold restore'
+                    assert NEEDLE['opponent_10'] in node('result-details', True).attrib.get('text', ''), 'Final score lost on cold restore'
                     assert node('rematch', True).attrib.get('enabled') == 'false'
                     leave_native()
                     bot.close()
@@ -509,7 +582,7 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
                     bot.call({'type':'command','command':{'type':'disconnect'}}, pause=True)
                     until(lambda: app_snapshot()['opponent']['connected'] is False)
                     assert node('rematch', True).attrib.get('enabled') == 'true', 'Cannot queue rematch during temporary opponent disconnect'
-                    assert 'bağlantısı kesildi' in node('rematch-status', True).attrib.get('text', '')
+                    assert NEEDLE['friend_disconnected'] in node('rematch-status', True).attrib.get('text', '')
                 old_match = app_snapshot()['match_id']
                 tap('rematch', True)
                 if mode == 'duel':
@@ -524,17 +597,17 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
                 bot.call({'type':'leave'})
                 until(lambda: app_snapshot()['phase'] == 'finished' and app_snapshot()['opponent'] is None)
                 assert app_snapshot()['result']['winner'] == app_snapshot()['own']['seat']
-                assert 'kazandın' in node('result-heading', True).attrib.get('text', '')
+                assert NEEDLE['won'] in node('result-heading', True).attrib.get('text', '')
                 assert node('rematch', True).attrib.get('enabled') == 'false', 'Rematch offered without an opponent'
                 if mode == 'duel':
-                    assert 'Skor mevcut değil' in node('result-details', True).attrib.get('text', ''), 'Missing opponent score invented'
+                    assert NEEDLE['score_missing'] in node('result-details', True).attrib.get('text', ''), 'Missing opponent score invented'
                 # A later room loss must not hide an already verified result.
                 if size == 9:
                     server_stop(server)
                     server = server_start()
-                    until(lambda: 'dönülemiyor' in node('connection-status', True).attrib.get('text', ''), 20)
-                    assert 'kazandın' in node('result-heading', True).attrib.get('text', '')
-                    assert 'kazanan ilan edilmedi' not in node('live-message', True).attrib.get('text', ''), 'Room-loss banner contradicts verified result'
+                    until(lambda: NEEDLE['lost_session'] in node('connection-status', True).attrib.get('text', ''), 20)
+                    assert NEEDLE['won'] in node('result-heading', True).attrib.get('text', '')
+                    assert NEEDLE['declared'] not in node('live-message', True).attrib.get('text', ''), 'Room-loss banner contradicts verified result'
                     assert node('rematch', True).attrib.get('enabled') == 'false'
                     tap('home', True)
                     node('friend-start', True)
@@ -548,7 +621,7 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
                     proxy.drop_next_setup = True
                     tap('room-create', True)
                     until(lambda: saved_client().get('setup') is not None and proxy.offline)
-                    until(lambda: 'Yeniden bağlanılacak' in node('live-message', True).attrib.get('text', ''))
+                    until(lambda: NEEDLE['will_reconnect'] in node('live-message', True).attrib.get('text', ''))
                     body = saved_client()['setup']['body'].encode()
                     expected_hash = hashlib.sha256(body).hexdigest()
                     background(); launch()
@@ -576,20 +649,20 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
             bot.call({'type':'join','invite':app_snapshot()['room_code'],'name':'WebBot'})
             ready_match(bot)
             proxy.offline = True
-            until(lambda: 'Sunucuya ulaşılamıyor' in node('live-message', True).attrib.get('text', ''), 20)
+            until(lambda: NEEDLE['unreachable'] in node('live-message', True).attrib.get('text', ''), 20)
             message = node('live-message', True).attrib.get('text', '')
-            assert ('Yerel yarış' in message) == (mode == 'race'), 'Disconnect copy claims a race draft in duel'
+            assert (NEEDLE['local_race'] in message) == (mode == 'race'), 'Disconnect copy claims a race draft in duel'
             server_stop(server)
             server = server_start()
             proxy.offline = False
-            until(lambda: 'sürdürülemiyor' in node('result-heading', True).attrib.get('text',''), 20, 'Restart was not presented as lost session')
+            until(lambda: NEEDLE['cannot_continue'] in node('result-heading', True).attrib.get('text',''), 20, 'Restart was not presented as lost session')
             calls_after_loss = len(proxy.calls)
             time.sleep(3)
-            assert 'dönülemiyor' in node('connection-status', True).attrib.get('text', ''), 'Lost session resumed itself'
+            assert NEEDLE['lost_session'] in node('connection-status', True).attrib.get('text', ''), 'Lost session resumed itself'
             assert len(proxy.calls) == calls_after_loss, 'Terminal session loss continued retrying HTTP'
             assert app_snapshot()['result'] is None, 'Restart invented a result'
             detail = node('result-details', True).attrib.get('text', '')
-            assert ('Yerel yarış' in detail) == (mode == 'race'), 'Lost-session copy claims a race draft in duel'
+            assert (NEEDLE['local_race'] in detail) == (mode == 'race'), 'Lost-session copy claims a race draft in duel'
             tap('home', True)
             print(f'Android {mode}: disconnect and unrecoverable-session copy passed', flush=True)
         stop()
@@ -600,6 +673,7 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
         assert read('live-session.json') == b'{broken-live-record', 'Corrupt session silently replaced'
         tap('live-recover',True); tap('live-reset-confirm',True)
         assert any(read(name) == b'{broken-live-record' for name in private_files() if name.startswith('live-session-recovery-'))
+        if args.layout_check: assert SEEN['countdown'] and SEEN['lock'], f'countdown/lock text never observed: {SEEN}'
         print('Android multiplayer passed: two modes/two sizes, deep links, exact lost-response retry, 40 offline edits/single sync, cold restart, explicit reconciliation, failed-save retry, corrupt-record preservation, 90-second timer, mutual rematch, missing-opponent score/rematch, verified-result preservation, mode-specific failure copy, explicit leave and server restart', flush=True)
     except Exception:
         try:

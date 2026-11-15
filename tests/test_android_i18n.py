@@ -101,7 +101,7 @@ class AndroidLocalizationTests(unittest.TestCase):
             for key, value in re.findall(r'<string name="(\w+)"[^>]*>(.*?)</string>', text):
                 with self.subTest(locale=locale, key=key):
                     self.assertIsNone(re.search(r"(?<!\\)'", value), 'unescaped apostrophe')
-                    self.assertIsNone(re.search(r'%(?!\d+\$[sd]|%)', value), 'bare % must be %% or a positional format')
+                    self.assertIsNone(re.search(r'%(?!\d+\$[sd])', value.replace('%%', '')), 'bare % must be %% or a positional format')
 
 
 if __name__ == '__main__':

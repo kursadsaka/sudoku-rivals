@@ -43,12 +43,29 @@ Render servisi, staging, Notes, web/iOS ve oyun/protokol mantığı değişmedi.
 
 Ekran görüntüleri çalışma alanında, repo dışında: `../g16-android-i18n-evidence/`.
 
+## İngilizce canlı oyun ekranı (ek doğrulama)
+
+`tests/android-multiplayer.py --locale en-US --layout-check <klasör>` (varsayılan `tr-TR`) gerçek emülatörde (API 36,
+sistem dili en-US) tam canlı süiti İngilizce çalıştırır: iki mod × 6/9 (WASM botuna karşı) lobi, geri sayım, oyun, rövanş,
+ayrılma, bağlantı kopması ve sunucu yeniden başlatma akışları geçti. Süit metin iddialarını `NEEDLE` tablosundan dile göre
+okur; ek denetimler `--layout-check` ile:
+
+- Her mod/boyutta oyun ekranının metin ve etiketleri `strings.xml`'den hesaplanır: `Classic race · 6×6` / `Duel · 9×9`,
+  geri etiketi, bağlantı noktası (`Connected`), yarışta `Rival 0%` (+ açıklama), kalem/geri al/yinele etiketleri; düelloda
+  `You 0`, `Rival 0` veya `–`, `Streak 0` ve erişilebilir karşılıkları; süre açıklaması ve hücre etiketi.
+- Geri sayım çoğulu ("Starts in 2 seconds") ve düello giriş kilidi ("Lock 2 s" / "Input locked: 2 seconds") ekranda
+  gözlemlenir; süitin sonunda ikisinin de en az bir kez görülmesi şarttır. Kilit, kayıp yanıt akışı süresini tükettiği için
+  ek bir düşürülmeyen yanlış hamleyle (yalnız `--layout-check`) görünür kılınır.
+- Beş ekran boyutunda × 4 mod/boyutla **20 yerleşim ölçümü İngilizce'de geçti** (kaydırma yok; yalnız yarışta 320×568 dp'de
+  kayar, düello kaymaz). Aynı süit Türkçe'de de geçti.
+- Bulgu ve düzeltme: İngilizce yarış durumu `Rival %0` gösteriyordu (yüzde işareti Türkçe sırasıyla). İngilizce kaynak
+  `Rival %1$d%%` / `Rival: %1$d%% of cells filled` yapıldı; Türkçe `Rakip %N` aynı. Üretim kodu değişmedi.
+- Uiautomator tıklanabilir düğümün etiketini çocuk düğümde gösterir; denetim butonlar için etiketi ağaçta arar.
+
 ## Sınırlar
 
-- Canlı oyun ekranı (yarış/düello oynarken) İngilizce'de emülatörde elle/otomatik açılmadı: o ekran WASM botlu Türkçe
-  süitle sınandı; İngilizce metinler aynı biçim argümanlarını kullanır (yer tutucu eşliği testle doğrulandı) ve
-  İngilizce lobi, ayrılma iletişim kutusu ve solo oyun görüntü/etiket olarak doğrulandı. Gerçek İngilizce duello/yarış
-  oyun ekranını görmek için harness'e bir İngilizce çalıştırma modu gerekir (şimdi Türkçe sabit).
+- Canlı oyun ekranındaki İngilizce metinler yalnız yerel WASM botlu süitle ve 411×731 / 360×640 / 320×568 dp, yatay ekranlarda
+  denendi; gerçek sunucu gecikmesi/cihaz yok.
 - Metinlerin ana dili konuşan biri tarafından gözden geçirilmesi yapılmadı (makine/geliştirici çevirisi). Ek diller yok.
 - Sağdan sola diller, çok büyük yazı tipi ve gerçek cihaz/TalkBack bu turda denenmedi. İngilizce metinler Türkçeden
   biraz uzun/kısa; 320×568 dp solo yerleşimi İngilizce'de de aynı (kaydırma yalnız bu boyutta).

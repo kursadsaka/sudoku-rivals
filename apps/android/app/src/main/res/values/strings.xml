@@ -142,8 +142,8 @@
     <string name="time_syncing">Syncing</string>
     <string name="live_time_desc">Remaining or elapsed time: %1$s</string>
     <string name="opponent_name_desc">Opponent: %1$s</string>
-    <string name="race_progress">Rival %%%1$d</string>
-    <string name="race_progress_desc">Rival: %%%1$d of cells filled</string>
+    <string name="race_progress">Rival %1$d%%</string>
+    <string name="race_progress_desc">Rival: %1$d%% of cells filled</string>
     <string name="duel_you">You %1$d</string>
     <string name="duel_you_desc">You: %1$d</string>
     <string name="duel_rival">Rival %1$s</string>
