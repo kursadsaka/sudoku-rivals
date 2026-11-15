@@ -16,7 +16,7 @@ const text = {
     hintNone:'Bu konumda tekli tekniklerle açıklanabilir bir ipucu bulunamadı.', hintConflict:'İpucu için önce tahtadaki çakışmaları düzelt.', hintUnavailable:'Bu tahta için açıklanabilir ipucu bulunamadı.',
     hintNaked:'{row}. satır, {column}. sütunda yalnızca {value} kullanılabilir. Aynı satır, sütun ve kutudaki sayılar diğer adayları eliyor.',
     hintHidden:'{unit} içinde {value} yalnızca {row}. satır, {column}. sütuna yerleşebilir.', row:'{number}. satır', column:'{number}. sütun', box:'{number}. kutu',
-    inProgress:'Oyun devam ediyor', conflict:'Çakışan hücreleri kontrol et.', saved:'Bu cihazda kaydedildi', savingFailed:'Oyun kaydedilemedi. Açık oyunun korunuyor.', retry:'Tekrar dene',
+    inProgress:'Oyun devam ediyor', conflict:'Çakışan hücreleri kontrol et.', conflictShort:'Çakışma var', saved:'Bu cihazda kaydedildi', savingFailed:'Oyun kaydedilemedi. Açık oyunun korunuyor.', retry:'Tekrar dene',
     corrupt:'{size} kaydı açılamadı. Kaydın korunuyor; tekrar deneyebilir veya farklı boyutta oynayabilirsin.', storageUnavailable:'Yerel kayıtlara erişilemiyor. Bu oturumda oynayabilirsin; kalıcı kayıt garanti edilemiyor.',
     cell:'Satır {row}, sütun {column}, {kind}, {value}, notlar: {notes}{conflict}', given:'verilen', locked:'kilitli', editable:'girilebilir', empty:'boş', noNotes:'yok', cellConflict:', çakışma var',
     enterDigit:'{digit} yaz', selected:'{row}. satır · {column}. sütun', givenSelected:'Verilen hücre · değiştirilemez', chooseCell:'Tahtadan bir hücre seç.', notesList:'Notlar: {notes}',
@@ -39,7 +39,7 @@ const text = {
     hintNone:'No explainable hint using singles was found here.', hintConflict:'Resolve the board conflicts before asking for a hint.', hintUnavailable:'No explainable hint was found for this board.',
     hintNaked:'Only {value} can go in row {row}, column {column}. The numbers in its row, column and box rule out the other candidates.',
     hintHidden:'In {unit}, {value} can only go in row {row}, column {column}.', row:'row {number}', column:'column {number}', box:'box {number}',
-    inProgress:'Game in progress', conflict:'Check the conflicting cells.', saved:'Saved on this device', savingFailed:'Could not save. Your open game is preserved.', retry:'Retry',
+    inProgress:'Game in progress', conflict:'Check the conflicting cells.', conflictShort:'Conflict', saved:'Saved on this device', savingFailed:'Could not save. Your open game is preserved.', retry:'Retry',
     corrupt:'The {size} save could not be opened. It is preserved; you can retry or play the other size.', storageUnavailable:'Local saves are unavailable. You can play this session, but saving cannot be guaranteed.',
     cell:'Row {row}, column {column}, {kind}, {value}, notes: {notes}{conflict}', given:'given', locked:'locked', editable:'editable', empty:'empty', noNotes:'none', cellConflict:', conflict',
     enterDigit:'Enter {digit}', selected:'Row {row} · Column {column}', givenSelected:'Given cell · cannot be changed', chooseCell:'Choose a cell on the board.', notesList:'Notes: {notes}',
@@ -66,6 +66,15 @@ const escape = value => String(value).replaceAll('&','&amp;').replaceAll('<','&l
 let storage;
 try { storage = window.localStorage; }
 catch { storage = { getItem() { throw new Error('StorageUnavailable'); }, setItem() { throw new Error('StorageUnavailable'); } }; }
+// Developer-only diagnostics (selection readout, save note, keyboard help, page chrome in games).
+// Enable with ?debug=1 (remembered in this browser); ?debug=0 turns it off again.
+let debug = false;
+try {
+  const flag = new URLSearchParams(location.search).get('debug');
+  if (flag === '1') storage.setItem('sudoku-rivals.debug','1');
+  else if (flag === '0') storage.setItem('sudoku-rivals.debug','0');
+  debug = storage.getItem('sudoku-rivals.debug') === '1';
+} catch { debug = new URLSearchParams(location.search).get('debug') === '1'; }
 let preferences = { language:navigator.language.startsWith('tr') ? 'tr' : 'en', reduceMotion:matchMedia('(prefers-reduced-motion: reduce)').matches };
 try {
   const stored = JSON.parse(storage.getItem('sudoku-rivals.preferences.v1'));
@@ -92,6 +101,7 @@ function announce(message) { announcer.textContent = message; }
 function applyPreferences() {
   document.documentElement.lang = preferences.language;
   document.documentElement.dataset.reduceMotion = String(preferences.reduceMotion);
+  if (debug) document.documentElement.dataset.debug = 'true';
   document.querySelector('.skip-link').textContent = t('skip');
   document.querySelector('#brand-home').setAttribute('aria-label',`Sudoku Rivals · ${t('home')}`);
   settingsButton.setAttribute('aria-label',t('settings'));
@@ -141,7 +151,7 @@ function renderBoard(board, conflicts, selected = session.selected) {
   const selectedRow = Math.floor(selected / size);
   const selectedColumn = selected % size;
   const selectedValue = board.cells[selected].value;
-  return `<div class="board" role="grid" aria-label="${size}×${size} Sudoku" aria-rowcount="${size}" aria-colcount="${size}" data-testid="game-board" style="--size:${size}">${Array.from({length:size},(_,row) => `<div class="board-row" role="row">${Array.from({length:size},(_,column) => {
+  return `<div class="board" role="grid" aria-label="${size}×${size} Sudoku" aria-rowcount="${size}" aria-colcount="${size}" aria-describedby="keyboard-help" data-testid="game-board" style="--size:${size}">${Array.from({length:size},(_,row) => `<div class="board-row" role="row">${Array.from({length:size},(_,column) => {
     const index = row * size + column;
     const cell = board.cells[index];
     const related = row === selectedRow || column === selectedColumn || (Math.floor(row / boxRows) === Math.floor(selectedRow / boxRows) && Math.floor(column / 3) === Math.floor(selectedColumn / 3));
@@ -167,17 +177,17 @@ function renderGame(focusCell = false) {
   const editable = board.givens[session.selected] === 0;
   const selectedNotes = Array.from({length:size},(_,v)=>v+1).filter(v=>board.cells[session.selected].notes & (1 << (v-1)));
   const tool = (action,icon,label,disabled = false,extra = '') => `<button class="tool" data-action="${action}" data-testid="${action === 'notes' ? 'notes-toggle':action}" ${disabled ? 'disabled' : ''} ${extra}>${svg(icon)}<span>${t(label)}</span></button>`;
-  content.innerHTML = `<section class="game" data-screen="solo-game">
-    <div class="game-top">${backButton('home','home')}<div class="game-heading"><h1>${t('solo')} · ${size}×${size}</h1><span class="timer" role="timer" aria-label="${t('elapsed')}" data-testid="timer">${formatTime(session.time)}</span></div><button class="icon-button" data-action="pause" data-testid="pause" aria-label="${t('pause')}" title="${t('pause')}">${svg('pause')}</button></div>
-    ${storageMessage()}
-    <div class="game-layout"><div class="board-wrap">${renderBoard(board,conflicts)}<p class="game-status ${valid ? '' : 'conflict'}" data-testid="game-status" role="status">${svg(valid ? 'check':'warning')}<span>${t(valid ? 'inProgress':'conflict')}</span></p></div>
-    <div class="input-panel" style="--size:${size}"><p class="input-label">${t('numbers')}</p><div class="number-pad" aria-label="${t('numbers')}">${Array.from({length:size},(_,index) => `<button class="number-button" data-action="digit" data-value="${index + 1}" data-testid="number-${index + 1}" aria-label="${t('enterDigit',{digit:index + 1})}" ${editable ? '' : 'disabled'}>${index + 1}</button>`).join('')}</div>
+  const messages = [storageMessage(),renderHint(),gameNotice ? `<p class="notice" role="status">${escape(gameNotice)}</p>` : ''].join('');
+  const info = debug ? `<p class="selection-info debug-only">${editable ? t('selected',{row:Math.floor(session.selected / size) + 1,column:session.selected % size + 1}) : t('givenSelected')}${selectedNotes.length ? `<br>${t('notesList',{notes:selectedNotes.join(', ')})}`:''}</p>` : '';
+  content.innerHTML = `<section class="game" data-screen="solo-game" data-size="${size}">
+    <div class="game-top">${backButton('home','home')}<div class="game-heading"><h1>${t('solo')} · ${size}×${size}</h1><span class="timer" role="timer" aria-label="${t('elapsed')}" data-testid="timer">${formatTime(session.time)}</span></div><div class="game-trailing"><button class="icon-button" data-action="pause" data-testid="pause" aria-label="${t('pause')}" title="${t('pause')}">${svg('pause')}</button></div></div>
+    <div class="status-row"><p class="game-status ${valid ? '' : 'conflict'}" data-testid="game-status" role="status">${valid ? `<span class="sr-only">${t('inProgress')}</span>` : `${svg('warning')}<span>${t('conflictShort')}</span>`}</p></div>
+    <div class="game-layout"><div class="board-wrap">${renderBoard(board,conflicts)}</div>
+    <div class="input-panel"><div class="number-pad" data-size="${size}" role="group" aria-label="${t('numbers')}">${Array.from({length:size},(_,index) => `<button class="number-button" data-action="digit" data-value="${index + 1}" data-testid="number-${index + 1}" aria-label="${t('enterDigit',{digit:index + 1})}" ${editable ? '' : 'disabled'}>${index + 1}</button>`).join('')}</div>
       <div class="tools">${tool('notes','notes','notes',false,`role="switch" aria-checked="${session.notesMode}"`)}${tool('erase','erase','erase',!editable)}${tool('undo','undo','undo',board.undo.length === 0)}${tool('redo','redo','redo',board.redo.length === 0)}${tool('hint','hint','hint',!core.solo_hint)}</div>
-      <p class="selection-info">${editable ? t('selected',{row:Math.floor(session.selected / size) + 1,column:session.selected % size + 1}) : t('givenSelected')}${selectedNotes.length ? `<br>${t('notesList',{notes:selectedNotes.join(', ')})}`:''}</p>
-      ${renderHint()}
-      ${gameNotice ? `<p class="notice" role="status">${escape(gameNotice)}</p>` : ''}
-      ${session.saveError ? '' : `<p class="storage-note" data-testid="storage-status">${t('saved')}</p>`}
-      <p class="keyboard-help">${t('keyHelp',{size})}</p>
+      ${messages ? `<div class="game-messages">${messages}</div>` : ''}
+      ${info}${session.saveError ? '' : `<p class="storage-note ${debug ? '' : 'sr-only'}" data-testid="storage-status">${t('saved')}</p>`}
+      <p class="keyboard-help" id="keyboard-help">${t('keyHelp',{size})}</p>
     </div></div>
   </section>`;
   if (focusCell) content.querySelector(`[data-index="${session.selected}"]`)?.focus({preventScroll:true});
@@ -208,6 +218,7 @@ function render(focusCell = false) {
   else if (screen === 'solo-result') renderResult();
   else if (screen === 'settings') renderSettings();
   else if (screen === 'live') live.render();
+  document.body.dataset.view = content.querySelector('[data-screen$="-game"]') ? 'game' : 'page';
 }
 function applyCommand(command) {
   hint = null;
@@ -377,7 +388,7 @@ applyPreferences();
 try {
   await init();
   session = new SoloSession(core,storage);
-  live = new LiveScreens({engine:core,storage,content,renderBoard,svg,escape,language:()=>preferences.language,announce,
+  live = new LiveScreens({debug,engine:core,storage,content,renderBoard,svg,escape,language:()=>preferences.language,announce,
     onUpdate:()=>{if(screen==='live')render();},onHome:()=>{if(screen==='live'){screen='home';history.replaceState({},'', '/');render();focusContent();}}});
   ready = true;
   if(location.pathname.startsWith('/r/')) {screen='live';live.enter(location.pathname);}
