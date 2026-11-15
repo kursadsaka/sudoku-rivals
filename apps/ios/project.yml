@@ -2,6 +2,11 @@ name: SudokuRivals
 options:
   deploymentTarget:
     iOS: "17.0"
+# Staging is a Release-derived configuration for the fixed HTTPS Render staging origin (G16).
+configs:
+  Debug: debug
+  Release: release
+  Staging: release
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -22,6 +27,13 @@ targets:
         SWIFT_INCLUDE_PATHS: "$(SRCROOT)/generated"
         # Rust only builds aarch64-apple-ios-sim; Intel simulators are not supported.
         EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
+      configs:
+        # Placeholder identifier like the base one: the real bundle ID, team and signing are owner decisions.
+        # Own bundle ID => own data container, so debug/release records are never touched. No ATS exception.
+        Staging:
+          PRODUCT_BUNDLE_IDENTIFIER: com.example.sudokurivals.staging
+          INFOPLIST_KEY_CFBundleDisplayName: Sudoku Rivals Staging
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: STAGING
     dependencies:
       - framework: generated/SudokuFFI.xcframework
   # Logic tests run inside the app host so they call the real Rust core.
@@ -64,3 +76,14 @@ schemes:
       targets:
         - SudokuRivalsTests
         - SudokuRivalsUITests
+  # Build/run/archive the fixed-origin HTTPS staging app (no tests: they need Debug testability).
+  SudokuRivalsStaging:
+    build:
+      targets:
+        SudokuRivals: all
+    run:
+      config: Staging
+    profile:
+      config: Staging
+    archive:
+      config: Staging

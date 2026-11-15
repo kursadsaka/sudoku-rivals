@@ -124,6 +124,50 @@ final class ManualClock {
         #expect(try store.load().origin == "http://127.0.0.1:9")
     }
 
+    // MARK: G16 staging origin (HTTPS only, pinned, no ATS exception)
+
+    @Test func stagingOriginIsTheFixedHTTPSRenderHost() throws {
+        #expect(LiveSession.stagingOrigin == "https://sudoku-rivals-g16-staging.onrender.com")
+        #expect(LiveSession.normalize(LiveSession.stagingOrigin, allowLoopbackHTTP: false) == LiveSession.stagingOrigin)
+        #expect(LiveSession.normalize("http://sudoku-rivals-g16-staging.onrender.com", allowLoopbackHTTP: true) == nil)
+    }
+
+    @Test func stagingSessionOnlyContactsThePinnedHTTPSOrigin() async throws {
+        var urls: [URL] = []
+        let live = LiveSession(store: tempLiveStore(), origin: LiveSession.stagingOrigin, pinOrigin: true, transport: { request in
+            urls.append(try #require(request.url))
+            throw URLError(.notConnectedToInternet)
+        })
+        #expect(live.origin == LiveSession.stagingOrigin)
+        live.open()
+        live.create()
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(!urls.isEmpty)
+        for url in urls {
+            #expect(url.scheme == "https" && url.host == "sudoku-rivals-g16-staging.onrender.com" && url.port == nil, "\(url)")
+        }
+        #expect(live.inviteURL == nil || live.inviteURL?.absoluteString.hasPrefix(LiveSession.stagingOrigin + "/r/") == true)
+    }
+
+    @Test func pinnedOriginKeepsMatchingRecordAndPreservesOthers() throws {
+        let store = tempLiveStore()
+        try FileManager.default.createDirectory(at: store.directory, withIntermediateDirectories: true)
+        try Data("{broken".utf8).write(to: store.url)
+        let first = LiveSession(store: store, origin: LiveSession.stagingOrigin, pinOrigin: true)
+        first.confirmReset() // writes a fresh, valid record for the staging origin
+        let saved = try Data(contentsOf: store.url)
+        #expect(try store.load().origin == LiveSession.stagingOrigin)
+
+        #expect(!LiveSession(store: store, origin: LiveSession.stagingOrigin, pinOrigin: true).protectedSave)
+        // A pinned session never adopts a record that names another origin, and never rewrites it.
+        let foreign = LiveSession(store: store, origin: "https://other.example.com", pinOrigin: true)
+        #expect(foreign.protectedSave)
+        #expect(foreign.origin == "https://other.example.com")
+        foreign.open()
+        foreign.create()
+        #expect(try Data(contentsOf: store.url) == saved, "record naming another origin was overwritten")
+    }
+
     @Test func futureOrForeignOriginRecordIsNotLoaded() throws {
         let store = tempLiveStore()
         try FileManager.default.createDirectory(at: store.directory, withIntermediateDirectories: true)

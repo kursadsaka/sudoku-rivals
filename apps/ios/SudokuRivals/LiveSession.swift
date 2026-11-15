@@ -157,8 +157,19 @@ final class LiveSession {
     #else
     nonisolated static let allowsLoopbackHTTP = false
     #endif
-    /// shortcut: no deployed match server yet (G16); release builds show "not configured" until one is set here.
+    /// Fixed G16 Render Free staging origin. Only the `Staging` build configuration (compilation
+    /// condition `STAGING`) uses it; Debug keeps the loopback test origin and Release stays unconfigured
+    /// until a production server exists. HTTPS only: there is no ATS exception anywhere.
+    nonisolated static let stagingOrigin = "https://sudoku-rivals-g16-staging.onrender.com"
+    #if STAGING
+    static let releaseOrigin: String? = stagingOrigin
+    /// The Staging build talks to exactly this origin; a saved record naming any other one is preserved, not loaded.
+    nonisolated static let pinsOrigin = true
+    #else
+    // shortcut: no production match server yet; Release shows "not configured" until one is set here.
     static let releaseOrigin: String? = nil
+    nonisolated static let pinsOrigin = false
+    #endif
 
     private(set) var origin: String?
     private(set) var view: LiveView = .idle
@@ -190,7 +201,8 @@ final class LiveSession {
     @ObservationIgnored private var deferred: LiveRequest?
     @ObservationIgnored private var leaving = false
 
-    init(store: LiveStore, origin: String?, transport: @escaping Transport = LiveSession.urlSessionTransport,
+    init(store: LiveStore, origin: String?, pinOrigin: Bool = LiveSession.pinsOrigin,
+         transport: @escaping Transport = LiveSession.urlSessionTransport,
          now: @escaping () -> UInt64 = LiveSession.monotonicMs) {
         self.store = store
         self.transport = transport
@@ -201,7 +213,8 @@ final class LiveSession {
         if store.exists {
             do {
                 let record = try store.load()
-                guard let saved = Self.normalize(record.origin) else { throw CocoaError(.fileReadCorruptFile) }
+                guard let saved = Self.normalize(record.origin), !pinOrigin || saved == defaultOrigin
+                else { throw CocoaError(.fileReadCorruptFile) }
                 client = try MultiplayerClient.restore(saved: record.client)
                 self.origin = saved
             } catch {
