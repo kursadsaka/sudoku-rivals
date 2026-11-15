@@ -130,6 +130,9 @@ if (process.argv.includes('--browser')) {
     page.on('dialog',dialog => dialog.accept());
     await page.goto(origin);
     await page.getByTestId('solo-start').click();
+    // 9×9 is the default until a size is chosen; this flow starts on the small board.
+    assert.equal(await page.locator('input[name="size"][value="9"]').isChecked(),true);
+    await page.locator('input[name="size"][value="6"]').check();
     await page.getByTestId('game-start').click();
     await page.getByTestId('game-board').waitFor();
     assert.equal(await page.getByRole('gridcell').count(),36);

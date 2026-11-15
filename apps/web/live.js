@@ -157,26 +157,30 @@ function safeError(body) {
 
 const words = {
   tr: {
-    title:'Arkadaşınla yarış', setup:'Birlikte bir tahta açın.', intro:'Bir oda kur veya arkadaşının davetine katıl.', name:'Görünen adın', mode:'Oyun modu', race:'Klasik yarış', duel:'90 saniye düello', size:'Tahta boyutu', create:'Oda kur', join:'Katıl', invite:'Oda kodu veya davet bağlantısı', or:'Davetin mi var?', back:'Geri', home:'Ana sayfa', waiting:'Arkadaşın bekleniyor', room:'Oda kodu', share:'Daveti paylaş', copied:'Davet bağlantısı kopyalandı.', copyFailed:'Bağlantıyı aşağıdan kopyalayabilirsin.', ready:'Hazırım', unready:'Hazır değilim', readyLabel:'Hazır', notReady:'Bekliyor', you:'Sen', opponent:'Rakip', noOpponent:'Henüz katılmadı', startIn:'Maç {seconds} saniye sonra başlayacak', starting:'Sunucunun başlangıç onayı bekleniyor', connected:'Bağlandı', disconnected:'Bağlantı kesildi. Yeniden deneniyor.', reconnecting:'Yeniden bağlanılıyor', lost:'Maç sürdürülemiyor. Sunucu oturumu veya sonucu kurtarılamadı.', savedLocal:'Yerel yarış tahtan korunuyor.', resume:'Maçına dön', reconnect:'Yeniden bağlan', pending:'Sunucu onayı bekleniyor', retry:'Tekrar dene', elapsed:'Geçen süre', remaining:'Kalan süre', score:'Puanın', opponentScore:'Rakip', combo:'Seri', progress:'Rakip dolu', inputLock:'Giriş kilidi: {seconds} saniye', notes:'Kalem', erase:'Sil', undo:'Geri al', redo:'Yinele', numbers:'Bir sayı seç', selected:'{row}. satır · {column}. sütun', given:'Verilen veya kilitli hücre', notesList:'Notlar: {notes}', resign:'Ayrıl', stay:'Maçta kal', confirmLeave:'Bu maçtan ayrılmak istiyor musun? Oyun başladıysa rakibin kazanır.', leaving:'Ayrılma onayı bekleniyor; yerel oturumun korunuyor.', saved:'Oturum bu cihazda kaydedildi', saveError:'Oturum kaydedilemedi. Açık maç korunuyor; tarayıcıyı kapatırsan yeniden bağlanamayabilirsin.', corrupt:'Canlı maç kaydı açılamadı. Mevcut kayıt değiştirilmedi.', recover:'Yeni oturum aç', confirmRecover:'Saklanan canlı maç kaydı değiştirilecek. Henüz gönderilmemiş yerel değişiklikler kaybolabilir. Devam edilsin mi?', reconcile:'Yerel tahta ile sunucu görüntüsü farklı. Değişikliklerin henüz silinmedi.', keep:'Yerel tahtayı koru', accept:'Sunucu tahtasını kullan', confirmAccept:'Sunucu tahtası yerel değişikliklerinin yerini alacak. Devam edilsin mi?', conflict:'Çakışan hücreleri kontrol et.', conflictShort:'Çakışma var', playing:'Maç devam ediyor', notCorrect:'Tahta henüz doğru değil.', wrong:'Yanlış hamle. Seri sıfırlandı.', rateLimited:'Çok hızlı giriş. Kısa bir süre bekle.', win:'Maçı kazandın', loss:'Rakibin kazandı', draw:'Berabere', noContest:'Maç sonuçsuz bitti', resultPending:'Kesin sonuç sunucudan bekleniyor.', rematch:'Rövanş iste', rematchWaiting:'Rövanş için arkadaşın bekleniyor', rematchOpponent:'Arkadaşın rövanş istiyor', opponentLeft:'Arkadaşın odadan ayrıldı; rövanş istenemez.', reason_completed:'İlk doğru bitiş sunucuda doğrulandı.', reason_time:'90 saniye doldu.', reason_resigned:'Oyunculardan biri ayrıldı.', reason_disconnect_timeout:'Yeniden bağlanma süresi doldu.', reason_both_disconnected:'İki bağlantının süresi birlikte doldu.', reason_resource_limit:'Sunucu bu maçı güvenle sürdüremedi.', network:'Sunucuya ulaşılamıyor.', room_full:'Oda dolu.', room_missing:'Oda bulunamadı. Sunucu yeniden başlamış veya oda kapanmış olabilir.', room_closed:'Oda kapandı.', unauthorized:'Bu oturumun yetkisi artık geçerli değil.', capacity:'Sunucu şu anda dolu.', rate_limited:'Çok fazla istek gönderildi. Biraz sonra tekrar dene.', invalid_input:'Adı, oda kodunu ve seçimlerini kontrol et.', invalid_response:'Sunucu yanıtı doğrulanamadı; maç sonucu değiştirilmedi.', server:'Sunucu isteği tamamlanamadı.', internal:'Sunucu isteği tamamlanamadı.', busy:'Önceki isteğin yanıtı bekleniyor.', invalid:'Bu işlem şu anda uygulanamıyor.', apiUnavailable:'Canlı maç istemcisi yüklenemedi. Solo oynamaya devam edebilirsin.', modeHelp:'Yarışta ilk doğru bitiren kazanır. Düelloda 90 saniye boyunca doğru hamlelerle puan kazanırsın.', keyboard:'Oklar: hücre seç · 1–{size}: sayı', noNotesDuel:'Düelloda not, silme ve geri alma yoktur.', continueSaved:'Devam eden maçın var.', dirty:'Yerel değişiklikler sunucuya gönderilecek.',
+    title:'Arkadaşınla yarış', setup:'Birlikte bir tahta açın.', intro:'Bir oda kur, kodu arkadaşına gönder.', joinTitle:'Davete katıl.', joinIntro:'Arkadaşının gönderdiği kodu veya bağlantıyı gir.', invited:'Davet edildin.', raceHelp:'Aynı bulmaca. İlk doğru bitiren kazanır.', duelHelp:'90 saniyede doğru hamlelerle puan topla.', tabs:'Oda kur veya katıl', name:'Görünen adın', mode:'Oyun modu', race:'Klasik yarış', duel:'90 saniye düello', size:'Tahta boyutu', create:'Oda kur', join:'Katıl', invite:'Oda kodu veya davet bağlantısı', back:'Geri', home:'Ana sayfa', waiting:'Arkadaşın bekleniyor', room:'Oda kodu', share:'Daveti paylaş', copied:'Davet bağlantısı kopyalandı.', copyFailed:'Bağlantıyı aşağıdan kopyalayabilirsin.', ready:'Hazırım', unready:'Hazır değilim', readyLabel:'Hazır', notReady:'Bekliyor', you:'Sen', opponent:'Rakip', noOpponent:'Henüz katılmadı', startIn:'Maç {seconds} saniye sonra başlayacak', starting:'Sunucunun başlangıç onayı bekleniyor', connected:'Bağlandı', disconnected:'Bağlantı kesildi. Yeniden deneniyor.', reconnecting:'Yeniden bağlanılıyor', lost:'Maç sürdürülemiyor. Sunucu oturumu veya sonucu kurtarılamadı.', savedLocal:'Yerel yarış tahtan korunuyor.', resume:'Maçına dön', reconnect:'Yeniden bağlan', pending:'Sunucu onayı bekleniyor', retry:'Tekrar dene', elapsed:'Geçen süre', remaining:'Kalan süre', score:'Puanın', opponentScore:'Rakip', combo:'Seri', progress:'Rakip dolu', inputLock:'Giriş kilidi: {seconds} saniye', notes:'Kalem', erase:'Sil', undo:'Geri al', redo:'Yinele', numbers:'Bir sayı seç', selected:'{row}. satır · {column}. sütun', given:'Verilen veya kilitli hücre', notesList:'Notlar: {notes}', resign:'Ayrıl', stay:'Maçta kal', confirmLeave:'Bu maçtan ayrılmak istiyor musun? Oyun başladıysa rakibin kazanır.', leaving:'Maçtan ayrılıyorsun…', saved:'Oturum bu cihazda kaydedildi', saveError:'Oturum kaydedilemedi. Açık maç korunuyor; tarayıcıyı kapatırsan yeniden bağlanamayabilirsin.', corrupt:'Canlı maç kaydı açılamadı. Mevcut kayıt değiştirilmedi.', recover:'Yeni oturum aç', confirmRecover:'Saklanan canlı maç kaydı değiştirilecek. Henüz gönderilmemiş yerel değişiklikler kaybolabilir. Devam edilsin mi?', reconcile:'Yerel tahta ile sunucu görüntüsü farklı. Değişikliklerin henüz silinmedi.', keep:'Yerel tahtayı koru', accept:'Sunucu tahtasını kullan', confirmAccept:'Sunucu tahtası yerel değişikliklerinin yerini alacak. Devam edilsin mi?', conflict:'Çakışan hücreleri kontrol et.', conflictShort:'Çakışma var', playing:'Maç devam ediyor', notCorrect:'Tahta henüz doğru değil.', wrong:'Yanlış hamle. Seri sıfırlandı.', rateLimited:'Çok hızlı giriş. Kısa bir süre bekle.', win:'Maçı kazandın', loss:'Rakibin kazandı', draw:'Berabere', noContest:'Maç sonuçsuz bitti', resultPending:'Kesin sonuç sunucudan bekleniyor.', rematch:'Rövanş iste', rematchWaiting:'Rövanş için arkadaşın bekleniyor', rematchOpponent:'Arkadaşın rövanş istiyor', opponentLeft:'Arkadaşın odadan ayrıldı; rövanş istenemez.', reason_completed:'İlk doğru bitiş sunucuda doğrulandı.', reason_time:'90 saniye doldu.', reason_resigned:'Oyunculardan biri ayrıldı.', reason_disconnect_timeout:'Yeniden bağlanma süresi doldu.', reason_both_disconnected:'İki bağlantının süresi birlikte doldu.', reason_resource_limit:'Sunucu bu maçı güvenle sürdüremedi.', network:'Sunucuya ulaşılamıyor.', room_full:'Oda dolu.', room_missing:'Oda bulunamadı. Sunucu yeniden başlamış veya oda kapanmış olabilir.', room_closed:'Oda kapandı.', unauthorized:'Bu oturumun yetkisi artık geçerli değil.', capacity:'Sunucu şu anda dolu.', rate_limited:'Çok fazla istek gönderildi. Biraz sonra tekrar dene.', invalid_input:'Adı, oda kodunu ve seçimlerini kontrol et.', invalid_response:'Sunucu yanıtı doğrulanamadı; maç sonucu değiştirilmedi.', server:'Sunucu isteği tamamlanamadı.', internal:'Sunucu isteği tamamlanamadı.', busy:'Önceki isteğin yanıtı bekleniyor.', invalid:'Bu işlem şu anda uygulanamıyor.', apiUnavailable:'Canlı maç istemcisi yüklenemedi. Solo oynamaya devam edebilirsin.', keyboard:'Oklar: hücre seç · 1–{size}: sayı', noNotesDuel:'Düelloda not, silme ve geri alma yoktur.', continueSaved:'Devam eden maçın var.', dirty:'Yerel değişiklikler sunucuya gönderilecek.',
   },
   en: {
-    title:'Play with a friend', setup:'Open a board together.', intro:'Create a room or join your friend’s invite.', name:'Your display name', mode:'Game mode', race:'Classic race', duel:'90-second duel', size:'Board size', create:'Create room', join:'Join', invite:'Room code or invite link', or:'Have an invite?', back:'Back', home:'Home', waiting:'Waiting for your friend', room:'Room code', share:'Share invite', copied:'Invite link copied.', copyFailed:'You can copy the link below.', ready:'Ready', unready:'Not ready', readyLabel:'Ready', notReady:'Waiting', you:'You', opponent:'Opponent', noOpponent:'Not joined yet', startIn:'Match starts in {seconds} seconds', starting:'Waiting for the server to confirm the start', connected:'Connected', disconnected:'Disconnected. Retrying.', reconnecting:'Reconnecting', lost:'The match cannot continue. The server session or result could not be recovered.', savedLocal:'Your local race board is preserved.', resume:'Return to your match', reconnect:'Reconnect', pending:'Waiting for server confirmation', retry:'Retry', elapsed:'Elapsed', remaining:'Remaining', score:'Your score', opponentScore:'Opponent', combo:'Streak', progress:'Opponent filled', inputLock:'Input locked: {seconds} seconds', notes:'Notes', erase:'Erase', undo:'Undo', redo:'Redo', numbers:'Choose a number', selected:'Row {row} · Column {column}', given:'Given or locked cell', notesList:'Notes: {notes}', resign:'Leave', stay:'Stay in match', confirmLeave:'Leave this match? If play has started, your opponent wins.', leaving:'Waiting for exit confirmation; your local session is preserved.', saved:'Session saved on this device', saveError:'Could not save the session. Your open match is preserved, but closing the browser may prevent reconnecting.', corrupt:'The live match save could not be opened. It has not been changed.', recover:'Start a new session', confirmRecover:'The saved live match session will be replaced. Unsent local changes may be lost. Continue?', reconcile:'Your local board differs from the server. Your changes have not been deleted.', keep:'Keep local board', accept:'Use server board', confirmAccept:'The server board will replace your local changes. Continue?', conflict:'Check the conflicting cells.', conflictShort:'Conflict', playing:'Match in progress', notCorrect:'The board is not correct yet.', wrong:'Wrong move. Your streak was reset.', rateLimited:'Input is too fast. Wait a moment.', win:'You won', loss:'Your opponent won', draw:'Draw', noContest:'Match ended without a result', resultPending:'Waiting for the server’s final result.', rematch:'Request rematch', rematchWaiting:'Waiting for your friend to accept the rematch', rematchOpponent:'Your friend wants a rematch', opponentLeft:'Your friend left the room; a rematch is not possible.', reason_completed:'The first correct finish was verified by the server.', reason_time:'The 90 seconds ran out.', reason_resigned:'A player left.', reason_disconnect_timeout:'The reconnect window ran out.', reason_both_disconnected:'Both reconnect windows ran out together.', reason_resource_limit:'The server could not safely continue this match.', network:'Cannot reach the server.', room_full:'The room is full.', room_missing:'Room not found. The server may have restarted or the room may have closed.', room_closed:'The room has closed.', unauthorized:'This session is no longer authorized.', capacity:'The server is full right now.', rate_limited:'Too many requests. Try again later.', invalid_input:'Check your name, room code and selections.', invalid_response:'The server response could not be verified; the match result was not changed.', server:'The server request could not complete.', internal:'The server request could not complete.', busy:'Waiting for the previous request.', invalid:'This action is not available right now.', apiUnavailable:'The live match client could not load. You can still play solo.', modeHelp:'In a race, the first correct finish wins. In a duel, score points with correct moves for 90 seconds.', keyboard:'Arrows: select a cell · 1–{size}: enter a number', noNotesDuel:'Duels have no notes, erase or undo.', continueSaved:'You have an ongoing match.', dirty:'Local changes will be sent to the server.',
+    title:'Play with a friend', setup:'Open a board together.', intro:'Create a room and send the code to your friend.', joinTitle:'Join an invite.', joinIntro:'Enter the code or link your friend sent.', invited:'You’re invited.', raceHelp:'Same puzzle. First correct finish wins.', duelHelp:'Score with correct moves for 90 seconds.', tabs:'Create or join a room', name:'Your display name', mode:'Game mode', race:'Classic race', duel:'90-second duel', size:'Board size', create:'Create room', join:'Join', invite:'Room code or invite link', back:'Back', home:'Home', waiting:'Waiting for your friend', room:'Room code', share:'Share invite', copied:'Invite link copied.', copyFailed:'You can copy the link below.', ready:'Ready', unready:'Not ready', readyLabel:'Ready', notReady:'Waiting', you:'You', opponent:'Opponent', noOpponent:'Not joined yet', startIn:'Match starts in {seconds} seconds', starting:'Waiting for the server to confirm the start', connected:'Connected', disconnected:'Disconnected. Retrying.', reconnecting:'Reconnecting', lost:'The match cannot continue. The server session or result could not be recovered.', savedLocal:'Your local race board is preserved.', resume:'Return to your match', reconnect:'Reconnect', pending:'Waiting for server confirmation', retry:'Retry', elapsed:'Elapsed', remaining:'Remaining', score:'Your score', opponentScore:'Opponent', combo:'Streak', progress:'Opponent filled', inputLock:'Input locked: {seconds} seconds', notes:'Notes', erase:'Erase', undo:'Undo', redo:'Redo', numbers:'Choose a number', selected:'Row {row} · Column {column}', given:'Given or locked cell', notesList:'Notes: {notes}', resign:'Leave', stay:'Stay in match', confirmLeave:'Leave this match? If play has started, your opponent wins.', leaving:'Leaving the match…', saved:'Session saved on this device', saveError:'Could not save the session. Your open match is preserved, but closing the browser may prevent reconnecting.', corrupt:'The live match save could not be opened. It has not been changed.', recover:'Start a new session', confirmRecover:'The saved live match session will be replaced. Unsent local changes may be lost. Continue?', reconcile:'Your local board differs from the server. Your changes have not been deleted.', keep:'Keep local board', accept:'Use server board', confirmAccept:'The server board will replace your local changes. Continue?', conflict:'Check the conflicting cells.', conflictShort:'Conflict', playing:'Match in progress', notCorrect:'The board is not correct yet.', wrong:'Wrong move. Your streak was reset.', rateLimited:'Input is too fast. Wait a moment.', win:'You won', loss:'Your opponent won', draw:'Draw', noContest:'Match ended without a result', resultPending:'Waiting for the server’s final result.', rematch:'Request rematch', rematchWaiting:'Waiting for your friend to accept the rematch', rematchOpponent:'Your friend wants a rematch', opponentLeft:'Your friend left the room; a rematch is not possible.', reason_completed:'The first correct finish was verified by the server.', reason_time:'The 90 seconds ran out.', reason_resigned:'A player left.', reason_disconnect_timeout:'The reconnect window ran out.', reason_both_disconnected:'Both reconnect windows ran out together.', reason_resource_limit:'The server could not safely continue this match.', network:'Cannot reach the server.', room_full:'The room is full.', room_missing:'Room not found. The server may have restarted or the room may have closed.', room_closed:'The room has closed.', unauthorized:'This session is no longer authorized.', capacity:'The server is full right now.', rate_limited:'Too many requests. Try again later.', invalid_input:'Check your name, room code and selections.', invalid_response:'The server response could not be verified; the match result was not changed.', server:'The server request could not complete.', internal:'The server request could not complete.', busy:'Waiting for the previous request.', invalid:'This action is not available right now.', apiUnavailable:'The live match client could not load. You can still play solo.', keyboard:'Arrows: select a cell · 1–{size}: enter a number', noNotesDuel:'Duels have no notes, erase or undo.', continueSaved:'You have an ongoing match.', dirty:'Local changes will be sent to the server.',
   },
 };
 
 export class LiveScreens {
-  constructor({engine,storage,content,renderBoard,numberPad,progress,cue=()=>{},confirm=async message=>window.confirm(message),svg,escape,language,onHome,onUpdate,announce,debug=false}) {
-    Object.assign(this,{engine,storage,content,renderBoard,numberPad,progress,cue,confirm,svg,escape,language,onHome,onUpdate,announce,debug});
+  constructor({engine,storage,content,renderBoard,numberPad,progress,cue=()=>{},confirm=async message=>window.confirm(message),remembered={},remember=()=>{},svg,escape,language,onHome,onUpdate,announce,debug=false}) {
+    Object.assign(this,{engine,storage,content,renderBoard,numberPad,progress,cue,confirm,remember,svg,escape,language,onHome,onUpdate,announce,debug});
     this.selected = 0;
     this.notesMode = false;
-    this.form = {name:language() === 'tr' ? 'Misafir':'Guest',mode:'race',size:6,invite:''};
+    // 9×9 and the classic race until the player chooses otherwise; main.js hands back what they last chose.
+    this.form = {name:remembered.name || (language() === 'tr' ? 'Misafir':'Guest'),mode:remembered.mode || 'race',size:remembered.size || 9,invite:''};
+    this.tab = 'create';
     this.notice = '';
+    this.noticeTone = 'error';
     this.shareLink = '';
     this.entered = false;
     if (engine.MultiplayerClient) this.transport = new MultiplayerTransport(engine,storage,{
       onChange:() => { if (this.entered) this.onUpdate(); },
-      onError:error => { this.notice = this.t(error.includes('Busy') ? 'busy':error.includes('ReconcileRequired') ? 'reconcile':'invalid'); if (this.entered) this.onUpdate(); },
-      onLeft:() => { this.leaving=false;this.entered = false; this.onHome(); },
+      onError:error => { this.say(this.t(error.includes('Busy') ? 'busy':error.includes('ReconcileRequired') ? 'reconcile':'invalid')); if (this.entered) this.onUpdate(); },
+      // The leave is confirmed: the "leaving" note must not survive into the next visit.
+      onLeft:() => { this.leaving=false;this.notice='';this.entered = false; this.onHome(); },
     });
   }
   t(key,vars = {}) {
@@ -184,12 +188,17 @@ export class LiveScreens {
   }
   enter(invite = '') {
     this.entered = true;
-    if (invite) this.form.invite = invite;
+    const state = this.transport?.view();
+    if (this.leaving && (!state?.snapshot || (state.voluntarily_left && !state.pending_http))) this.leaving = false;
+    if (!this.leaving) this.notice = '';
+    // An invite link opens straight on the join form with its code filled in.
+    if (invite) { this.form.invite = inviteCode(invite);this.tab = 'join'; }
     const view = this.transport?.view();
     if (this.transport?.restoreStatus === 'restored' && view.snapshot && !view.voluntarily_left
         && view.connection !== 'session_lost' && !view.pending_http) this.transport.dispatch({type:'resume'});
     this.onUpdate();
   }
+  say(text,tone='error') { this.notice=text;this.noticeTone=tone; }
   view() { return this.transport?.view() || null; }
   persist() { return this.transport?.persist(); }
   connection(view,compact = false) {
@@ -204,11 +213,14 @@ export class LiveScreens {
     return `<p class="notice error" data-testid="storage-status" role="alert">${this.t('saveError')} <button data-action="live-save">${this.t('retry')}</button></p>`;
   }
   noticeHTML() {
-    const notice = this.transport?.transportError ? this.t(this.transport.transportError):this.notice;
-    return notice ? `<p class="notice error" role="status">${this.escape(notice)}</p>`:'';
+    const failed = this.transport?.transportError;
+    const notice = failed ? this.t(failed):this.notice;
+    return notice ? `<p class="notice ${failed || this.noticeTone==='error' ? 'error':''}" role="status">${this.escape(notice)}</p>`:'';
   }
   render() {
-    const focused = document.activeElement?.dataset.testid;
+    const active = document.activeElement;
+    const focused = active?.dataset?.testid;
+    const caret = active?.matches?.('input.text-input') ? [active.selectionStart,active.selectionEnd]:null;
     const scrollY = window.scrollY;
     const view = this.view();
     if(view?.snapshot?.room_code!==this.lastRoomCode){this.shareLink='';this.lastRoomCode=view?.snapshot?.room_code;}
@@ -223,18 +235,31 @@ export class LiveScreens {
     else if (view.connection === 'session_lost' || view.snapshot.phase === 'closed') this.renderLost(view);
     else if (['lobby','countdown'].includes(view.snapshot.phase)) this.renderLobby(view);
     else this.renderGame(view);
-    if (focused) this.content.querySelector(`[data-testid="${CSS.escape(focused)}"]`)?.focus({preventScroll:true});
+    if (focused) {
+      const next = this.content.querySelector(`[data-testid="${CSS.escape(focused)}"]`);
+      next?.focus({preventScroll:true});
+      if (caret && next?.setSelectionRange) next.setSelectionRange(...caret);
+    }
     if (window.scrollY !== scrollY) window.scrollTo({top:scrollY,behavior:'instant'});
   }
   renderSetup(view) {
     const busy = view.pending_http;
-    const segments=(name,field,values,label)=>`<div class="segmented">${values.map(value=>`<label class="segment"><input type="radio" name="${name}" data-live-field="${field}" value="${value}" ${this.form[field]===value?'checked':''} ${busy?'disabled':''}>${label(value)}</label>`).join('')}</div>`;
-    this.content.innerHTML = `<section class="panel" data-screen="friend-setup"><button class="back-button" data-action="live-home" data-testid="back">${this.svg('back')}${this.t('back')}</button><p class="eyebrow">${this.t('title')}</p><h1>${this.t('setup')}</h1><p class="lede">${this.t('intro')}</p>${this.noticeHTML()}${this.storageNotice()}${this.transport.transportError&&busy?`<button class="text-button" data-action="live-recover">${this.t('recover')}</button>`:''}
-      <label class="form-label" for="live-name">${this.t('name')}</label><input id="live-name" name="display-name" class="text-input" data-live-field="name" value="${this.escape(this.form.name)}" maxlength="32" autocomplete="nickname" enterkeyhint="done" ${busy?'disabled':''}>
-      <fieldset data-testid="game-mode"><legend>${this.t('mode')}</legend>${segments('live-mode','mode',['race','duel'],mode=>this.t(mode))}</fieldset>
-      <fieldset data-testid="board-size"><legend>${this.t('size')}</legend>${segments('live-size','size',[6,9],size=>`${size}×${size}`)}</fieldset>
-      <p class="note">${this.t('modeHelp')}</p><button class="primary-button full" data-action="live-create" data-testid="room-create" ${busy?'disabled':''}>${busy?this.t('pending'):this.t('create')}</button>
-      <div class="join-section"><h2>${this.t('or')}</h2><label class="form-label" for="live-invite">${this.t('invite')}</label><div class="join-row"><input class="text-input" id="live-invite" name="invite" data-live-field="invite" data-testid="room-code" value="${this.escape(this.form.invite)}" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="go" ${busy?'disabled':''}><button class="secondary-button" data-action="live-join" data-testid="room-join" ${busy?'disabled':''}>${this.t('join')}</button></div></div>
+    const join = this.tab === 'join';
+    const invited = join && Boolean(this.form.invite);
+    const radio=(name,field,value,testid='')=>`<input type="radio" name="${name}" data-live-field="${field}" value="${value}" ${String(this.form[field] ?? this.tab)===String(value)?'checked':''} ${busy?'disabled':''} ${testid?`data-testid="${testid}"`:''}>`;
+    const name=`<label class="form-label" for="live-name">${this.t('name')}</label><input id="live-name" name="display-name" class="text-input" data-live-field="name" data-testid="display-name" value="${this.escape(this.form.name)}" maxlength="32" autocomplete="nickname" enterkeyhint="done" ${busy?'disabled':''}>`;
+    const tabs=`<div class="segmented tabs" role="radiogroup" aria-label="${this.t('tabs')}">${['create','join'].map(tab=>`<label class="segment">${radio('live-tab','tab',tab,`tab-${tab}`)}${this.t(tab)}</label>`).join('')}</div>`;
+    // Join first shows the code and the Join button, so an invite link lands with both in view on a phone.
+    const form=join
+      ?`<label class="form-label" for="live-invite">${this.t('invite')}</label><input class="text-input code-input" id="live-invite" name="invite" data-live-field="invite" data-testid="room-code" value="${this.escape(this.form.invite)}" placeholder="ABC234…" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="go" ${busy?'disabled':''}>
+        ${name}<button class="primary-button full" data-action="live-join" data-testid="room-join" ${busy?'disabled':''}>${busy?this.t('pending'):this.t('join')}</button>`
+      :`${name}
+        <fieldset data-testid="game-mode"><legend>${this.t('mode')}</legend><div class="size-options">${['race','duel'].map(mode=>`<label class="size-option mode-option">${radio('live-mode','mode',mode)}<strong>${this.t(mode)}</strong><small>${this.t(mode+'Help')}</small></label>`).join('')}</div></fieldset>
+        <fieldset data-testid="board-size"><legend>${this.t('size')}</legend><div class="segmented">${[6,9].map(size=>`<label class="segment">${radio('live-size','size',size)}${size}×${size}</label>`).join('')}</div></fieldset>
+        <button class="primary-button full" data-action="live-create" data-testid="room-create" ${busy?'disabled':''}>${busy?this.t('pending'):this.t('create')}</button>`;
+    this.content.innerHTML = `<section class="panel friend-setup" data-screen="friend-setup" data-tab="${this.tab}"><button class="back-button" data-action="live-home" data-testid="back">${this.svg('back')}${this.t('back')}</button><p class="eyebrow">${this.t('title')}</p><h1>${this.t(invited?'invited':join?'joinTitle':'setup')}</h1>${invited?'':`<p class="lede">${this.t(join?'joinIntro':'intro')}</p>`}
+      ${tabs}${this.noticeHTML()}${this.storageNotice()}${this.transport.transportError&&busy?`<button class="text-button" data-action="live-recover">${this.t('recover')}</button>`:''}
+      <div class="setup-form">${form}</div>
     </section>`;
   }
   leaveButton(view) {
@@ -342,7 +367,20 @@ export class LiveScreens {
     }
   }
   tick() { if (this.transport) { this.transport.tick(); this.updateClock(); } }
-  input(field,value) { if (field in this.form) this.form[field]=field==='size'?Number(value):value; }
+  // committed: the change event (the field was left or a choice was made), as opposed to a keystroke.
+  input(field,value,target,committed=false) {
+    if (field==='tab') { this.tab=value==='join'?'join':'create';this.notice='';this.onUpdate();return; }
+    if (!(field in this.form)) return;
+    if (field==='invite') {
+      const code=inviteCode(value);
+      this.form.invite=code;
+      // A pasted link becomes its room code once the field is left.
+      if (committed && target && code!==value) target.value=code;
+      return;
+    }
+    this.form[field]=field==='size'?Number(value):value;
+    if (committed) this.remember(field,this.form[field]);
+  }
   dispatch(action) { this.notice=''; return this.transport?.dispatch(action); }
   async handle(action,button) {
     const view=this.view();
@@ -356,6 +394,7 @@ export class LiveScreens {
     if (action==='live-save') { this.transport.persist();this.onUpdate();return; }
     if (!this.transport || this.transport.protectedSave) return;
     if (['live-create','live-join','live-rematch','live-keep'].includes(action)) this.cue('tap');
+    if (['live-create','live-join'].includes(action)) this.remember('name',this.form.name);
     if (action==='live-create') { this.dispatch({type:'create',name:this.form.name,mode:this.form.mode,size:this.form.size});return; }
     if (action==='live-join') { this.dispatch({type:'join',invite:this.form.invite,name:this.form.name});return; }
     if (action==='live-ready') { this.cue('toggle');this.dispatch({type:'command',command:{type:'ready',ready:!view.snapshot.own.ready}});return; }
@@ -370,14 +409,14 @@ export class LiveScreens {
         if (!now?.snapshot || now.voluntarily_left) { this.entered=false;this.onHome();return; }
       }
       this.cue('navigate',{direction:'back',emphasis:'subtle'});
-      if(this.dispatch({type:'leave'})){this.leaving=true;this.notice=this.t('leaving');this.onUpdate();}return;
+      if(this.dispatch({type:'leave'})){this.leaving=true;this.say(this.t('leaving'),'info');this.onUpdate();}return;
     }
     if (action==='live-share') {
       const url=new URL(`/r/${view.snapshot.room_code}`,location.origin).href;
       try {
         if (navigator.share) await navigator.share({title:'Sudoku Rivals',url});
-        else { await navigator.clipboard.writeText(url);this.notice=this.t('copied');this.cue('success',{emphasis:'subtle'}); }
-      } catch(error) { if (error.name!=='AbortError') {this.shareLink=url;this.notice=this.t('copyFailed');} }
+        else { await navigator.clipboard.writeText(url);this.say(this.t('copied'),'info');this.cue('success',{emphasis:'subtle'}); }
+      } catch(error) { if (error.name!=='AbortError') {this.shareLink=url;this.say(this.t('copyFailed'),'info');} }
       this.onUpdate();return;
     }
     if (action==='live-keep') { this.dispatch({type:'reconcile',keep_local:true});return; }
@@ -406,6 +445,8 @@ export class LiveScreens {
   }
   focusCell() { this.content.querySelector(`[data-index="${this.selected}"]`)?.focus({preventScroll:true}); }
   keydown(event) {
+    // Enter in the name or code field submits the form that is showing.
+    if (event.key==='Enter' && !event.isComposing && event.target.matches?.('.friend-setup .text-input')) { event.preventDefault();this.input(event.target.dataset.liveField,event.target.value,event.target,true);this.handle(this.tab==='join'?'live-join':'live-create',event.target);return; }
     if (!event.target.closest('[role="grid"]')) return;
     const view=this.view();if(!view?.snapshot)return;
     const size=view.snapshot.size;
@@ -421,6 +462,12 @@ export class LiveScreens {
     else return;
     event.preventDefault();this.selected=index;this.onUpdate();this.focusCell();
   }
+}
+// "/r/ABC234" or a full invite link → "ABC234"; anything else is kept as typed for the engine to judge.
+function inviteCode(value) {
+  const text=String(value).trim();
+  const link=text.match(/\/r\/([A-Za-z0-9]+)\/?(?:[?#].*)?$/);
+  return link?link[1].toUpperCase():text;
 }
 function formatLiveTime(ms,roundUp=false) {
   const seconds=Math.max(0,roundUp?Math.ceil(ms/1000):Math.floor(ms/1000));

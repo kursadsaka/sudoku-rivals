@@ -5,10 +5,11 @@ Kapsam: yalnız `apps/web` ve onu sunan allowlist/paket listeleri (`server/src/h
 ## Görsel dil
 
 - **Kâğıt ve mürekkep**: sıcak kâğıt zemin, basılı (siyah) verilen sayılar, tükenmez mavisi oyuncu girişleri, kurşun kalem gri notlar. Marka mavisi uygulama simgesiyle aynıdır (`#1d4ed8`). **Kehribar her yerde rakibi** gösterir (yarış çubuğu, düello puanı, lobi, sonuç). Koyu temada nötr koyu zemin kullanılır. Yazı tipi sistem yığınıdır; sayılar ve başlıklarda varsa `ui-rounded`. Harici font/görsel yok.
-- **Ana ekran**: iki mod kartı (solo dolu marka kartı; arkadaş kartında mavi/kehribar yarış çubukları), "Kaldığın yerden" kartlarında boyut rozeti.
+- **Ana ekran**: iki mod kartı (solo: tek oyuncu simgesi; arkadaş: mavi "sen" + kehribar "rakip" iki oyuncu), "Kaldığın yerden" kartlarında boyut rozeti. Alt bilgide çevrimdışı durumu simgeyle gösterilir (hazır: yeşil onay; hazırlanıyor: indirme; kullanılamıyor: üstü çizili bulut); "6×6 & 9×9" yazısı kaldırıldı.
 - **Oyun ekranı**: üstte geri · `mod · boyut` + büyük süre · duraklat. Altında ince bir **gösterge**: solo'da doluluk, yarışta `Sen %` ↔ `% Rakip` karşılıklı iki çubuk, düelloda puanlar + 90 saniyelik kalan süre çubuğu (son 10 saniyede kırmızı). Seçili hücre dolu marka rengi; aynı sayı, ilgili satır/sütun/kutu ve çakışma ayrı tonlardadır (çakışmada ayrıca `!` ve "Çakışma var" metni).
 - **Sayı tuşları**: her tuşta o rakamdan kaç tane eksik olduğu yazar (ekran okuyucuda gizli); biten rakam soluklaşır. Kalem modunda tuşlar kesik çizgili ve gri olur. Yüksekliği ≥790 px olan dikey telefonlarda tuşlar hesap makinesi düzeninde 3 sütundur (boşluk yerine büyük tuş); daha kısa ekranlarda 9×9 `5+4` kalır. 6×6 dikey telefonda her zaman `3+3` iki sıradır (9×9 ile aynı yükseklik; ipucu kartına yer bırakır).
-- **Arkadaş kurulumu/lobi/sonuç**: mod ve boyut için bölmeli seçim, oda kodu harf harf karolarda, oyuncu satırlarında baş harf ve "Hazır/Bekliyor" rozeti; düello sonucu iki sütunlu skor.
+- **Arkadaş kurulumu**: üstte "Oda kur | Katıl" sekmesi. Oda kur: ad, açıklamalı iki mod kartı, boyut. Katıl: büyük kod alanı, ad ve "Katıl" düğmesi. Davet bağlantısı (`/r/KOD`) doğrudan Katıl sekmesini kod dolu açar; 320×568, 375×553 ve 393×659'da kod, ad ve Katıl düğmesi kaydırmadan görünür. Yapıştırılan bağlantı alan terk edilince koda indirgenir; ad/kod alanında Enter formu gönderir.
+- **Lobi/sonuç**: oda kodu harf harf karolarda, oyuncu satırlarında baş harf ve "Hazır/Bekliyor" rozeti; düello sonucu iki sütunlu skor.
 - **Ayarlar**: tek kartta dil, ses, hareketi azalt, titreşim (bu sürümde kapalı) anahtarları.
 
 ## İletiler tahtayı ve tuşları oynatmaz
@@ -23,6 +24,18 @@ Kullanıcı geri bildirimi: İpucu'na basınca alttan çıkan ileti tahtayı kü
 ## Onay sayfası
 
 Tarayıcının `confirm()` penceresi yerine uygulama içi `<dialog>` kullanılır (telefonda alttan sayfa, geniş ekranda ortada): kayıtlı oyunu değiştirme, kaydetmeden çıkma, maçtan ayrılma ("Maçta kal" / "Ayrıl"), canlı kaydı sıfırlama ve sunucu tahtasını kabul etme. Odak pencere içinde kalır; `Esc` ve arka plana dokunma vazgeçer. Ayrılma sorusu açıkken maç bittiyse ayrılma komutu yeniden değerlendirilir. `<dialog>` yoksa `confirm()` yedeği çalışır.
+
+## Varsayılanlar ve hatırlanan seçimler
+
+Seçim yapılmadıysa solo ve arkadaş kurulumunda tahta **9×9**, mod klasik yarıştır. Son seçilen solo boyutu, arkadaş modu/boyutu ve görünen ad `sudoku-rivals.preferences.v1` içinde (`soloSize`, `liveSize`, `liveMode`, `displayName`) saklanır ve sonraki açılışta geri gelir; eski kayıtlarda bu alanlar yoksa varsayılanlar geçerlidir.
+
+## Zorluk seviyesi: yok, varmış gibi de gösterilmiyor
+
+Motor yalnız boş hücre sayısıyla üretir (`generate_puzzle(size, seed, blanks)`; istemci ve sunucu 6×6 için 18, 9×9 için 43 boş kullanır) ve kurallar boş sayısından kolay/orta/zor etiketi üretmeyi açıkça yasaklar (`docs/rules.md`, `docs/ui-contract.md`). Çekirdekte `analyze_techniques` (yalnız tekli teknik adımlarını sayar) vardır ama WASM'a açılmamıştır ve kalibre bir insan zorluk ölçüsü değildir. Bu yüzden zorluk seçimi eklenmedi; kurulumdaki "Zorluk seçimi henüz kullanılamıyor" satırı da kaldırıldı. Öneri (motor/kural kararı gerektirir): `analyze_techniques` WASM'a açılıp üretilen bulmacalar "yalnız teklilerle çözülür" / "tekliler yetmez" diye iki banda ayrılabilir; adlandırma insan testiyle doğrulandıktan sonra yapılmalıdır. Aynı ayrım "ipucu bulunamadı" durumunun ne sıklıkta çıktığını da belirler.
+
+## "Ayrılma onayı bekleniyor" iletisi
+
+Sebep: maçtan ya da lobiden ayrılınca bu not yazılıyor, sunucu ayrılmayı onaylayıp ana ekrana dönüldüğünde ise temizlenmiyordu. Arkadaş ekranına tekrar girildiğinde, ortada bekleyen bir şey olmadığı hâlde kırmızı hata kutusunda görünüyordu (lobiden ayrıl → ana ekran → "Arkadaşınla yarış" ile yeniden üretildi). Düzeltme: onay gelince ve ekrana her girişte not temizlenir; ayrılma sürerken görünen metin "Maçtan ayrılıyorsun…" oldu ve bilgi notları (ayrılıyor, bağlantı kopyalandı) artık hata renginde değil.
 
 ## Hareket
 
@@ -70,6 +83,7 @@ Dokunma hedefleri ≥48 px (ayar anahtarları 52×32, satırın tamamı 60 px y�
 - `node tests/web-solo.mjs --browser`: yalnız [önceden belgelenen](web-game-screen-layout.md#bilinen-açıklar) 175. satırda düşer; o satır geçici atlanınca tarayıcı akışının tamamı geçer.
 - `sh scripts/staging-build.sh` + `python3 tests/staging-package.py`: paket yeni dosyalarla açılıyor, HTTP maç matrisi geçti.
 - İpucu/ileti: 320×568, 360×640, 375×553, 375×667, 393×659, 390×844, 844×390 ve 1280×800'de 6×6 ve 9×9 için ipucu kartı ve ileti şeridi açılmadan önce/sonra başlık, tahta, sayı tuşları ve araçların konum ve boyutu ölçüldü: birebir aynı; kart tahtayla, şerit tahta ve düğmelerle kesişmiyor. Düello (375×553, 320×568) ve yarışta hamle geri bildirimi yerleşimi değiştirmiyor; ayrılma onay sayfasından geçiyor, tarayıcı penceresi açılmıyor.
+- 3. tur (başsız Chromium): ana ekran göstergesi tek simge ve "6×6 & 9×9" yok; solo ve arkadaşta varsayılan 9×9, seçim/ad yeniden yüklemede korunuyor; davet bağlantısı üç dar telefonda kod + ad + Katıl görünür; bağlantı → kod; Enter ile katılma; ayrıldıktan sonra kurulum ekranında eski ileti yok; sayfa hatası ve tarayıcı penceresi yok.
 - Ses, başsız Chromium'da sayaçlı `AudioContext` ile denendi: varsayılanda bağlam ve kütüphane isteği yok; anahtar açılınca onay sesi; oyun etkileşimlerinde ses; yeniden yüklemede etkileşimden önce ses yok; kapatınca sessiz.
 
 ## Açık kalanlar

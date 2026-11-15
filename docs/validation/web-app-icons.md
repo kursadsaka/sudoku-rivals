@@ -49,3 +49,12 @@ Aynı vektör: `apps/web/icon.svg`; köşesiz tam kanama hâli `apps/android/bra
 `apps/ios/SudokuRivals/Assets.xcassets/AppIcon.appiconset/` (tek boyutlu `Contents.json`, Xcode 14+) ve `project.yml`'da varlık kataloğunu kaynak yapıp
 `ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon` ayarı. Tüm platformlar için ana SVG'yi platform-nötr bir konuma (ör. `design/app-icon/`) taşımak ve `scripts/web-icons.sh` ile
 Android `branding/README.md` komutlarını tek betikte birleştirmek önerilir.
+
+## Güncelleme: yeni simge çizimi (15 Kasım, web)
+
+`icon.svg` yeniden çizildi: aynı marka mavisi zemin, ortada beyaz 3×3 tahta (ızgara zemin renginde bindirme çubuklarla), arkasında sağ üste kaymış kehribar "rakip" tahtası ve ortada tek kehribar hücre. Tasarım sözleşmesi: [web-app-icon-design.json](web-app-icon-design.json) ([app-icon-skill](https://github.com/xzhih/app-icon-skill) `semantic-icon-design` biçimi, `blue-field-cutout-badge` yönü, 4 katman, maske/çizgi/gölge yok).
+
+- Skill'in üretim ve doğrulama betikleri (`author-icon`, `verify`; `npm ci` ile dört bağımlılık kurulumu ister) **kurulmadı ve çalıştırılmadı**; vektör elle yazıldı. Ücretli servis gerekmedi. Skill deposunda lisans dosyası yok.
+- PNG'ler aynı `scripts/web-icons.sh` ile yeniden üretildi; betik ve `tests/test_web_icons.py` değişmedi ve geçiyor (8 test). Maskable sürümde mavi olmayan en uzak piksel merkezden 201,3 px (güvenli yarıçap 204,8 px).
+- 256, 64 ve 32 px'te gözle incelendi: tahta ve arkadaki kehribar tahta 32 px'te de ayırt ediliyor.
+- Başlıktaki küçük marka işareti (`index.html`) aynı çizimi kullanır. **Android ve iOS simgeleri değişmedi**; platformlar arası simge şimdilik farklıdır.

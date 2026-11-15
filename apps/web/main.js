@@ -10,7 +10,7 @@ const text = {
     solo:'Tek başına oyna', soloDescription:'6×6 veya 9×9. İnternetsiz de yanında.', friends:'Arkadaşınla yarış', friendsDescription:'Klasik yarış ve 90 saniyelik düello.',
     friendsPending:'Arkadaş maçları bu sürümde henüz hazır değil. Şimdilik tek başına oynayabilirsin.', continue:'Kaldığın yerden', resume:'Devam et', completed:'Tamamlandı', savedGame:'Kayıtlı oyun',
     choose:'Tahtanı seç', chooseIntro:'Kısa bir mola ya da biraz daha uzun bir oyun.', boardSize:'Tahta boyutu', six:'Daha küçük bir tahta', nine:'Klasik Sudoku', start:'Oyunu başlat',
-    generatorNote:'Her oyun tek çözümlü yeni bir bulmacayla başlar.', difficultyNote:'Zorluk seçimi henüz kullanılamıyor.',
+    generatorNote:'Her oyun tek çözümlü yeni bir bulmacayla başlar.',
     replace:'Bu boyuttaki kayıtlı oyun yeni oyunla değiştirilecek. Devam edilsin mi?', replaceCorrupt:'Bu boyuttaki kayıt açılamıyor. Yeni oyun başlatırsan bu kayıt değiştirilecek. Devam edilsin mi?',
     paused:'Kısa bir mola.', pausedIntro:'Tahtan ve notların burada. Hazır olduğunda devam et.', pause:'Duraklat', saveExit:'Kaydedip çık', discardExit:'Kaydetmeden çık', confirmDiscard:'Kaydedilemeyen değişiklikler kaybolacak. Önceki kayıt korunacak. Yine de çıkılsın mı?', elapsed:'Geçen süre',
     numbers:'Bir sayı seç', notes:'Kalem', erase:'Sil', undo:'Geri al', redo:'Yinele', hint:'İpucu', hintApply:'Bu sayıyı yaz', hintDismiss:'Kapat', cancel:'Vazgeç',
@@ -33,7 +33,7 @@ const text = {
     solo:'Play solo', soloDescription:'6×6 or 9×9. Yours to play offline, too.', friends:'Play with a friend', friendsDescription:'Classic races and 90-second duels.',
     friendsPending:'Friend matches are not ready in this version. You can play solo for now.', continue:'Pick up where you left off', resume:'Resume', completed:'Complete', savedGame:'Saved game',
     choose:'Choose your board', chooseIntro:'A short break, or a little more time to think.', boardSize:'Board size', six:'A smaller board', nine:'Classic Sudoku', start:'Start game',
-    generatorNote:'Every game starts with a new puzzle with one solution.', difficultyNote:'Difficulty selection is not available yet.',
+    generatorNote:'Every game starts with a new puzzle with one solution.',
     replace:'The saved game of this size will be replaced by a new game. Continue?', replaceCorrupt:'The save of this size cannot be opened. Starting a new game will replace it. Continue?',
     paused:'Take your time.', pausedIntro:'Your board and notes are here. Continue whenever you are ready.', pause:'Pause', saveExit:'Save and exit', discardExit:'Exit without saving', confirmDiscard:'Unsaved changes will be lost. The previous save will remain. Exit anyway?', elapsed:'Elapsed',
     numbers:'Choose a number', notes:'Notes', erase:'Erase', undo:'Undo', redo:'Redo', hint:'Hint', hintApply:'Enter this number', hintDismiss:'Dismiss', cancel:'Cancel',
@@ -78,10 +78,13 @@ try {
   else if (flag === '0') storage.setItem('sudoku-rivals.debug','0');
   debug = storage.getItem('sudoku-rivals.debug') === '1';
 } catch { debug = new URLSearchParams(location.search).get('debug') === '1'; }
-let preferences = { language:navigator.language.startsWith('tr') ? 'tr' : 'en', reduceMotion:matchMedia('(prefers-reduced-motion: reduce)').matches, sound:false };
+// Board size defaults to 9×9 everywhere until the player picks one; the last pick is remembered.
+let preferences = { language:navigator.language.startsWith('tr') ? 'tr' : 'en', reduceMotion:matchMedia('(prefers-reduced-motion: reduce)').matches, sound:false, soloSize:9, liveSize:9, liveMode:'race', displayName:'' };
 try {
   const stored = JSON.parse(storage.getItem('sudoku-rivals.preferences.v1'));
-  if (stored && ['tr','en'].includes(stored.language) && typeof stored.reduceMotion === 'boolean') preferences = { language:stored.language, reduceMotion:stored.reduceMotion, sound:stored.sound === true };
+  if (stored && ['tr','en'].includes(stored.language) && typeof stored.reduceMotion === 'boolean') preferences = { language:stored.language, reduceMotion:stored.reduceMotion, sound:stored.sound === true,
+    soloSize:[6,9].includes(stored.soloSize) ? stored.soloSize : 9, liveSize:[6,9].includes(stored.liveSize) ? stored.liveSize : 9,
+    liveMode:['race','duel'].includes(stored.liveMode) ? stored.liveMode : 'race', displayName:typeof stored.displayName === 'string' ? stored.displayName.slice(0,32) : '' };
 } catch { /* Defaults remain usable when storage is blocked or malformed. */ }
 const t = (key, values = {}) => Object.entries(values).reduce((message,[name,value]) => message.replaceAll(`{${name}}`,String(value)),text[preferences.language][key] || key);
 const content = document.querySelector('#content');
@@ -91,7 +94,7 @@ const settingsButton = document.querySelector('#settings-button');
 let session;
 let live;
 let screen = 'home';
-let selectedSize = 6;
+let selectedSize = preferences.soloSize;
 let homeNotice = '';
 let gameNotice = '';
 let hint = null;
@@ -104,6 +107,15 @@ let liveSeen = null;
 if (preferences.sound) setSound(true);
 
 function announce(message) { announcer.textContent = message; }
+function savePreferences() {
+  try { storage.setItem('sudoku-rivals.preferences.v1',JSON.stringify(preferences)); return true; }
+  catch { return false; }
+}
+function setOffline(state) {
+  offlineState = state;
+  offline.textContent = t(state);
+  offline.parentElement.dataset.state = state;
+}
 function applyPreferences() {
   document.documentElement.lang = preferences.language;
   document.documentElement.dataset.reduceMotion = String(preferences.reduceMotion);
@@ -112,7 +124,7 @@ function applyPreferences() {
   document.querySelector('#brand-home').setAttribute('aria-label',`Sudoku Rivals · ${t('home')}`);
   settingsButton.setAttribute('aria-label',t('settings'));
   settingsButton.title = t('settings');
-  offline.textContent = t(offlineState);
+  setOffline(offlineState);
 }
 function focusContent() { content.focus({ preventScroll:true }); window.scrollTo({top:0,behavior:'instant'}); }
 function navigate(next) { screen = next; hint = null; gameNotice = ''; render(); focusContent(); }
@@ -120,6 +132,11 @@ function backButton(action = 'home', label = 'back') { return `<button class="ba
 function storageMessage() {
   return session.saveError ? `<div class="notice error" data-testid="storage-status" role="alert">${t('savingFailed')} <button data-action="save" data-testid="retry">${t('retry')}</button></div>` : '';
 }
+// Mode art: one player for solo; two players for a friend match, you in blue and your rival in amber.
+const art = {
+  solo:'<svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="13" r="7" fill="currentColor"/><path d="M6 36c0-8.3 6.3-14 14-14s14 5.7 14 14Z" fill="currentColor"/></svg>',
+  friends:'<svg viewBox="0 0 40 40" aria-hidden="true"><circle class="rival" cx="27.5" cy="14" r="5.5"/><path class="rival" d="M17.5 34c0-6.5 4.2-10.5 10-10.5s10 4 10 10.5Z"/><circle class="you" cx="13.5" cy="13" r="6.5" stroke-width="2.5"/><path class="you" d="M1.5 35c0-7.6 5.2-12.5 12-12.5s12 4.9 12 12.5Z" stroke-width="2.5"/></svg>',
+};
 function renderHome() {
   const saves = readSavedGames(storage, core);
   const readySaves = saves.filter(slot => slot.status === 'ready');
@@ -129,8 +146,8 @@ function renderHome() {
     <div class="hero"><p class="eyebrow">${t('eyebrow')}</p><h1>${t('title')}</h1><p class="lede">${t('intro')}</p></div>
     ${homeNotice ? `<p class="notice" role="status">${escape(homeNotice)}</p>` : ''}
     <div class="mode-options">
-      ${card('primary','setup','solo-start','<span class="mini-grid"><i>5</i><i></i><i>3</i><i></i><i class="on">7</i><i></i><i>1</i><i></i><i>9</i></span>','solo','soloDescription')}
-      ${card('','friends','friend-start','<span class="mini-race"><i></i><i></i><i></i></span>','friends','friendsDescription')}
+      ${card('primary','setup','solo-start',art.solo,'solo','soloDescription')}
+      ${card('','friends','friend-start',art.friends,'friends','friendsDescription')}
     </div>
     ${live?.view()?.snapshot && !live.view().voluntarily_left ? `<button class="resume-card live-resume" data-action="live-resume" data-testid="live-resume"><span>${preferences.language==='tr'?'Maçına dön':'Return to your match'}</span><span class="resume-go" aria-hidden="true">${svg('arrow')}</span></button>`:''}
     ${readySaves.length ? `<p class="section-label">${t('continue')}</p><div class="resume-list" data-testid="solo-resume">${readySaves.map(slot => `<button class="resume-card" data-action="restore" data-size="${slot.size}" data-testid="solo-resume-${slot.size}"><span class="resume-main"><span class="size-badge">${slot.size}×${slot.size}</span><span><strong>${slot.complete ? t('completed') : t('savedGame')}</strong><small>${formatTime(slot.saved.elapsedMs)}</small></span></span><span class="resume-go">${slot.complete ? svg('arrow') : t('resume') + svg('play')}</span></button>`).join('')}</div>` : ''}
@@ -141,7 +158,7 @@ function renderSetup() {
   const art = size => `<svg class="size-art" viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="1.5" y="1.5" width="33" height="33" rx="6"/><path d="${size === 6 ? 'M18 1.5v33M1.5 12.5h33M1.5 23.5h33':'M12.5 1.5v33M23.5 1.5v33M1.5 12.5h33M1.5 23.5h33'}"/></svg>`;
   content.innerHTML = `<section class="panel" data-screen="solo-setup">${backButton()}<p class="eyebrow">${t('solo')}</p><h1>${t('choose')}</h1><p class="lede">${t('chooseIntro')}</p>
     <fieldset data-testid="board-size"><legend>${t('boardSize')}</legend><div class="size-options">${[6,9].map(size => `<label class="size-option"><input type="radio" name="size" value="${size}" ${selectedSize === size ? 'checked' : ''}>${art(size)}<strong>${size}×${size}</strong><small>${t(size === 6 ? 'six':'nine')}</small></label>`).join('')}</div></fieldset>
-    <p class="note">${t('generatorNote')} ${t('difficultyNote')}</p>
+    <p class="note">${t('generatorNote')}</p>
     <button class="primary-button full" data-action="start" data-testid="game-start">${t('start')}</button>
     ${gameNotice ? `<p class="notice error" role="alert">${escape(gameNotice)}</p>` : ''}
   </section>`;
@@ -435,16 +452,15 @@ content.addEventListener('click',event => {
   if (screen==='live') live.handle(button.dataset.action,button);
   else handleAction(button);
 });
-content.addEventListener('input',event => { if(screen==='live' && event.target.dataset.liveField) live.input(event.target.dataset.liveField,event.target.value); });
+content.addEventListener('input',event => { if(screen==='live' && event.target.dataset.liveField) live.input(event.target.dataset.liveField,event.target.value,event.target); });
 content.addEventListener('change',event => {
-  if(screen==='live' && event.target.dataset.liveField) {live.input(event.target.dataset.liveField,event.target.value);return;}
-  if (event.target.name === 'size') { selectedSize = Number(event.target.value); cue('select'); }
+  if(screen==='live' && event.target.dataset.liveField) {live.input(event.target.dataset.liveField,event.target.value,event.target,true);return;}
+  if (event.target.name === 'size') { selectedSize = preferences.soloSize = Number(event.target.value); savePreferences(); cue('select'); }
   if (['language-select','motion-toggle','sound-toggle'].includes(event.target.id)) {
     if (event.target.id === 'language-select') { preferences.language = event.target.value; cue('select'); }
     else if (event.target.id === 'sound-toggle') { preferences.sound = event.target.checked; setSound(preferences.sound,{confirm:true}); }
     else { preferences.reduceMotion = event.target.checked; cue('toggle'); }
-    try { storage.setItem('sudoku-rivals.preferences.v1',JSON.stringify(preferences)); settingsNotice = t('settingsSaved'); }
-    catch { settingsNotice = t('settingsFailed'); }
+    settingsNotice = t(savePreferences() ? 'settingsSaved':'settingsFailed');
     renderSettings();
     applyPreferences();
     content.querySelector(`#${event.target.id}`)?.focus();
@@ -503,7 +519,9 @@ applyPreferences();
 try {
   await init();
   session = new SoloSession(core,storage);
-  live = new LiveScreens({debug,engine:core,storage,content,renderBoard,numberPad,progress,cue,confirm:confirmDialog,svg,escape,language:()=>preferences.language,announce,
+  live = new LiveScreens({debug,engine:core,storage,content,renderBoard,numberPad,progress,cue,confirm:confirmDialog,svg,escape,
+    remembered:{name:preferences.displayName,mode:preferences.liveMode,size:preferences.liveSize},
+    remember:(field,value) => { preferences[{name:'displayName',mode:'liveMode',size:'liveSize'}[field]] = value; savePreferences(); },language:()=>preferences.language,announce,
     onUpdate:()=>{if(screen==='live')render();},onHome:()=>{if(screen==='live'){screen='home';history.replaceState({},'', '/');render();focusContent();}}});
   ready = true;
   if(location.pathname.startsWith('/r/')) {screen='live';live.enter(location.pathname);}
@@ -514,7 +532,6 @@ try {
 }
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').then(() => navigator.serviceWorker.ready).then(() => {
-    offlineState = 'offlineReady';
-    offline.textContent = t(offlineState);
-  }).catch(() => { offlineState = 'offlineUnavailable'; offline.textContent = t(offlineState); });
-} else { offlineState = 'offlineUnavailable'; offline.textContent = t(offlineState); }
+    setOffline('offlineReady');
+  }).catch(() => setOffline('offlineUnavailable'));
+} else setOffline('offlineUnavailable');

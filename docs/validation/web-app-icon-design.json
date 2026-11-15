@@ -1,0 +1,36 @@
+{
+  "version": "semantic-icon-design/v0.1",
+  "route": "direct-authored-package",
+  "note": "Design contract in the format of github.com/xzhih/app-icon-skill (app-icon-gen). Authored by hand into apps/web/icon.svg; the skill's author-icon/verify scripts were not installed or run.",
+  "app_context": {
+    "app_name": "Sudoku Rivals",
+    "category": "puzzle game",
+    "job_to_be_done": "solve Sudoku alone or race a friend on the same kind of board",
+    "tone": "focused, friendly, competitive"
+  },
+  "style": {
+    "direction": "blue-field-cutout-badge",
+    "svg_convertibility": "high",
+    "style_notes": "saturated solid blue field, one white board badge, grid drawn as same-blue overlay lines, amber as the single rival accent"
+  },
+  "icon_intent": {
+    "metaphor": "your Sudoku board with a rival's board right behind it",
+    "small_size_readability": "must remain clear at 64x64 and recognisable at 32x32",
+    "must_feel_like": ["a Sudoku board", "two players", "the app's blue/amber language"],
+    "must_not_feel_like": ["generic calendar or spreadsheet", "numbers too small to read", "3D render"]
+  },
+  "layering_policy": {
+    "negative_space_strategy": "overlay-fill-layer",
+    "cutouts_are_layers": true,
+    "description": "Grid gaps are opaque field-coloured bars above the white board; no masks, clip paths or boolean holes."
+  },
+  "canvas": { "size": 192, "composition_anchor": "center", "alignment": "white board centred; rival plate offset up-right", "subject_scale": { "width_pct": [0.59, 0.72], "height_pct": [0.59, 0.72] } },
+  "background": { "type": "solid", "color": "#1d4ed8", "gradient_policy": { "applies": false, "reason": "solid background" } },
+  "layers": [
+    { "id": "rival-board", "order": 1, "role": "accent plate behind the board", "format_target": "svg", "shape_model": "rounded square, rotated 12 degrees and offset up-right", "fill": "#f5b453", "must_preserve": ["peeks out at the top and right at 64px"], "must_not_add": ["shadow", "outline"] },
+    { "id": "board", "order": 2, "role": "foreground badge", "format_target": "svg", "shape_model": "rounded square 114 of 192, centred", "fill": "#ffffff", "must_preserve": ["centred", "inside the maskable safe circle"], "must_not_add": ["stroke", "gradient"] },
+    { "id": "grid", "order": 3, "role": "field-coloured overlay bars forming the 3x3 grid", "format_target": "svg", "shape_model": "four bars as one compound path", "fill": "#1d4ed8", "must_preserve": ["two bars each way, 7 of 192 wide"], "must_not_add": ["thin strokes", "digits"] },
+    { "id": "rival-cell", "order": 4, "role": "small accent", "format_target": "svg", "shape_model": "square filling the centre cell", "fill": "#f5b453", "must_preserve": ["one marked cell only"], "must_not_add": ["glow", "second accent colour"] }
+  ],
+  "conversion_constraints": { "target_layer_count": "2-5", "svg_first": true, "forbidden_in_svg_assets": ["text", "image", "filter", "clipPath", "mask", "stroke", "opacity", "shadow", "glow"] }
+}
