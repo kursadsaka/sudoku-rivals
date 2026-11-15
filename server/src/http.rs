@@ -70,6 +70,10 @@ const WEB_ASSETS: &[(&str, &str)] = &[
     ("sw.js", "text/javascript; charset=utf-8"),
     ("manifest.webmanifest", "application/manifest+json"),
     ("icon.svg", "image/svg+xml"),
+    ("icon-192.png", "image/png"),
+    ("icon-512.png", "image/png"),
+    ("icon-maskable-512.png", "image/png"),
+    ("apple-touch-icon.png", "image/png"),
     ("pkg/sudoku_wasm.js", "text/javascript; charset=utf-8"),
     ("pkg/sudoku_wasm_bg.wasm", "application/wasm"),
 ];
@@ -452,6 +456,18 @@ mod static_tests {
         assert_eq!(exhausted.status(), StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(assets.remaining.load(Ordering::Relaxed), 0);
         assert!(health(State(crate::shared_service())).await.is_ok());
+    }
+
+    #[test]
+    fn install_icons_are_public_assets_with_png_types() {
+        for name in ["icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png"] {
+            assert!(
+                WEB_ASSETS.iter().any(|&(asset, mime)| asset == name && mime == "image/png"),
+                "{name} must be an allowlisted image/png"
+            );
+        }
+        // Every allowlisted file, icons included, exists in the checkout's web root.
+        Config::default().validate_assets().unwrap();
     }
 
     #[test]

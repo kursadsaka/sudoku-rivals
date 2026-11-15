@@ -1,7 +1,7 @@
 // Bump this version when shipping changed app or WASM assets.
-const CACHE = 'sudoku-rivals-app-v8';
+const CACHE = 'sudoku-rivals-app-v9';
 const ASSETS = ['/', '/index.html', '/main.js', '/session.js', '/live.js', '/styles.css',
-  '/icon.svg', '/manifest.webmanifest', '/pkg/sudoku_wasm.js', '/pkg/sudoku_wasm_bg.wasm'];
+  '/icon.svg', '/icon-192.png', '/icon-512.png', '/icon-maskable-512.png', '/apple-touch-icon.png', '/manifest.webmanifest', '/pkg/sudoku_wasm.js', '/pkg/sudoku_wasm_bg.wasm'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));
 });

@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import shutil
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -63,6 +64,17 @@ with tempfile.TemporaryDirectory(prefix="sudoku-staging-") as temporary:
         status, headers, body = get("/pkg/sudoku_wasm_bg.wasm", {"If-None-Match": tag})
         assert status == 304 and not body and headers["ETag"] == tag
         assert get("/pkg/sudoku_wasm_bg.wasm", {"If-None-Match": '"different-deploy"'})[0] == 200
+        # Install icons: every manifest icon and the apple-touch icon are served with the declared type and size.
+        status, headers, body = get("/manifest.webmanifest")
+        assert status == 200 and headers["Content-Type"] == "application/manifest+json"
+        icons = json.loads(body)["icons"]
+        assert {icon["purpose"] for icon in icons} == {"any", "maskable"}
+        for src, mime, sizes in [(i["src"], i["type"], i["sizes"]) for i in icons] + [("/apple-touch-icon.png", "image/png", "180x180")]:
+            status, headers, body = get(src)
+            assert status == 200 and headers["Content-Type"] == mime, src
+            if mime == "image/png":
+                assert body[:8] == b"\x89PNG\r\n\x1a\n" and "%dx%d" % struct.unpack(">II", body[16:24]) == sizes, src
+        assert b'rel="apple-touch-icon"' in get("/")[2]
         for path in ["/.env", "/Cargo.toml", "/server/src/main.rs", "/r/ABC012", "/r/ABC234?token=x"]:
             assert get(path)[0] == 404, path
         if public:
