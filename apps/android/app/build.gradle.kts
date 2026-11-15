@@ -32,6 +32,8 @@ android {
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     buildFeatures { compose = true; buildConfig = true }
+    // English (default) and Turkish; AGP writes res/xml/locales_config.xml so Android 13+ lists both in per-app language settings.
+    androidResources { generateLocaleConfig = true }
 }
 dependencies {
     implementation("androidx.activity:activity-compose:1.10.0")

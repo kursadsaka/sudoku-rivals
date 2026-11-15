@@ -20,6 +20,7 @@ import time
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
+import android_locale
 from android_layout_check import check as layout_problems, nodes_by_tag
 from android_multiplayer_fixture import activity_state as fixture_activity_state, divergent_cells
 
@@ -351,6 +352,8 @@ assert shell('getprop', 'ro.kernel.qemu') == '1', 'Only run on a disposable emul
 stop(); launch()
 original = {name: read(name) for name in private_files()}
 airplane = shell('settings', 'get', 'global', 'airplane_mode_on')
+locale_before = android_locale.get(shell, PKG)
+android_locale.set(shell, PKG, 'tr-TR')  # this suite reads Turkish UI text
 proxy = None
 server = None
 bots = []
@@ -617,4 +620,5 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
         for name in private_files(): shell('run-as', PKG, 'rm', '-f', 'files/'+name)
         for name, data in original.items(): write(name, data)
         shell('cmd', 'connectivity', 'airplane-mode', 'enable' if airplane == '1' else 'disable')
+        android_locale.set(shell, PKG, locale_before)
         shell('rm','-f','/sdcard/sudoku-live-check.xml')

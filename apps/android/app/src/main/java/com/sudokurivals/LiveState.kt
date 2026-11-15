@@ -71,7 +71,7 @@ private class LiveStore(directory: File) {
 }
 
 /** HTTP/storage adapter only. The Rust object owns game, sequence, retry and clock state. */
-internal class LiveState(directory: File) {
+internal class LiveState(directory: File, defaultName: String) {
     private val store = LiveStore(directory)
     // Presentation-only cache: no protocol or opaque Rust-save changes.
     private val scoreFile = AtomicFile(File(directory, "live-result-score.json"))
@@ -108,13 +108,13 @@ internal class LiveState(directory: File) {
         private set
     var view by mutableStateOf(JSONObject())
         private set
-    var name by mutableStateOf("Misafir")
+    var name by mutableStateOf(defaultName)
     var mode by mutableStateOf("race")
     var size by mutableStateOf(6)
     var invite by mutableStateOf("")
     var selected by mutableStateOf(0)
     var noteMode by mutableStateOf(false)
-    var message by mutableStateOf<String?>(null)
+    var message by mutableStateOf<UiText?>(null)
         private set
     var storageError by mutableStateOf(false)
         private set
@@ -136,7 +136,7 @@ internal class LiveState(directory: File) {
                 resumeRequired = true
             } catch (_: Exception) {
                 protectedSave = true
-                message = "Canlı oyun kaydı açılamadı. Kayıt korunuyor; üzerine yazılmayacak."
+                message = UiText(R.string.msg_save_unreadable)
             }
         }
         refresh()
@@ -181,8 +181,8 @@ internal class LiveState(directory: File) {
         visible = true
         foreground = true
         message = when {
-            view.optString("connection") == "session_lost" -> "Bu oturuma dönülemiyor. Yeni davete katılmak için kaydı koruyup yeni oturum aç."
-            snapshot() != null && !view.optBoolean("voluntarily_left") -> "Yeni davete katılmadan önce mevcut odadan ayrılmalısın."
+            view.optString("connection") == "session_lost" -> UiText(R.string.msg_join_session_lost)
+            snapshot() != null && !view.optBoolean("voluntarily_left") -> UiText(R.string.msg_join_leave_first)
             else -> null
         }
         tick()
@@ -234,17 +234,17 @@ internal class LiveState(directory: File) {
     fun confirmLeave() {
         leaveConfirmation = false
         leaving = true
-        message = "Odadan ayrılma onayı bekleniyor."
+        message = UiText(R.string.msg_leave_pending)
         dispatch(JSONObject().put("type", "leave"))
     }
     fun configureServer(raw: String) {
         if (!BuildConfig.DEBUG) return
         val next = try { normalizeOrigin(raw) } catch (_: Exception) {
-            message = "Geçerli bir HTTPS adresi veya izinli yerel geliştirme adresi gir."
+            message = UiText(R.string.msg_server_invalid_input)
             return
         }
         if (next == origin) return
-        if (view.optBoolean("pending_http")) { message = "Önce bekleyen isteğin tamamlanmasını bekle."; return }
+        if (view.optBoolean("pending_http")) { message = UiText(R.string.msg_wait_pending); return }
         if (snapshot() != null || protectedSave) {
             pendingOrigin = next
             resetConfirmation = true
@@ -275,15 +275,15 @@ internal class LiveState(directory: File) {
             refresh()
             persist()
         } catch (_: Exception) {
-            message = "Eski oturum kaydı korunamadı. Yeni oturuma geçilmedi; tekrar deneyebilirsin."
+            message = UiText(R.string.msg_reset_failed)
         }
     }
     fun create() {
-        if (!isConfigured()) { message = "Canlı oyun sunucusu henüz yapılandırılmadı."; return }
+        if (!isConfigured()) { message = UiText(R.string.live_not_configured); return }
         if (dispatch(JSONObject().put("type", "create").put("guest", guest).put("name", name).put("mode", mode).put("size", size))) resumeRequired = false
     }
     fun join() {
-        if (!isConfigured()) { message = "Canlı oyun sunucusu henüz yapılandırılmadı."; return }
+        if (!isConfigured()) { message = UiText(R.string.live_not_configured); return }
         val raw = if (invite.isNotBlank()) invite else pendingInvite.orEmpty()
         if (dispatch(JSONObject().put("type", "join").put("guest", guest).put("invite", raw).put("name", name))) resumeRequired = false
     }
@@ -365,7 +365,7 @@ internal class LiveState(directory: File) {
             }
             true
         } catch (_: Exception) {
-            if (!quiet) message = "İşlem uygulanamadı. Adı, oda kodunu ve bağlantı durumunu kontrol et; bekleyen istek varsa tamamlanmasını bekle."
+            if (!quiet) message = UiText(R.string.msg_action_failed)
             false
         }
     }
@@ -376,10 +376,10 @@ internal class LiveState(directory: File) {
         val path = request.getString("path")
         val method = request.getString("method")
         if (method != "POST" || !path.startsWith("/v1/") || path.contains('?') || path.contains('#')) {
-            message = "İstek güvenle gönderilemedi."
+            message = UiText(R.string.msg_request_unsafe)
             return
         }
-        val base = try { normalizeOrigin(origin) } catch (_: Exception) { message = "Sunucu adresi geçersiz."; return }
+        val base = try { normalizeOrigin(origin) } catch (_: Exception) { message = UiText(R.string.msg_server_address_invalid); return }
         cancelTransport()
         activeId = id
         val epoch = transportEpoch
@@ -389,7 +389,7 @@ internal class LiveState(directory: File) {
                 connection?.disconnect()
                 activeId = null
                 connection = null
-                message = "Sunucu yanıtı zaman aşımına uğradı; yeniden bağlanılacak."
+                message = UiText(R.string.msg_timeout)
                 dispatch(JSONObject().put("type", "network_failed").put("request_id", id), quiet = true)
             }
         }
@@ -432,7 +432,7 @@ internal class LiveState(directory: File) {
                         connection = null
                         val accepted = dispatch(JSONObject().put("type", "receive").put("request_id", id).put("status", status).put("response", response), quiet = true)
                         if (!accepted) {
-                            message = "Sunucudan geçerli yanıt alınamadı; yeniden bağlanılacak."
+                            message = UiText(R.string.msg_bad_response)
                             dispatch(JSONObject().put("type", "network_failed").put("request_id", id), quiet = true)
                         } else if (status !in 200..299) {
                             message = safeServerMessage(response)
@@ -446,10 +446,10 @@ internal class LiveState(directory: File) {
                         activeId = null
                         connection = null
                         message = when {
-                            snapshot()?.optString("phase") != "playing" -> "Sunucuya ulaşılamıyor. Yeniden bağlanılacak."
-                            snapshot()?.optString("mode") == "race" -> "Sunucuya ulaşılamıyor. Yerel yarış değişikliklerin korunuyor."
-                            snapshot()?.optString("mode") == "duel" -> "Sunucuya ulaşılamıyor. Yeniden bağlanılacak; düello hamleleri ve sonuç sunucu onayı bekliyor."
-                            else -> "Sunucuya ulaşılamıyor. Yeniden bağlanılacak."
+                            snapshot()?.optString("phase") != "playing" -> UiText(R.string.msg_unreachable)
+                            snapshot()?.optString("mode") == "race" -> UiText(R.string.msg_unreachable_race)
+                            snapshot()?.optString("mode") == "duel" -> UiText(R.string.msg_unreachable_duel)
+                            else -> UiText(R.string.msg_unreachable)
                         }
                         dispatch(JSONObject().put("type", "network_failed").put("request_id", id), quiet = true)
                     }
@@ -496,12 +496,12 @@ internal class LiveState(directory: File) {
         if (BuildConfig.STAGING) { require(origin.equals(BuildConfig.MATCH_SERVER_URL, ignoreCase = true)); return BuildConfig.MATCH_SERVER_URL }
         return origin
     }
-    private fun safeServerMessage(raw: String): String = when (runCatching { JSONObject(raw).optString("error") }.getOrNull()) {
-        "room_full" -> "Oda dolu. Başka bir davet kullanabilirsin."
-        "room_missing", "room_closed" -> "Oda kapandı veya sunucu yeniden başladı. Bu oturumla odaya dönülemiyor."
-        "unauthorized" -> "Bu oturumla odaya dönülemiyor. Yerel kayıt korunuyor."
-        "rate_limited", "capacity" -> "Sunucu şu anda yeni işlem kabul etmiyor. Biraz bekleyip tekrar dene."
-        "stale_generation", "stale_match", "sequence_gap", "sequence_conflict" -> "Oturum eşitleniyor. Yerel değişikliklerin korunuyor."
-        else -> "Sunucu işlemi kabul etmedi. Bağlantı ve oda durumunu kontrol et."
+    private fun safeServerMessage(raw: String): UiText = when (runCatching { JSONObject(raw).optString("error") }.getOrNull()) {
+        "room_full" -> UiText(R.string.err_room_full)
+        "room_missing", "room_closed" -> UiText(R.string.err_room_gone)
+        "unauthorized" -> UiText(R.string.err_unauthorized)
+        "rate_limited", "capacity" -> UiText(R.string.err_rate_limited)
+        "stale_generation", "stale_match", "sequence_gap", "sequence_conflict" -> UiText(R.string.err_stale)
+        else -> UiText(R.string.err_rejected)
     }
 }

@@ -11,7 +11,10 @@ import pathlib
 import re
 import subprocess
 import time
+import sys
 import xml.etree.ElementTree as ET
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import android_locale
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--adb', default=os.path.join(os.environ.get('ANDROID_HOME', ''), 'platform-tools/adb'))
@@ -120,6 +123,8 @@ assert shell('getprop', 'ro.kernel.qemu') == '1', 'This test only runs on an emu
 launch()
 original = {name: read(name) for name in files()}
 airplane = shell('settings', 'get', 'global', 'airplane_mode_on')
+locale_before = android_locale.get(shell, PKG)
+android_locale.set(shell, PKG, 'tr-TR')  # this suite reads Turkish UI text
 try:
     shell('cmd', 'connectivity', 'airplane-mode', 'enable')
     assert shell('settings', 'get', 'global', 'airplane_mode_on') == '1'
@@ -232,4 +237,5 @@ finally:
     for name, data in original.items():
         write(name, data)
     shell('cmd', 'connectivity', 'airplane-mode', 'enable' if airplane == '1' else 'disable')
+    android_locale.set(shell, PKG, locale_before)
     shell('rm', '-f', '/sdcard/sudoku-solo-check.xml')

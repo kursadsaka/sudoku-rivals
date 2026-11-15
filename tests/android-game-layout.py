@@ -16,12 +16,14 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import android_locale
 from android_layout_check import check, nodes_by_tag
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--adb', default=os.path.join(os.environ.get('ANDROID_HOME', ''), 'platform-tools/adb'))
 parser.add_argument('--serial', default='emulator-5554')
 parser.add_argument('--screenshots', type=pathlib.Path)
+parser.add_argument('--locale', help='Per-app language to run in, e.g. en-US or tr-TR (default: leave as is)')
 parser.add_argument('--json', type=pathlib.Path, help='Write the measured metrics here')
 args = parser.parse_args()
 PKG = 'com.sudokurivals'
@@ -128,6 +130,8 @@ airplane = shell('settings', 'get', 'global', 'airplane_mode_on')
 orig_size = re.findall(r'(\d+x\d+)', shell('wm', 'size'))[0]
 orig_density = re.findall(r'(\d+)', shell('wm', 'density'))[0]
 results, failures = [], []
+locale_before = android_locale.get(shell, PKG)
+if args.locale: android_locale.set(shell, PKG, args.locale)
 try:
     shell('cmd', 'connectivity', 'airplane-mode', 'enable')
     for size in (6, 9):
@@ -149,6 +153,7 @@ try:
 finally:
     shell('am', 'force-stop', PKG)
     shell('wm', 'size', orig_size); shell('wm', 'density', orig_density)
+    android_locale.set(shell, PKG, locale_before)
     for name in private_files(): shell('run-as', PKG, 'rm', '-f', 'files/' + name)
     for name, data in original.items(): write(name, data)
     shell('cmd', 'connectivity', 'airplane-mode', 'enable' if airplane == '1' else 'disable')

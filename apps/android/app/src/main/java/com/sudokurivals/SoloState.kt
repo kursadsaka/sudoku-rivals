@@ -90,14 +90,14 @@ internal class SoloState(directory: File) {
         private set
     var elapsedDisplay by mutableStateOf(0L)
         private set
-    var storageError by mutableStateOf<String?>(null)
+    var storageError by mutableStateOf<UiText?>(null)
         private set
-    var inputError by mutableStateOf<String?>(null)
+    var inputError by mutableStateOf<UiText?>(null)
         private set
     var slotStatus by mutableStateOf(mapOf<Int, String>())
         private set
     var hint by mutableStateOf<JSONObject?>(null)
-    var hintMessage by mutableStateOf<String?>(null)
+    var hintMessage by mutableStateOf<UiText?>(null)
     var replaceRequested by mutableStateOf(false)
     var corruptReplacement by mutableStateOf(false)
     private var elapsedBase = 0L
@@ -145,7 +145,7 @@ internal class SoloState(directory: File) {
             screen = SoloScreen.Game
             save()
         } catch (_: Exception) {
-            storageError = "Oyun başlatılamadı. Önceki kayıt korunuyor; tekrar deneyebilirsin."
+            storageError = UiText(R.string.solo_err_start)
         }
         replaceRequested = false
         corruptReplacement = false
@@ -164,7 +164,7 @@ internal class SoloState(directory: File) {
             screen = if (complete) SoloScreen.Result else SoloScreen.Paused
             runningSince = null
         } catch (_: Exception) {
-            storageError = "Kayıt açılamadı. Kayıt silinmedi. Yeni oyun başlatırsan önceki kayıt ayrıca korunacak."
+            storageError = UiText(R.string.solo_err_open)
             refreshSlots()
         }
     }
@@ -191,7 +191,7 @@ internal class SoloState(directory: File) {
             slotStatus = slotStatus + (size to "saved")
             true
         } catch (_: Exception) {
-            storageError = "Oyun kaydedilemedi. Açık oyunun ve önceki kayıt korunuyor; tekrar deneyebilirsin."
+            storageError = UiText(R.string.solo_err_save)
             false
         }
     }
@@ -225,7 +225,7 @@ internal class SoloState(directory: File) {
             }
             save()
         } catch (_: Exception) {
-            inputError = "Bu hücrede bu işlem yapılamıyor. Verilen hücreler değiştirilemez; kalem için boş hücre seç."
+            inputError = UiText(R.string.solo_err_input)
         }
     }
     fun conflicts(): Set<Int> = game?.let { soloConflicts(it).map { index -> index.toInt() }.toSet() } ?: emptySet()
@@ -233,10 +233,10 @@ internal class SoloState(directory: File) {
         try {
             val result = soloHint(game ?: return)
             hint = if (result == "null") null else JSONObject(result)
-            hintMessage = if (hint == null) "Bu konumda tekli tekniklerle açıklanabilir bir ipucu bulunamadı." else null
+            hintMessage = if (hint == null) UiText(R.string.hint_none) else null
         } catch (_: Exception) {
             hint = null
-            hintMessage = "Önce tahtadaki çakışmaları veya hatalı girişleri düzelt. Bu durumda güvenilir bir ipucu verilemiyor."
+            hintMessage = UiText(R.string.hint_conflicts)
         }
     }
     fun acceptHint() {

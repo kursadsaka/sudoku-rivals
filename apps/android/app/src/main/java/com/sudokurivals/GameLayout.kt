@@ -149,6 +149,7 @@ internal fun SudokuBoard(
     value: (Int) -> Int, given: (Int) -> Boolean, notes: (Int) -> List<Int>, label: (Int) -> String, onSelect: (Int) -> Unit
 ) {
     val fontScale = LocalDensity.current.fontScale
+    val selectAction = res(R.string.cell_select_action)
     val boxRows = if (n == 6) 2 else 3
     val symbolSize = (minOf(24f, side.value / n * 0.55f) / fontScale).sp
     val noteSize = (maxOf(7f, side.value / n * 0.27f) / fontScale).sp
@@ -177,7 +178,7 @@ internal fun SudokuBoard(
                             contentDescription = label(index)
                             this.selected = isSelected
                             collectionItemInfo = CollectionItemInfo(row, 1, column, 1)
-                            onClick("Hücreyi seç") { onSelect(index); true }
+                            onClick(selectAction) { onSelect(index); true }
                         },
                     contentAlignment = Alignment.Center
                 ) {

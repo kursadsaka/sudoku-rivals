@@ -69,5 +69,5 @@ def check(tags, width, height, density, mode, size, debug_ui=False, texts=()):
         if not debug_ui and tag in tags: problems.append(f'{tag} shown without debug_ui')
     if not debug_ui:
         for text in texts:
-            if text in ('Oyun devam ediyor', 'Oyun cihazına kaydedildi'): problems.append('debug text visible: ' + text)
+            if text in ('Oyun devam ediyor', 'Oyun cihazına kaydedildi', 'Game in progress', 'Game saved on this device'): problems.append('debug text visible: ' + text)
     return problems, {'board_dp': round(board_dp), 'rows': len(rows)}

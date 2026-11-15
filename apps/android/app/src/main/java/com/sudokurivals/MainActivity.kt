@@ -22,6 +22,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
@@ -36,7 +37,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         solo = SoloState(filesDir)
-        live = LiveState(filesDir)
+        live = LiveState(filesDir, getString(R.string.guest_name))
         live.onHome = { if (solo.game != null) solo.exit() else solo.screen = SoloScreen.Home }
         if (BuildConfig.DEBUG) applyDebugExtras(intent)
         intent.dataString?.let { solo.pause(); live.openInvite(it) }
@@ -151,34 +152,34 @@ private fun SoloApp(solo: SoloState, live: LiveState) {
                     .verticalScroll(rememberScrollState()).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Text("Sudoku Rivals", Modifier.testTag("app-title").semantics { heading() }, style = MaterialTheme.typography.headlineMedium)
+                Text(res(R.string.app_title), Modifier.testTag("app-title").semantics { heading() }, style = MaterialTheme.typography.headlineMedium)
                 if (solo.screen != SoloScreen.Home) TextButton(onClick = {
                     when (solo.screen) {
                         SoloScreen.Game -> solo.pause()
                         SoloScreen.Paused, SoloScreen.Result -> solo.exit()
                         else -> solo.screen = SoloScreen.Home
                     }
-                }, modifier = Modifier.testTag("back")) { Text("Geri") }
+                }, modifier = Modifier.testTag("back")) { Text(res(R.string.action_back)) }
                 if (solo.storageError != null) StorageStatus(solo)
                 when (solo.screen) {
                     SoloScreen.Home -> Home(solo, live)
                     SoloScreen.Setup -> Setup(solo)
                     SoloScreen.Game -> Unit
                     SoloScreen.Paused -> {
-                        Text("Oyun duraklatıldı", style = MaterialTheme.typography.titleLarge)
-                        Text("Tahtan gizli. ${formatTime(solo.elapsedDisplay)} oynadın.")
-                        Button(onClick = solo::resume, modifier = Modifier.testTag("resume")) { Text("Devam et") }
-                        OutlinedButton(onClick = { solo.exit() }, modifier = Modifier.testTag("save-exit")) { Text("Kaydedip çık") }
+                        Text(res(R.string.paused_title), style = MaterialTheme.typography.titleLarge)
+                        Text(res(R.string.paused_body, formatTime(solo.elapsedDisplay)))
+                        Button(onClick = solo::resume, modifier = Modifier.testTag("resume")) { Text(res(R.string.action_resume)) }
+                        OutlinedButton(onClick = { solo.exit() }, modifier = Modifier.testTag("save-exit")) { Text(res(R.string.action_save_exit)) }
                     }
                     SoloScreen.Result -> {
-                        Text("Sudoku tamamlandı", Modifier.testTag("result-heading").semantics { heading() }, style = MaterialTheme.typography.titleLarge)
+                        Text(res(R.string.solo_result_title), Modifier.testTag("result-heading").semantics { heading() }, style = MaterialTheme.typography.titleLarge)
                         Text("${solo.size}×${solo.size} · ${formatTime(solo.elapsedDisplay)}", Modifier.testTag("result-details"))
-                        Button(onClick = { solo.exit() }, modifier = Modifier.testTag("home")) { Text("Ana sayfa") }
+                        Button(onClick = { solo.exit() }, modifier = Modifier.testTag("home")) { Text(res(R.string.action_home)) }
                     }
                     SoloScreen.Settings -> {
-                        Text("Ayarlar", style = MaterialTheme.typography.titleLarge)
-                        Text("Sistem teması ve yazı boyutu kullanılır. Oyun ses ve titreşim üretmez; hareketli geçiş içermez.")
-                        Text("Kayıtlar yalnız bu cihazda tutulur. Uygulama silinirse kayıtlar kaybolur.")
+                        Text(res(R.string.home_settings), style = MaterialTheme.typography.titleLarge)
+                        Text(res(R.string.settings_body_system))
+                        Text(res(R.string.settings_body_storage))
                     }
                 }
                 if (solo.storageError == null) StorageStatus(solo)
@@ -188,25 +189,24 @@ private fun SoloApp(solo: SoloState, live: LiveState) {
                 val column = hint.getInt("index") % solo.size + 1
                 val value = hint.getInt("value")
                 val explanation = if (hint.getString("technique") == "naked_single")
-                    "Bu hücrede satır, sütun ve kutu kurallarına göre yalnız $value kalıyor."
+                    res(R.string.hint_naked, value)
                 else {
                     val unit = hint.getJSONObject("unit")
-                    val name = when (unit.getString("kind")) { "row" -> "satırda"; "column" -> "sütunda"; else -> "kutuda" }
-                    "${unit.getInt("index") + 1}. $name $value rakamının yerleşebileceği tek hücre burası."
+                    res(when (unit.getString("kind")) { "row" -> R.string.hint_hidden_row; "column" -> R.string.hint_hidden_column; else -> R.string.hint_hidden_box }, unit.getInt("index") + 1, value)
                 }
                 AlertDialog(
-                    onDismissRequest = { solo.hint = null }, title = { Text("$row. satır, $column. sütun: $value") },
+                    onDismissRequest = { solo.hint = null }, title = { Text(res(R.string.hint_title, row, column, value)) },
                     text = { Text(explanation) },
-                    confirmButton = { TextButton(onClick = solo::acceptHint) { Text("Uygula") } },
-                    dismissButton = { TextButton(onClick = { solo.hint = null }) { Text("Vazgeç") } }
+                    confirmButton = { TextButton(onClick = solo::acceptHint) { Text(res(R.string.action_apply)) } },
+                    dismissButton = { TextButton(onClick = { solo.hint = null }) { Text(res(R.string.action_cancel)) } }
                 )
             }
             if (solo.replaceRequested) AlertDialog(
                 onDismissRequest = { solo.replaceRequested = false },
-                title = { Text("Yeni oyun başlatılsın mı?") },
-                text = { Text(if (solo.corruptReplacement) "Açılamayan kayıt ayrıca korunacak. Bu boyut için yeni oyun başlatılacak." else "Yeni oyun bu boyuttaki kaydının yerini alacak. Diğer boyuttaki oyun korunur.") },
-                confirmButton = { TextButton(onClick = solo::newGame) { Text("Yeni oyun") } },
-                dismissButton = { TextButton(onClick = { solo.replaceRequested = false }) { Text("Vazgeç") } }
+                title = { Text(res(R.string.replace_title)) },
+                text = { Text(res(if (solo.corruptReplacement) R.string.replace_body_corrupt else R.string.replace_body)) },
+                confirmButton = { TextButton(onClick = solo::newGame) { Text(res(R.string.action_new_game)) } },
+                dismissButton = { TextButton(onClick = { solo.replaceRequested = false }) { Text(res(R.string.action_cancel)) } }
             )
             }
         }
@@ -215,23 +215,24 @@ private fun SoloApp(solo: SoloState, live: LiveState) {
 
 @Composable
 private fun Home(solo: SoloState, live: LiveState) {
-    Text("Kendi hızında çöz", style = MaterialTheme.typography.titleLarge)
-    Text("6×6 veya 9×9 Sudoku. İnternet gerekmez.")
-    Button(onClick = solo::openSetup, modifier = Modifier.fillMaxWidth().testTag("solo-start")) { Text("Tek başına oyna") }
+    Text(res(R.string.home_title), style = MaterialTheme.typography.titleLarge)
+    Text(res(R.string.home_subtitle))
+    Button(onClick = solo::openSetup, modifier = Modifier.fillMaxWidth().testTag("solo-start")) { Text(res(R.string.home_solo_start)) }
     SizeChoice(solo)
     if (solo.slotStatus[solo.size] != "empty") {
         OutlinedButton(onClick = solo::resumeSaved, modifier = Modifier.fillMaxWidth().testTag("solo-resume")) {
-            Text(if (solo.slotStatus[solo.size] == "corrupt") "${solo.size}×${solo.size} kaydını tekrar aç" else "${solo.size}×${solo.size} oyununa devam et")
+            Text(res(if (solo.slotStatus[solo.size] == "corrupt") R.string.home_reopen_size else R.string.home_resume_size, solo.size))
         }
     }
-    OutlinedButton(onClick = live::open, modifier = Modifier.fillMaxWidth().testTag("friend-start")) { Text(if (live.snapshot() != null && !live.view.optBoolean("voluntarily_left")) "Maçına dön" else "Arkadaşınla yarış") }
-    TextButton(onClick = { solo.screen = SoloScreen.Settings }, modifier = Modifier.testTag("settings-open")) { Text("Ayarlar") }
+    OutlinedButton(onClick = live::open, modifier = Modifier.fillMaxWidth().testTag("friend-start")) { Text(res(if (live.snapshot() != null && !live.view.optBoolean("voluntarily_left")) R.string.home_friend_return else R.string.home_friend_start)) }
+    TextButton(onClick = { solo.screen = SoloScreen.Settings }, modifier = Modifier.testTag("settings-open")) { Text(res(R.string.home_settings)) }
 }
 
 @Composable
 private fun SizeChoice(solo: SoloState) {
-    Column(Modifier.testTag("board-size").semantics { contentDescription = "Tahta boyutu" }) {
-        Text("Tahta boyutu", style = MaterialTheme.typography.labelLarge)
+    val boardSizeLabel = res(R.string.board_size)
+    Column(Modifier.testTag("board-size").semantics { contentDescription = boardSizeLabel }) {
+        Text(res(R.string.board_size), style = MaterialTheme.typography.labelLarge)
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             for (size in listOf(6, 9)) FilterChip(
                 selected = solo.size == size,
@@ -245,10 +246,10 @@ private fun SizeChoice(solo: SoloState) {
 
 @Composable
 private fun Setup(solo: SoloState) {
-    Text("Tek başına", style = MaterialTheme.typography.titleLarge)
+    Text(res(R.string.setup_title), style = MaterialTheme.typography.titleLarge)
     SizeChoice(solo)
-    Text("Her bulmacanın tek çözümü vardır. İnsan tekniklerine göre zorluk sınıflandırması henüz sunulmuyor.")
-    Button(onClick = solo::prepareNew, modifier = Modifier.fillMaxWidth().testTag("game-start")) { Text("Oyunu başlat") }
+    Text(res(R.string.setup_note))
+    Button(onClick = solo::prepareNew, modifier = Modifier.fillMaxWidth().testTag("game-start")) { Text(res(R.string.setup_start)) }
 }
 
 @Composable
@@ -259,18 +260,25 @@ private fun Game(solo: SoloState) {
     val conflicts = solo.conflicts()
     val valid = conflicts.isEmpty()
     val editable = givens.getInt(solo.selected) == 0
+    val context = LocalContext.current
+    LocalConfiguration.current
+    val statusDescription = res(if (valid) R.string.status_in_progress else R.string.status_conflict_desc)
+    val notesDescription = res(R.string.cd_notes)
+    val undoDescription = res(R.string.cd_undo)
+    val redoDescription = res(R.string.cd_redo)
+    val hintDescription = res(R.string.cd_hint)
     GameScreenLayout(
         top = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (UiDebug.enabled) Text("Sudoku Rivals", Modifier.testTag("app-title"), style = MaterialTheme.typography.labelMedium)
+                if (UiDebug.enabled) Text(res(R.string.app_title), Modifier.testTag("app-title"), style = MaterialTheme.typography.labelMedium)
                 GameNavBar(
-                    modeLabel = "Tek başına · ${solo.size}×${solo.size}", timeText = formatTime(solo.elapsedDisplay),
-                    timeDescription = "Geçen süre: ${formatTime(solo.elapsedDisplay)}", backDescription = "Geri", onBack = solo::pause
-                ) { TextButton(onClick = solo::pause, modifier = Modifier.heightIn(min = 48.dp).testTag("pause"), contentPadding = PaddingValues(4.dp)) { Text("Duraklat") } }
+                    modeLabel = res(R.string.solo_mode_label, solo.size), timeText = formatTime(solo.elapsedDisplay),
+                    timeDescription = res(R.string.elapsed_description, formatTime(solo.elapsedDisplay)), backDescription = res(R.string.action_back), onBack = solo::pause
+                ) { TextButton(onClick = solo::pause, modifier = Modifier.heightIn(min = 48.dp).testTag("pause"), contentPadding = PaddingValues(4.dp)) { Text(res(R.string.action_pause)) } }
                 // One fixed-height status row. Healthy play shows no text (screen readers still get it).
-                Row(Modifier.fillMaxWidth().heightIn(min = 24.dp).testTag("game-status").semantics { liveRegion = LiveRegionMode.Polite; contentDescription = if (valid) "Oyun devam ediyor" else "Tahtada çakışma var" }, verticalAlignment = Alignment.CenterVertically) {
-                    if (!valid) Text("Çakışma var", Modifier.clearAndSetSemantics { }, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-                    else if (UiDebug.enabled) Text("Oyun devam ediyor", Modifier.clearAndSetSemantics { }, style = MaterialTheme.typography.bodyMedium)
+                Row(Modifier.fillMaxWidth().heightIn(min = 24.dp).testTag("game-status").semantics { liveRegion = LiveRegionMode.Polite; contentDescription = statusDescription }, verticalAlignment = Alignment.CenterVertically) {
+                    if (!valid) Text(res(R.string.status_conflict), Modifier.clearAndSetSemantics { }, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                    else if (UiDebug.enabled) Text(res(R.string.status_in_progress), Modifier.clearAndSetSemantics { }, style = MaterialTheme.typography.bodyMedium)
                 }
             }
         },
@@ -282,8 +290,8 @@ private fun Game(solo: SoloState) {
                 label = { index ->
                     val cell = cells.getJSONObject(index)
                     val value = cell.getInt("value")
-                    val notesText = (1..solo.size).filter { cell.getInt("notes") and (1 shl (it - 1)) != 0 }.joinToString(" ")
-                    "Satır ${index / solo.size + 1}, sütun ${index % solo.size + 1}, ${if (givens.getInt(index) != 0) "verilen" else "girilebilir"}, ${if (value == 0) "boş" else value.toString()}, notlar: ${notesText.ifEmpty { "yok" }}${if (index in conflicts) ", çakışma" else ""}"
+                    cellLabel(context, index, solo.size, if (givens.getInt(index) != 0) R.string.cell_given else R.string.cell_editable, value,
+                        (1..solo.size).filter { cell.getInt("notes") and (1 shl (it - 1)) != 0 }, index in conflicts, " ")
                 },
                 onSelect = { solo.selected = it }
             )
@@ -293,20 +301,23 @@ private fun Game(solo: SoloState) {
                 if (UiDebug.enabled) {
                     val selectedCell = cells.getJSONObject(solo.selected)
                     val selectedNotes = selectedCell.getInt("notes")
-                    Text("${solo.selected / solo.size + 1}. satır, ${solo.selected % solo.size + 1}. sütun · ${if (selectedCell.getInt("value") == 0) "Boş" else "Değer: ${selectedCell.getInt("value")}"}" + if (selectedNotes == 0) "" else " · Notlar: ${(1..solo.size).filter { selectedNotes and (1 shl (it - 1)) != 0 }.joinToString(", ")}", Modifier.testTag("selected-cell"), style = MaterialTheme.typography.bodyMedium)
+                    Text(res(R.string.selected_cell_line, solo.selected / solo.size + 1, solo.selected % solo.size + 1,
+                        (if (selectedCell.getInt("value") == 0) res(R.string.selected_cell_empty) else res(R.string.selected_cell_value, selectedCell.getInt("value"))) +
+                            if (selectedNotes == 0) "" else res(R.string.selected_cell_notes_suffix, (1..solo.size).filter { selectedNotes and (1 shl (it - 1)) != 0 }.joinToString(", "))),
+                        Modifier.testTag("selected-cell"), style = MaterialTheme.typography.bodyMedium)
                 }
                 DigitPad(solo.size, editable) { solo.enter(it) }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(selected = solo.noteMode, onClick = { solo.noteMode = !solo.noteMode }, label = { Text("✎", Modifier.clearAndSetSemantics { }, fontSize = 20.sp) }, modifier = Modifier.weight(1f).testTag("notes-toggle").heightIn(min = 48.dp).semantics { contentDescription = "Kalem" })
-                    OutlinedButton(onClick = { solo.apply("erase") }, enabled = editable, modifier = Modifier.weight(1f).testTag("erase").heightIn(min = 48.dp), contentPadding = PaddingValues(4.dp)) { Text("Sil") }
-                    OutlinedButton(onClick = { solo.apply("undo") }, enabled = state.getJSONArray("undo").length() > 0, modifier = Modifier.weight(1f).testTag("undo").heightIn(min = 48.dp).semantics { contentDescription = "Geri al" }, contentPadding = PaddingValues(4.dp)) { Text("↶", Modifier.clearAndSetSemantics { }, fontSize = 20.sp) }
-                    OutlinedButton(onClick = { solo.apply("redo") }, enabled = state.getJSONArray("redo").length() > 0, modifier = Modifier.weight(1f).testTag("redo").heightIn(min = 48.dp).semantics { contentDescription = "Yinele" }, contentPadding = PaddingValues(4.dp)) { Text("↷", Modifier.clearAndSetSemantics { }, fontSize = 20.sp) }
-                    OutlinedButton(onClick = solo::requestHint, modifier = Modifier.weight(1f).testTag("hint").heightIn(min = 48.dp).semantics { contentDescription = "İpucu" }, contentPadding = PaddingValues(4.dp)) { Text("?", Modifier.clearAndSetSemantics { }, fontSize = 20.sp) }
+                    FilterChip(selected = solo.noteMode, onClick = { solo.noteMode = !solo.noteMode }, label = { Text("✎", Modifier.clearAndSetSemantics { }, fontSize = 20.sp) }, modifier = Modifier.weight(1f).testTag("notes-toggle").heightIn(min = 48.dp).semantics { contentDescription = notesDescription })
+                    OutlinedButton(onClick = { solo.apply("erase") }, enabled = editable, modifier = Modifier.weight(1f).testTag("erase").heightIn(min = 48.dp), contentPadding = PaddingValues(4.dp)) { Text(res(R.string.action_erase)) }
+                    OutlinedButton(onClick = { solo.apply("undo") }, enabled = state.getJSONArray("undo").length() > 0, modifier = Modifier.weight(1f).testTag("undo").heightIn(min = 48.dp).semantics { contentDescription = undoDescription }, contentPadding = PaddingValues(4.dp)) { Text("↶", Modifier.clearAndSetSemantics { }, fontSize = 20.sp) }
+                    OutlinedButton(onClick = { solo.apply("redo") }, enabled = state.getJSONArray("redo").length() > 0, modifier = Modifier.weight(1f).testTag("redo").heightIn(min = 48.dp).semantics { contentDescription = redoDescription }, contentPadding = PaddingValues(4.dp)) { Text("↷", Modifier.clearAndSetSemantics { }, fontSize = 20.sp) }
+                    OutlinedButton(onClick = solo::requestHint, modifier = Modifier.weight(1f).testTag("hint").heightIn(min = 48.dp).semantics { contentDescription = hintDescription }, contentPadding = PaddingValues(4.dp)) { Text("?", Modifier.clearAndSetSemantics { }, fontSize = 20.sp) }
                 }
                 // Transient notices only; each grows the area only while it is shown.
                 if (solo.storageError != null || UiDebug.enabled) StorageStatus(solo)
-                solo.hintMessage?.let { Text(it, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodyMedium) }
-                solo.inputError?.let { Text(it, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, color = MaterialTheme.colorScheme.error) }
+                solo.hintMessage?.let { Text(it.asString(), Modifier.semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodyMedium) }
+                solo.inputError?.let { Text(it.asString(), Modifier.semantics { liveRegion = LiveRegionMode.Polite }, color = MaterialTheme.colorScheme.error) }
             }
         }
     )
@@ -315,9 +326,9 @@ private fun Game(solo: SoloState) {
 @Composable
 private fun StorageStatus(solo: SoloState) {
     if (solo.storageError != null) {
-        Text(solo.storageError!!, Modifier.testTag("storage-status").semantics { liveRegion = LiveRegionMode.Polite }, color = MaterialTheme.colorScheme.error)
-        OutlinedButton(onClick = { if (solo.screen == SoloScreen.Setup) solo.prepareNew() else if (solo.game == null) solo.resumeSaved() else solo.save() }, modifier = Modifier.testTag("retry")) { Text("Tekrar dene") }
-    } else if (solo.game != null) Text("Oyun cihazına kaydedildi", Modifier.testTag("storage-status"), style = MaterialTheme.typography.bodySmall)
+        Text(solo.storageError!!.asString(), Modifier.testTag("storage-status").semantics { liveRegion = LiveRegionMode.Polite }, color = MaterialTheme.colorScheme.error)
+        OutlinedButton(onClick = { if (solo.screen == SoloScreen.Setup) solo.prepareNew() else if (solo.game == null) solo.resumeSaved() else solo.save() }, modifier = Modifier.testTag("retry")) { Text(res(R.string.action_retry)) }
+    } else if (solo.game != null) Text(res(R.string.storage_saved), Modifier.testTag("storage-status"), style = MaterialTheme.typography.bodySmall)
 }
 
 private fun formatTime(milliseconds: Long): String {
