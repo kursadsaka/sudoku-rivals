@@ -1,3 +1,6 @@
+import re
+
+
 def divergent_cells(snapshot, draft, pending):
     """A conflict must differ from both the draft and any uncertain sync ACK."""
     cells = snapshot['own']['cells'].copy()
@@ -8,3 +11,16 @@ def divergent_cells(snapshot, draft, pending):
         forbidden.add(command['cells'][index])
     cells[index] = next(value for value in range(1, snapshot['size'] + 1) if value not in forbidden)
     return cells, index
+
+
+def activity_state(dump, package):
+    """Lifecycle state of `package`'s own MainActivity record in `dumpsys activity activities`.
+
+    The dump also lists neighbouring records (for example the launcher is STOPPED
+    while the app is RESUMED), so a bare `state=STOPPED` search is true before the
+    app has stopped and lets a test launch() again without onStop/resume running.
+    """
+    block = re.search(r'\* Hist\s+#\d+: ActivityRecord\{[^}]*\s' + re.escape(package) + r'/\.MainActivity\b[^}]*\}(.*?)(?=\n\s*\* Hist|\Z)',
+                      dump, re.S)
+    state = re.search(r'\bstate=(\w+)', block.group(1)) if block else None
+    return state.group(1) if state else None

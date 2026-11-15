@@ -35,13 +35,23 @@ Notes, iOS/web ve association dosyaları değiştirilmedi; deploy, push, imzalı
   hata gösterdi, sonuç uydurmadı). Kota penceresi dolunca son tam koşu geçti. Hiçbir
   oda açık bırakılmadı.
 
-## Açık / önceden var
+## Açık / bulgular
 
-- `tests/android-multiplayer.py` (debug, yerel sunucu, API 36 emülatör): reconcile, ayrılma
-  sonrası kurulum, yarış 6×6/9×9 ve düello 6×6 geçer; düello 9×9'da arka plandan dönüşte
-  `generation >= 2` (satır 446) beklemesi zaman aşımına düşer. **Değişiklikten bağımsız:**
-  değişmemiş `6e93373` debug APK'sı aynı satırda aynı şekilde düştü (iki kez bizim
-  APK, bir kez taban). İncelenmedi; ayrı iş.
+- Düello 9×9 `generation >= 2` (satır 446) hatası **test kırılganlığıydı, ürün kusuru
+  değil.** `background()` yalnız `dumpsys activity activities` çıktısında herhangi bir
+  `state=STOPPED` arıyordu; çıktı komşu kayıtları da listeler (uygulama `RESUMED` iken
+  launcher `STOPPED`) ve koşul uygulama durmadan doğru çıkabiliyordu. Ana ekran tuşu
+  işlenmeden `launch()` gelirse `onStop` → `setForeground(false)` → `resume` hiç çalışmaz,
+  generation 1'de kalır ve `/state` yoklamaları sürer. Düzeltme: `activity_state()` yalnız
+  uygulamanın kendi `MainActivity` kaydının durumunu okur (`RESUMED→PAUSED→STOPPED`
+  emülatörde izlendi). Gerçek `dumpsys` örnekleriyle 4 birim testi eklendi.
+- Kanıt: beklemesiz `background()` ile aynı hata imzası iki koşuda da yeniden üretildi
+  (düello, generation 1, aynı onaylama); gerçek durma beklenince `/resume` launch'tan
+  ~0,2 sn sonra gidiyor. Düzeltilmiş tam süit API 36 emülatörde geçti. Sınır: eski
+  harness'in hata veren üç koşusunda koşulun erken doğru çıktığı anı yakalamadım; sonraki
+  yedi koşu (taze emülatör, yük altında üçü dahil) eski haliyle de geçti. Bağlantı, aynı
+  imza + kanıtlanmış yanlış pozitiften çıkarımdır. `tests/android-g14-lifecycle.py` bu
+  koşulu kullanmaz (sabit 1,5 sn bekler) ve incelenmedi.
 - Gerçek cihaz, imzalı yayın, App Links/`assetlinks.json`, production, iOS yok.
 - Free servis uykudayken ilk istek ~1 dk sürebilir; staging bellek içi olduğundan
   restart/uyku odaları kaybettirir (bkz. staging-render.md).

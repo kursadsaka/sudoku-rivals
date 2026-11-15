@@ -20,7 +20,7 @@ import time
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
-from android_multiplayer_fixture import divergent_cells
+from android_multiplayer_fixture import activity_state as fixture_activity_state, divergent_cells
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--adb', required=True)
@@ -79,9 +79,12 @@ def until(test, timeout=15, message='Condition did not become true'):
         time.sleep(.1)
 
 
+def activity_state(): return fixture_activity_state(shell('dumpsys', 'activity', 'activities', PKG), PKG)
+
+
 def background():
     shell('input', 'keyevent', 'KEYCODE_HOME')
-    until(lambda: re.search(r'\bstate=STOPPED\b', shell('dumpsys', 'activity', 'activities', PKG)),
+    until(lambda: activity_state() == 'STOPPED',
           20, 'HOME did not stop the test Activity; lifecycle resume was not exercised')
 
 
