@@ -20,12 +20,14 @@ import time
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
+from android_layout_check import check as layout_problems, nodes_by_tag
 from android_multiplayer_fixture import activity_state as fixture_activity_state, divergent_cells
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--adb', required=True)
 parser.add_argument('--trace', action='store_true', help='Log UI actions without session data')
 parser.add_argument('--reconcile-only', action='store_true', help='Run only the cold-restore divergent-board scenario')
+parser.add_argument('--layout-check', type=pathlib.Path, help='Also check the live game layout at several display sizes and save screenshots here')
 parser.add_argument('--serial', default='emulator-5554')
 parser.add_argument('--server-bin', default='/tmp/sudoku-shared-target/debug/sudoku-server')
 parser.add_argument('--server-port', type=int, default=3001)
@@ -156,6 +158,41 @@ def solve(cells, size):
         return False
     assert search(), 'Bot puzzle unsatisfiable'
     return board
+
+
+LAYOUT_VIEWPORTS = [('411x914dp', 1080, 2400, 420, True), ('411x731dp', 1080, 1920, 420, True), ('360x640dp', 720, 1280, 320, True),
+                    ('320x568dp', 640, 1136, 320, False), ('731x411dp-landscape', 1920, 1080, 420, True)]
+
+
+def layout_check(mode, size):
+    """One-screen live layout: order, 48dp targets, digit rows, hidden debug text, no scrolling."""
+    original_size = re.findall(r'(\d+x\d+)', shell('wm', 'size'))[0]
+    original_density = re.findall(r'(\d+)', shell('wm', 'density'))[0]
+    args.layout_check.mkdir(parents=True, exist_ok=True)
+    try:
+        for label, width, height, density, must_fit in LAYOUT_VIEWPORTS:
+            shell('wm', 'size', f'{width}x{height}'); shell('wm', 'density', str(density))
+            time.sleep(1.5)
+            root = hierarchy()
+            tags = nodes_by_tag(root)
+            problems, metrics = layout_problems(tags, width, height, density, mode, size, False, [n.attrib.get('text', '') for n in root.iter('node')])
+            wanted = ['opponent-progress'] if mode == 'race' else ['own-score', 'opponent-score', 'combo']
+            problems += ['missing ' + t for t in wanted + ['connection-status'] if t not in tags]
+            scrolls = None
+            if not problems:
+                before = tags['game-board'][:4]
+                shell('input', 'swipe', str(width//2), str(height*8//10), str(width//2), str(height*3//10), '200')
+                time.sleep(.6)
+                scrolls = nodes_by_tag(hierarchy()).get('game-board', (0, 0, 0, 0))[:4] != before
+                if scrolls: shell('input', 'swipe', str(width//2), str(height*3//10), str(width//2), str(height*8//10), '200')
+                if scrolls and must_fit: problems.append('page scrolls although it must fit')
+            (args.layout_check/f'{mode}-{size}-{label}.png').write_bytes(adb('exec-out', 'screencap', '-p'))
+            print(('Layout ok   ' if not problems else 'Layout FAIL ') + json.dumps({'mode': mode, 'size': size, 'viewport': label, 'scrolls': scrolls, **metrics}), flush=True)
+            assert not problems, f'{mode} {size}x{size} {label}: {problems}'
+    finally:
+        shell('wm', 'size', original_size); shell('wm', 'density', original_density)
+        time.sleep(1)
+
 
 
 class FaultProxy(http.server.ThreadingHTTPServer):
@@ -359,6 +396,7 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
                     code = app_snapshot()['room_code']
                     bot.call({'type': 'join', 'invite': code, 'name': 'WebBot'})
                 snapshot = ready_match(bot)
+                if args.layout_check: layout_check(mode, size)
                 solution = solve(snapshot['own']['givens'], size)
                 blank = next(i for i, value in enumerate(snapshot['own']['givens']) if value == 0)
                 if mode == 'race':

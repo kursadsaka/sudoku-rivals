@@ -36,7 +36,11 @@ internal fun LiveScreens(live: LiveState) {
     val view = live.view
     val snapshot = live.snapshot()
     val lost = view.optString("connection") == "session_lost" && !view.optBoolean("voluntarily_left")
-    Column(
+    val gameScreen = !live.protectedSave && snapshot != null && !view.optBoolean("voluntarily_left") && !lost &&
+        snapshot.optString("phase") !in listOf("finished", "closed", "lobby", "countdown")
+    if (gameScreen && snapshot != null) {
+        Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) { LiveGame(live, snapshot) }
+    } else Column(
         Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -68,7 +72,7 @@ internal fun LiveScreens(live: LiveState) {
             }
             snapshot.optString("phase") == "finished" -> LiveResult(live, snapshot)
             snapshot.optString("phase") in listOf("lobby", "countdown") -> LiveLobby(live, snapshot)
-            else -> LiveGame(live, snapshot)
+            else -> Unit
         }
     }
     if (live.leaveConfirmation) AlertDialog(
@@ -189,91 +193,108 @@ private fun LiveGame(live: LiveState, snapshot: JSONObject) {
     val raceMode = snapshot.getString("mode") == "race"
     val own = snapshot.getJSONObject("own")
     val race = live.view.optJSONObject("race")
-    val cells = if (raceMode) race?.optJSONArray("cells") ?: return else own.getJSONArray("cells")
+    val cells: org.json.JSONArray? = if (raceMode) race?.optJSONArray("cells") else own.getJSONArray("cells")
     val givens = own.getJSONArray("givens")
     val n = snapshot.getInt("size")
     val conflicts = if (raceMode) race?.optJSONArray("conflicts")?.let { list -> (0 until list.length()).map { list.getInt(it) }.toSet() }.orEmpty() else emptySet()
-    val cfg = LocalConfiguration.current
-    val columns = if (n == 6) { if (cfg.screenWidthDp >= 360) 6 else 3 } else 5
-    Connection(live)
+    val connection = live.view.optString("connection")
     val estimate = if (live.view.isNull("estimated_server_ms")) null else live.view.getLong("estimated_server_ms")
     val time = if (raceMode) estimate?.let { (it - snapshot.getLong("start_ms")).coerceAtLeast(0) } else if (live.view.isNull("remaining_ms")) null else live.view.getLong("remaining_ms")
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text("${if (raceMode) "Klasik yarış" else "Düello"} · $n×$n")
-        Text(time?.let { "%02d:%02d".format(it / 60000, (it / 1000) % 60) } ?: "Eşitleniyor", Modifier.testTag("timer"))
-    }
+    val timeText = time?.let { "%02d:%02d".format(it / 60000, (it / 1000) % 60) } ?: "Eşitleniyor"
     val opponent = snapshot.optJSONObject("opponent")
-    if (raceMode) Text("Rakip: %${opponent?.optInt("progress_percent") ?: 0} dolu hücre", Modifier.testTag("opponent-progress"))
-    else {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Sen: ${own.getInt("score")}", Modifier.testTag("own-score"))
-            Text("Rakip: ${live.opponentScore()?.toString() ?: "Skor mevcut değil"}", Modifier.testTag("opponent-score"))
-            Text("Seri: ${own.getInt("combo")}", Modifier.testTag("combo"))
-        }
-    }
-    if (live.view.optBoolean("reconcile_required")) {
-        Text("Sunucu tahtası yerel çalışmandan farklı. Yerel not ve geçmişin seçim yapana kadar korunuyor.", Modifier.testTag("reconcile-message").semantics { liveRegion = LiveRegionMode.Polite })
-        OutlinedButton(onClick = { live.reconcile(true) }, modifier = Modifier.testTag("reconcile-local")) { Text("Yerel çalışmamı koru") }
-        OutlinedButton(onClick = { live.reconcile(false) }, modifier = Modifier.testTag("reconcile-server")) { Text("Sunucu tahtasını kullan") }
-    }
     val lock = live.view.optLong("locked_remaining_ms", 0)
     val receipt = live.view.optJSONObject("last_receipt")?.takeIf { it.optString("match_id") == snapshot.getString("match_id") }
-    val status = when {
-        !raceMode && lock > 0 -> "Giriş kilidi: ${(lock + 999) / 1000} saniye"
-        !raceMode && time == 0L -> "Süre doldu; sunucunun sonucu bekleniyor"
-        live.view.optBoolean("pending_command") -> "Sunucu onayı bekleniyor"
-        receipt?.optString("code") == "wrong" -> "Yanlış hamle; puan ve seri sunucuda güncellendi"
-        receipt?.optString("code") == "not_correct" -> "Çözüm henüz doğru değil"
-        conflicts.isNotEmpty() -> "Tahtada çakışma var"
-        else -> "Oyun devam ediyor"
-    }
-    Text(status, Modifier.testTag(if (lock > 0) "input-lock" else "game-status").semantics { liveRegion = LiveRegionMode.Polite }, color = if (lock > 0 || conflicts.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyMedium)
-    val scale = LocalDensity.current.fontScale
-    BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        val width = minOf(maxWidth, (cfg.screenHeightDp - if (columns == 6) 390 else 450).coerceIn(180, 420).dp)
-        val symbolSize = (minOf(24f, width.value / n * 0.55f) / scale).sp
-        Column(Modifier.size(width).testTag("game-board").semantics { collectionInfo = CollectionInfo(n, n) }) {
-            for (row in 0 until n) Row(Modifier.weight(1f)) {
-                for (column in 0 until n) {
-                    val index = row * n + column
-                    val value = cells.getInt(index)
-                    val given = givens.getInt(index) != 0
-                    val notes = race?.optJSONArray("notes")?.optJSONArray(index)?.let { list -> (0 until list.length()).map { list.getInt(it) } }.orEmpty()
-                    val line = MaterialTheme.colorScheme.onSurface
-                    val selected = live.selected == index
-                    Box(Modifier.weight(1f).fillMaxHeight().background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
-                        .drawBehind {
-                            drawLine(line, Offset.Zero, Offset(size.width, 0f), if (row % (if (n == 6) 2 else 3) == 0) 2.dp.toPx() else 0.5.dp.toPx())
-                            drawLine(line, Offset.Zero, Offset(0f, size.height), if (column % 3 == 0) 2.dp.toPx() else 0.5.dp.toPx())
-                            if (row == n - 1) drawLine(line, Offset(0f, size.height), Offset(size.width, size.height), 2.dp.toPx())
-                            if (column == n - 1) drawLine(line, Offset(size.width, 0f), Offset(size.width, size.height), 2.dp.toPx())
-                        }.clickable { live.selected = index }.testTag("cell-${row + 1}-${column + 1}")
-                        .clearAndSetSemantics {
-                            contentDescription = "Satır ${row + 1}, sütun ${column + 1}, ${if (given) "verilen" else if (!raceMode && value != 0) "kilitli" else "girilebilir"}, ${if (value == 0) "boş" else value.toString()}, notlar: ${notes.joinToString(", ").ifEmpty { "yok" }}${if (index in conflicts) ", çakışma" else ""}"
-                            this.selected = selected
-                            collectionItemInfo = CollectionItemInfo(row, 1, column, 1)
-                            onClick("Hücreyi seç") { live.selected = index; true }
-                        }, contentAlignment = Alignment.Center) {
-                        if (value != 0) Text(value.toString() + if (index in conflicts) "!" else "", fontSize = symbolSize, fontWeight = if (given) FontWeight.Bold else FontWeight.Normal, color = if (index in conflicts) MaterialTheme.colorScheme.error else if (given) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary)
-                        else if (notes.isNotEmpty()) Text("·", fontSize = symbolSize, color = MaterialTheme.colorScheme.primary)
+    fun noteList(index: Int) = race?.optJSONArray("notes")?.optJSONArray(index)?.let { list -> (0 until list.length()).map { list.getInt(it) } }.orEmpty()
+    val selectedValue = cells?.getInt(live.selected) ?: 0
+    val enabled = cells != null && live.canInput() && givens.getInt(live.selected) == 0 && (raceMode || selectedValue == 0)
+    GameScreenLayout(
+        top = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (UiDebug.enabled) Text("Sudoku Rivals", Modifier.testTag("app-title"), style = MaterialTheme.typography.labelMedium)
+                GameNavBar(
+                    modeLabel = "${if (raceMode) "Klasik yarış" else "Düello"} · $n×$n", timeText = timeText,
+                    timeDescription = "Kalan veya geçen süre: $timeText", backDescription = "Geri", onBack = live::goHome
+                ) {
+                    val name = opponent?.optString("name").orEmpty()
+                    if (name.isNotEmpty()) Text(name, Modifier.widthIn(max = 96.dp).semantics { contentDescription = "Rakip: $name" }, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                }
+                // One status row: connection dot (text only when unhealthy) · mode value · transient state.
+                Row(Modifier.fillMaxWidth().heightIn(min = 24.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val healthy = connection == "connected"
+                    val connectionText = when (connection) {
+                        "connected" -> "Bağlandı"
+                        "reconnecting" -> "Yeniden bağlanılıyor"
+                        "reconcile" -> "Veriler farklı"
+                        "session_lost" -> "Oturuma dönülemiyor"
+                        else -> "Bağlantı kesildi"
                     }
+                    if (healthy) StatusDot(MaterialTheme.colorScheme.primary, connectionText, "connection-status")
+                    else Text(connectionText, Modifier.testTag("connection-status").semantics { liveRegion = LiveRegionMode.Polite }, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                    if (raceMode) Text("Rakip %${opponent?.optInt("progress_percent") ?: 0}", Modifier.testTag("opponent-progress").semantics { contentDescription = "Rakip: %${opponent?.optInt("progress_percent") ?: 0} dolu hücre" }, style = MaterialTheme.typography.bodyMedium)
+                    else {
+                        val rival = live.opponentScore()
+                        Text("Sen ${own.getInt("score")}", Modifier.testTag("own-score").semantics { contentDescription = "Sen: ${own.getInt("score")}" }, style = MaterialTheme.typography.bodyMedium)
+                        Text("Rakip ${rival?.toString() ?: "–"}", Modifier.testTag("opponent-score").semantics { contentDescription = "Rakip: ${rival?.toString() ?: "skor mevcut değil"}" }, style = MaterialTheme.typography.bodyMedium)
+                        Text("Seri ${own.getInt("combo")}", Modifier.testTag("combo").semantics { contentDescription = "Seri: ${own.getInt("combo")}" }, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    val (short, long) = when {
+                        !raceMode && lock > 0 -> "Kilit ${(lock + 999) / 1000} sn" to "Giriş kilidi: ${(lock + 999) / 1000} saniye"
+                        !raceMode && time == 0L -> "Süre doldu" to "Süre doldu; sunucunun sonucu bekleniyor"
+                        live.view.optBoolean("pending_command") -> "Onay bekleniyor" to "Sunucu onayı bekleniyor"
+                        conflicts.isNotEmpty() -> "Çakışma var" to "Tahtada çakışma var"
+                        UiDebug.enabled -> "Oyun devam ediyor" to "Oyun devam ediyor"
+                        else -> null to null
+                    }
+                    if (short != null) Text(short, Modifier.testTag(if (lock > 0 && !raceMode) "input-lock" else "game-status").semantics { contentDescription = long!!; liveRegion = LiveRegionMode.Polite },
+                        color = if ((lock > 0 && !raceMode) || conflicts.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyMedium)
                 }
             }
+        },
+        board = { side ->
+            if (cells != null) SudokuBoard(
+                n = n, side = side, selected = live.selected, conflicts = conflicts,
+                value = { cells.getInt(it) }, given = { givens.getInt(it) != 0 }, notes = ::noteList,
+                label = { index ->
+                    val value = cells.getInt(index)
+                    "Satır ${index / n + 1}, sütun ${index % n + 1}, ${if (givens.getInt(index) != 0) "verilen" else if (!raceMode && value != 0) "kilitli" else "girilebilir"}, ${if (value == 0) "boş" else value.toString()}, notlar: ${noteList(index).joinToString(", ").ifEmpty { "yok" }}${if (index in conflicts) ", çakışma" else ""}"
+                },
+                onSelect = { live.selected = it }
+            ) else Spacer(Modifier.size(side))
+        },
+        bottom = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (UiDebug.enabled && cells != null) {
+                    val selectedNotes = noteList(live.selected)
+                    Text("${live.selected / n + 1}. satır, ${live.selected % n + 1}. sütun · ${if (selectedValue == 0) "Boş" else "Değer: $selectedValue"}${if (selectedNotes.isEmpty()) "" else " · Notlar: ${selectedNotes.joinToString(", ")}"}", Modifier.testTag("selected-cell"), style = MaterialTheme.typography.bodyMedium)
+                }
+                DigitPad(n, enabled) { live.enter(it) }
+                if (raceMode && race != null) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(live.noteMode, { live.noteMode = !live.noteMode }, label = { Text("✎", Modifier.clearAndSetSemantics { }, fontSize = 20.sp) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("notes-toggle").semantics { contentDescription = "Kalem" })
+                    OutlinedButton(onClick = { live.edit("erase") }, enabled = enabled, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("erase"), contentPadding = PaddingValues(4.dp)) { Text("Sil") }
+                    OutlinedButton(onClick = { live.edit("undo") }, enabled = race.optBoolean("can_undo") && live.canInput(), modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("undo").semantics { contentDescription = "Geri al" }, contentPadding = PaddingValues(4.dp)) { Text("↶", Modifier.clearAndSetSemantics { }, fontSize = 20.sp) }
+                    OutlinedButton(onClick = { live.edit("redo") }, enabled = race.optBoolean("can_redo") && live.canInput(), modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("redo").semantics { contentDescription = "Yinele" }, contentPadding = PaddingValues(4.dp)) { Text("↷", Modifier.clearAndSetSemantics { }, fontSize = 20.sp) }
+                }
+                // Transient notices only.
+                if (live.storageError) {
+                    Text("Oturum bu cihaza kaydedilemedi. Açık durum ve önceki kayıt korunuyor. Uygulamayı kapatmadan tekrar kaydetmeyi dene.", Modifier.testTag("live-storage-status").semantics { liveRegion = LiveRegionMode.Polite }, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                    OutlinedButton(onClick = live::retryStorage, modifier = Modifier.heightIn(min = 48.dp).testTag("live-save-retry")) { Text("Tekrar kaydet") }
+                }
+                live.message?.let { Text(it, Modifier.testTag("live-message").semantics { liveRegion = LiveRegionMode.Polite }, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+                if (live.view.optBoolean("reconcile_required")) {
+                    Text("Sunucu tahtası yerel çalışmandan farklı. Yerel not ve geçmişin seçim yapana kadar korunuyor.", Modifier.testTag("reconcile-message").semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodyMedium)
+                    OutlinedButton(onClick = { live.reconcile(true) }, modifier = Modifier.heightIn(min = 48.dp).testTag("reconcile-local")) { Text("Yerel çalışmamı koru") }
+                    OutlinedButton(onClick = { live.reconcile(false) }, modifier = Modifier.heightIn(min = 48.dp).testTag("reconcile-server")) { Text("Sunucu tahtasını kullan") }
+                }
+                val notice = when (receipt?.optString("code")) {
+                    "wrong" -> "Yanlış hamle; puan ve seri sunucuda güncellendi"
+                    "not_correct" -> "Çözüm henüz doğru değil"
+                    else -> null
+                }
+                notice?.let { Text(it, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodyMedium) }
+            }
         }
-    }
-    val selectedValue = cells.getInt(live.selected)
-    val selectedNotes = race?.optJSONArray("notes")?.optJSONArray(live.selected)?.let { list -> (0 until list.length()).map { list.getInt(it) } }.orEmpty()
-    Text("${live.selected / n + 1}. satır, ${live.selected % n + 1}. sütun · ${if (selectedValue == 0) "Boş" else "Değer: $selectedValue"}${if (selectedNotes.isEmpty()) "" else " · Notlar: ${selectedNotes.joinToString(", ")}"}", style = MaterialTheme.typography.bodyMedium)
-    val enabled = live.canInput() && givens.getInt(live.selected) == 0 && (raceMode || selectedValue == 0)
-    for (digits in (1..n).chunked(columns)) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        for (digit in digits) OutlinedButton(onClick = { live.enter(digit) }, enabled = enabled, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("number-$digit"), contentPadding = PaddingValues(4.dp)) { Text(digit.toString()) }
-    }
-    if (raceMode && race != null) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        FilterChip(live.noteMode, { live.noteMode = !live.noteMode }, label = { Text("✎", Modifier.clearAndSetSemantics { }, fontSize = 20.sp) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("notes-toggle").semantics { contentDescription = "Kalem" })
-        OutlinedButton(onClick = { live.edit("erase") }, enabled = enabled, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("erase"), contentPadding = PaddingValues(4.dp)) { Text("Sil") }
-        OutlinedButton(onClick = { live.edit("undo") }, enabled = race.optBoolean("can_undo") && live.canInput(), modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("undo").semantics { contentDescription = "Geri al" }, contentPadding = PaddingValues(4.dp)) { Text("↶", Modifier.clearAndSetSemantics { }, fontSize = 20.sp) }
-        OutlinedButton(onClick = { live.edit("redo") }, enabled = race.optBoolean("can_redo") && live.canInput(), modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("redo").semantics { contentDescription = "Yinele" }, contentPadding = PaddingValues(4.dp)) { Text("↷", Modifier.clearAndSetSemantics { }, fontSize = 20.sp) }
-    }
+    )
 }
 
 /** Dialogs are separate windows; the root's testTagsAsResourceId does not reach them. */

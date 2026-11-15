@@ -73,7 +73,9 @@ def find(tag, scroll=False):
             if resource == tag or resource.endswith(':id/' + tag):
                 return node
         if scroll:
-            shell('input', 'swipe', '540', '1580', '540', '650', '180')
+            # Current display, not fixed coordinates: this suite runs at 320x640 as well as 1080x1920.
+            width, height = map(int, re.findall(r'(\d+)x(\d+)', shell('wm', 'size'))[-1])
+            shell('input', 'swipe', str(width // 2), str(height * 85 // 100), str(width // 2), str(height * 35 // 100), '180')
             time.sleep(.15)
     raise AssertionError('UI node missing: ' + tag)
 
