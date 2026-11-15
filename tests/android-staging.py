@@ -92,6 +92,10 @@ def static_checks():
     debug_tree = xmltree(APKS / 'debug/app-debug.apk')
     check('networkSecurityConfig' in debug_tree and '10.0.2.2' in debug_tree and 'localhost' in debug_tree,
           'debug APK keeps loopback links and network config')
+    for apk in (STAGING_APK, APKS / 'debug/app-debug.apk', APKS / 'release/app-release-unsigned.apk'):
+        badging = subprocess.run([args.aapt2, 'dump', 'badging', str(apk)], check=True, stdout=subprocess.PIPE, text=True).stdout
+        check(re.search(r"application-icon-\d+:'res/\w[^']*\.xml'", badging) is not None and "icon='res/" in badging,
+              f'{apk.name} has an adaptive launcher icon')
     release_tree = xmltree(APKS / 'release/app-release-unsigned.apk')
     check('staging' not in release_tree.lower() and 'networkSecurityConfig' not in release_tree,
           'release APK manifest unchanged by staging')

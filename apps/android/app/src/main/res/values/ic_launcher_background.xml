@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand blue shared with the web icon and docs/ui-contract.json accent (#1d4ed8). -->
+    <color name="ic_launcher_background">#1D4ED8</color>
+</resources>

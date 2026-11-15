@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sudoku Rivals launcher foreground: the white 3x3 grid with a filled centre cell (same motif as apps/web/icon.svg).
+     108dp adaptive canvas; the 48dp grid sits inside the 66dp safe circle (corner radius 34dp max). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M34,30 H74 A4,4 0 0 1 78,34 V74 A4,4 0 0 1 74,78 H34 A4,4 0 0 1 30,74 V34 A4,4 0 0 1 34,30 Z"
+        android:strokeWidth="2.4"
+        android:strokeColor="#FFFFFF" />
+    <path
+        android:pathData="M46,30 V78 M62,30 V78 M30,46 H78 M30,62 H78"
+        android:strokeWidth="2"
+        android:strokeColor="#FFFFFF" />
+    <path
+        android:pathData="M48.4,48.4 H59.6 V59.6 H48.4 Z"
+        android:fillColor="#FFFFFF" />
+</vector>
