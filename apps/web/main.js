@@ -13,7 +13,7 @@ const text = {
     generatorNote:'Her oyun tek çözümlü yeni bir bulmacayla başlar.', difficultyNote:'Zorluk seçimi henüz kullanılamıyor.',
     replace:'Bu boyuttaki kayıtlı oyun yeni oyunla değiştirilecek. Devam edilsin mi?', replaceCorrupt:'Bu boyuttaki kayıt açılamıyor. Yeni oyun başlatırsan bu kayıt değiştirilecek. Devam edilsin mi?',
     paused:'Kısa bir mola.', pausedIntro:'Tahtan ve notların burada. Hazır olduğunda devam et.', pause:'Duraklat', saveExit:'Kaydedip çık', discardExit:'Kaydetmeden çık', confirmDiscard:'Kaydedilemeyen değişiklikler kaybolacak. Önceki kayıt korunacak. Yine de çıkılsın mı?', elapsed:'Geçen süre',
-    numbers:'Bir sayı seç', notes:'Kalem', erase:'Sil', undo:'Geri al', redo:'Yinele', hint:'İpucu', hintApply:'Bu sayıyı yaz', hintDismiss:'Kapat',
+    numbers:'Bir sayı seç', notes:'Kalem', erase:'Sil', undo:'Geri al', redo:'Yinele', hint:'İpucu', hintApply:'Bu sayıyı yaz', hintDismiss:'Kapat', cancel:'Vazgeç',
     hintNone:'Bu konumda tekli tekniklerle açıklanabilir bir ipucu bulunamadı.', hintConflict:'İpucu için önce tahtadaki çakışmaları düzelt.', hintUnavailable:'Bu tahta için açıklanabilir ipucu bulunamadı.',
     hintNaked:'{row}. satır, {column}. sütunda yalnızca {value} kullanılabilir. Aynı satır, sütun ve kutudaki sayılar diğer adayları eliyor.',
     hintHidden:'{unit} içinde {value} yalnızca {row}. satır, {column}. sütuna yerleşebilir.', row:'{number}. satır', column:'{number}. sütun', box:'{number}. kutu',
@@ -36,7 +36,7 @@ const text = {
     generatorNote:'Every game starts with a new puzzle with one solution.', difficultyNote:'Difficulty selection is not available yet.',
     replace:'The saved game of this size will be replaced by a new game. Continue?', replaceCorrupt:'The save of this size cannot be opened. Starting a new game will replace it. Continue?',
     paused:'Take your time.', pausedIntro:'Your board and notes are here. Continue whenever you are ready.', pause:'Pause', saveExit:'Save and exit', discardExit:'Exit without saving', confirmDiscard:'Unsaved changes will be lost. The previous save will remain. Exit anyway?', elapsed:'Elapsed',
-    numbers:'Choose a number', notes:'Notes', erase:'Erase', undo:'Undo', redo:'Redo', hint:'Hint', hintApply:'Enter this number', hintDismiss:'Dismiss',
+    numbers:'Choose a number', notes:'Notes', erase:'Erase', undo:'Undo', redo:'Redo', hint:'Hint', hintApply:'Enter this number', hintDismiss:'Dismiss', cancel:'Cancel',
     hintNone:'No explainable hint using singles was found here.', hintConflict:'Resolve the board conflicts before asking for a hint.', hintUnavailable:'No explainable hint was found for this board.',
     hintNaked:'Only {value} can go in row {row}, column {column}. The numbers in its row, column and box rule out the other candidates.',
     hintHidden:'In {unit}, {value} can only go in row {row}, column {column}.', row:'row {number}', column:'column {number}', box:'box {number}',
@@ -62,7 +62,7 @@ const icons = {
   hint:'<path d="M9 18h6M10 21h4M8 13a6 6 0 1 1 8 0c-1 1-1 2-1 3H9c0-1 0-2-1-3Z"/>', check:'<path d="m5 12 4 4L19 6"/>',
   warning:'<path d="m12 3 10 18H2L12 3ZM12 9v5M12 17v1"/>', play:'<path d="m9 5 11 7-11 7V5Z"/>',
   trophy:'<path d="M7 3h10v6a5 5 0 0 1-10 0V3ZM7 5H3v1a4 4 0 0 0 4 4M17 5h4v1a4 4 0 0 1-4 4M12 14v4M7.5 21h9M9.5 18h5"/>', flag:'<path d="M6 21V4m0 0h11l-2.5 4L17 12H6"/>', equal:'<path d="M6 9h12M6 15h12"/>',
-  share:'<path d="M12 15V4m0 0L8 8m4-4 4 4M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/>',
+  share:'<path d="M12 15V4m0 0L8 8m4-4 4 4M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/>', close:'<path d="M6 6l12 12M18 6 6 18"/>',
 };
 const svg = name => `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] || ''}</svg>`;
 const escape = value => String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
@@ -190,7 +190,8 @@ function renderHint() {
   const column = hint.index % session.board.size + 1;
   const unit = hint.unit ? t(hint.unit.kind,{number:hint.unit.index + 1}) : '';
   const explanation = t(hint.technique === 'naked_single' ? 'hintNaked':'hintHidden',{row,column,value:hint.value,unit});
-  return `<aside class="notice hint-notice" role="status"><p>${escape(explanation)}</p><div class="hint-actions"><button data-action="hint-apply">${t('hintApply')}</button><button data-action="hint-dismiss">${t('hintDismiss')}</button></div></aside>`;
+  // Laid over the keys, so the board and the controls keep their place and size while the hint is read.
+  return `<aside class="hint-card hint-notice" aria-label="${t('hint')}" data-testid="hint-card"><p>${svg('hint')}<span>${escape(explanation)}</span></p><div class="hint-actions"><button class="secondary-button" data-action="hint-dismiss" data-testid="hint-dismiss">${t('hintDismiss')}</button><button class="primary-button" data-action="hint-apply" data-testid="hint-apply">${t('hintApply')}</button></div></aside>`;
 }
 function renderGame(focusCell = false) {
   const board = session.board;
@@ -201,15 +202,17 @@ function renderGame(focusCell = false) {
   const editable = board.givens[session.selected] === 0;
   const selectedNotes = Array.from({length:size},(_,v)=>v+1).filter(v=>board.cells[session.selected].notes & (1 << (v-1)));
   const tool = (action,icon,label,disabled = false,extra = '') => `<button class="tool" data-action="${action}" data-testid="${action === 'notes' ? 'notes-toggle':action}" ${disabled ? 'disabled' : ''} ${extra}>${svg(icon)}<span>${t(label)}</span></button>`;
-  const messages = [storageMessage(),renderHint(),gameNotice ? `<p class="notice" role="status">${escape(gameNotice)}</p>` : ''].join('');
+  // A failed save stays in the flow until it is fixed; passing notices float over the header instead of pushing the board.
+  const messages = storageMessage();
+  const toast = gameNotice ? `<div class="game-toast" data-testid="game-notice"><p>${escape(gameNotice)}</p><button class="toast-close" data-action="notice-dismiss" aria-label="${t('hintDismiss')}">${svg('close')}</button></div>` : '';
   const info = debug ? `<p class="selection-info debug-only">${editable ? t('selected',{row:Math.floor(session.selected / size) + 1,column:session.selected % size + 1}) : t('givenSelected')}${selectedNotes.length ? `<br>${t('notesList',{notes:selectedNotes.join(', ')})}`:''}</p>` : '';
   content.innerHTML = `<section class="game" data-screen="solo-game" data-size="${size}">
-    <div class="game-top">${backButton('home','home')}<div class="game-heading"><h1>${t('solo')} · ${size}×${size}</h1><span class="timer" role="timer" aria-label="${t('elapsed')}" data-testid="timer">${formatTime(session.time)}</span></div><div class="game-trailing"><button class="icon-button" data-action="pause" data-testid="pause" aria-label="${t('pause')}" title="${t('pause')}">${svg('pause')}</button></div></div>
+    <div class="game-top">${backButton('home','home')}<div class="game-heading"><h1>${t('solo')} · ${size}×${size}</h1><span class="timer" role="timer" aria-label="${t('elapsed')}" data-testid="timer">${formatTime(session.time)}</span></div><div class="game-trailing"><button class="icon-button" data-action="pause" data-testid="pause" aria-label="${t('pause')}" title="${t('pause')}">${svg('pause')}</button></div></div>${toast}
     <div class="meter" aria-hidden="true"><i style="--p:${progress(board).toFixed(3)}"></i></div>
     <div class="status-row"><p class="game-status ${valid ? '' : 'conflict'}" data-testid="game-status" role="status">${valid ? `<span class="sr-only">${t('inProgress')}</span>` : `${svg('warning')}<span>${t('conflictShort')}</span>`}</p></div>
     <div class="game-layout"><div class="board-wrap">${renderBoard(board,conflicts)}</div>
-    <div class="input-panel">${numberPad(board,{action:'digit',group:t('numbers'),label:digit => t('enterDigit',{digit}),disabled:!editable,notes:session.notesMode})}
-      <div class="tools">${tool('notes','notes','notes',false,`role="switch" aria-checked="${session.notesMode}"`)}${tool('erase','erase','erase',!editable)}${tool('undo','undo','undo',board.undo.length === 0)}${tool('redo','redo','redo',board.redo.length === 0)}${tool('hint','hint','hint',!core.solo_hint)}</div>
+    <div class="input-panel"><div class="input-keys">${numberPad(board,{action:'digit',group:t('numbers'),label:digit => t('enterDigit',{digit}),disabled:!editable,notes:session.notesMode})}
+      <div class="tools">${tool('notes','notes','notes',false,`role="switch" aria-checked="${session.notesMode}"`)}${tool('erase','erase','erase',!editable)}${tool('undo','undo','undo',board.undo.length === 0)}${tool('redo','redo','redo',board.redo.length === 0)}${tool('hint','hint','hint',!core.solo_hint)}</div>${renderHint()}</div>
       ${messages ? `<div class="game-messages">${messages}</div>` : ''}
       ${info}${session.saveError ? '' : `<p class="storage-note ${debug ? '' : 'sr-only'}" data-testid="storage-status">${t('saved')}</p>`}
       <p class="keyboard-help" id="keyboard-help">${t('keyHelp',{size})}</p>
@@ -236,6 +239,12 @@ function renderSettings() {
     <h2 class="section-label">${t('storage')}</h2><p class="note">${t('preferencesNote')}</p><div class="storage-list" data-testid="storage-status">${saves.map(slot => `<p>${slot.size}×${slot.size} · ${slot.status === 'ready' ? `${t(slot.complete ? 'completed':'savedGame')} · ${formatTime(slot.saved.elapsedMs)}` : slot.status === 'missing' ? '—' : escape(t(slot.status === 'corrupt' ? 'corrupt':'storageUnavailable',{size:`${slot.size}×${slot.size}`}))}</p>`).join('')}</div>
     ${settingsNotice ? `<p class="notice" role="status">${escape(settingsNotice)}</p>`:''}
   </section>`;
+}
+// A layer that arrives over the game (hint card from below, notice from above); nothing under it moves.
+function appear(layer,offset) {
+  if (!layer?.animate) return;
+  const still = preferences.reduceMotion || matchMedia('(prefers-reduced-motion: reduce)').matches;
+  layer.animate([{opacity:0,transform:still ? 'none':`translateY(${offset}px)`},{opacity:1,transform:'none'}],{duration:still ? 120 : 200,easing:'cubic-bezier(.23,1,.32,1)'});
 }
 // A new screen eases in once; re-renders of the same screen (every move, every poll) never animate.
 function enter(section) {
@@ -303,6 +312,7 @@ function applyCommand(command) {
   } catch (error) {
     gameNotice = String(error).includes('GivenCell') ? t('badCell') : String(error).includes('FilledCell') ? t('filledNotes') : t('genericError');
     renderGame(true);
+    appear(content.querySelector('.game-toast'),-8);
     announce(gameNotice);
     cue('error',{emphasis:'subtle'});
   }
@@ -320,8 +330,25 @@ function goHome() {
   cue('navigate',{direction:'back',emphasis:'subtle'});
   navigate('home');
 }
-function discardOpenGame() {
-  if (!window.confirm(t('confirmDiscard'))) return false;
+// In-app confirmation sheet (native <dialog>: focus stays inside, Escape and the backdrop cancel).
+function confirmDialog(message,{ok,cancel = t('cancel')} = {}) {
+  const dialog = document.querySelector('#confirm');
+  if (!dialog?.showModal) return Promise.resolve(window.confirm(message));
+  if (dialog.open) return Promise.resolve(false);
+  dialog.querySelector('#confirm-text').textContent = message;
+  dialog.querySelector('[value="cancel"]').textContent = cancel;
+  dialog.querySelector('[value="ok"]').textContent = ok;
+  dialog.returnValue = '';
+  dialog.showModal();
+  cue('open',{emphasis:'subtle'});
+  return new Promise(resolve => dialog.addEventListener('close',() => {
+    if (document.activeElement === document.body) content.focus({preventScroll:true});
+    resolve(dialog.returnValue === 'ok');
+  },{once:true}));
+}
+document.querySelector('#confirm')?.addEventListener('click',event => { if (event.target === event.currentTarget) event.currentTarget.close('cancel'); });
+async function discardOpenGame() {
+  if (!await confirmDialog(t('confirmDiscard'),{ok:t('discardExit')})) return false;
   session.game = null;
   session.startedAt = null;
   session.saveError = false;
@@ -331,18 +358,18 @@ async function handleAction(button) {
   const action = button.dataset.action;
   if (action === 'home') return goHome();
   if (action === 'setup') {
-    if (session.game && session.saveError && !session.save() && !discardOpenGame()) return;
+    if (session.game && session.saveError && !session.save() && !await discardOpenGame()) return;
     cue('navigate',{emphasis:'subtle'});
     return navigate('solo-setup');
   }
-  if (action === 'discard-exit') { if (discardOpenGame()) navigate('home'); return; }
+  if (action === 'discard-exit') { if (await discardOpenGame()) navigate('home'); return; }
   if (action === 'friends' || action === 'live-resume') { cue('navigate',{emphasis:'subtle'});screen='live';live.enter();focusContent();return; }
   if (action === 'refresh-saves') return render();
   if (action === 'settings-back') { cue('navigate',{direction:'back',emphasis:'subtle'}); return navigate(settingsReturn); }
   if (action === 'start') {
     const slot = readSavedGames(storage,core).find(slot => slot.size === selectedSize);
     const exists = slot.status !== 'missing';
-    if (exists && !window.confirm(t(slot.status === 'corrupt' ? 'replaceCorrupt':'replace'))) return;
+    if (exists && !await confirmDialog(t(slot.status === 'corrupt' ? 'replaceCorrupt':'replace'),{ok:t('start')})) return;
     try {
       const seed = crypto.getRandomValues(new Uint32Array(1))[0];
       session.start(selectedSize,seed,exists);
@@ -367,11 +394,13 @@ async function handleAction(button) {
   if (action === 'select') {
     session.selected = Number(button.dataset.index);
     hint = null;
+    gameNotice = '';
     renderGame(true);
   } else if (action === 'digit') enterDigit(Number(button.dataset.value));
   else if (action === 'notes') {
     session.notesMode = !session.notesMode;
     session.save();
+    gameNotice = '';
     renderGame();
     cue('toggle');
     content.querySelector('[data-action="notes"]')?.focus({preventScroll:true});
@@ -386,12 +415,18 @@ async function handleAction(button) {
       gameNotice = t(core.validate_board(Uint8Array.from(session.board.cells.map(cell => cell.value)),session.board.size) ? 'hintUnavailable':'hintConflict');
     }
     renderGame();
-    if (hint) cue('ready');
-    announce(gameNotice || content.querySelector('.hint-notice')?.textContent || '');
+    const layer = content.querySelector(hint ? '.hint-card':'.game-toast');
+    if (hint) {
+      cue('ready');
+      // Focus lands on the hint's main action; the explanation is read from the live region.
+      layer?.querySelector('[data-action="hint-apply"]')?.focus({preventScroll:true});
+    }
+    appear(layer,hint ? 8 : -8);
+    announce(gameNotice || layer?.querySelector('p')?.textContent || '');
   } else if (action === 'hint-apply' && hint) {
     const {index,value} = hint;
     applyCommand({type:'set',index,value});
-  } else if (action === 'hint-dismiss') { hint = null; renderGame(); }
+  } else if (action === 'hint-dismiss' || action === 'notice-dismiss') { hint = null; gameNotice = ''; renderGame(true); }
 }
 
 content.addEventListener('click',event => {
@@ -417,6 +452,7 @@ content.addEventListener('change',event => {
 });
 content.addEventListener('keydown',event => {
   if(screen==='live') {live.keydown(event);return;}
+  if (screen === 'solo-game' && event.key === 'Escape' && (hint || gameNotice)) { event.preventDefault(); hint = null; gameNotice = ''; renderGame(true); return; }
   if (screen !== 'solo-game' || !event.target.closest('[role="grid"]')) return;
   const size = session.board.size;
   let index = session.selected;
@@ -436,6 +472,7 @@ content.addEventListener('keydown',event => {
   event.preventDefault();
   session.selected = index;
   hint = null;
+  gameNotice = '';
   renderGame(true);
 });
 settingsButton.addEventListener('click',() => {
@@ -466,7 +503,7 @@ applyPreferences();
 try {
   await init();
   session = new SoloSession(core,storage);
-  live = new LiveScreens({debug,engine:core,storage,content,renderBoard,numberPad,progress,cue,svg,escape,language:()=>preferences.language,announce,
+  live = new LiveScreens({debug,engine:core,storage,content,renderBoard,numberPad,progress,cue,confirm:confirmDialog,svg,escape,language:()=>preferences.language,announce,
     onUpdate:()=>{if(screen==='live')render();},onHome:()=>{if(screen==='live'){screen='home';history.replaceState({},'', '/');render();focusContent();}}});
   ready = true;
   if(location.pathname.startsWith('/r/')) {screen='live';live.enter(location.pathname);}

@@ -166,7 +166,7 @@ legend { font-size:.85rem; color:var(--muted); margin-bottom:8px; padding:0; fon
 .conflict-mark { position:absolute; top:2px; right:4px; font-family:var(--font); font-size:.6rem; font-weight:800; line-height:1; }
 
 /* Game screens: nav → meter/status → board → numbers → tools → messages. The board takes whatever height is left, so phones need no scrolling. */
-.game { flex:1; display:flex; flex-direction:column; gap:6px; width:100%; max-width:920px; margin:0 auto; }
+.game { position:relative; flex:1; display:flex; flex-direction:column; gap:6px; width:100%; max-width:920px; margin:0 auto; }
 .game-top { display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:48px; }
 .game-top .back-button { margin:0; flex:none; width:48px; padding:0; justify-content:center; background:var(--background); border:1px solid var(--line); border-radius:14px; color:var(--foreground); }
 .game-top .back-button span { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; }
@@ -191,14 +191,20 @@ legend { font-size:.85rem; color:var(--muted); margin-bottom:8px; padding:0; fon
 .hud-side > .live-stat { flex:none; }
 .hud .meter.rival i { background:var(--rival); transform-origin:right center; }
 .combo { flex:none; font-size:.74rem; font-weight:650; padding:1px 7px; border-radius:99px; background:var(--selected); color:var(--accent); font-variant-numeric:tabular-nums; }
-.status-row { display:flex; flex-wrap:wrap; align-items:center; gap:2px 14px; min-height:22px; font-size:.8125rem; color:var(--muted); flex:none; }
+/* One fixed line: whatever is reported here (conflict, lock, move feedback) can never change the board's size. */
+.status-row { display:flex; flex-wrap:nowrap; align-items:center; gap:14px; height:22px; overflow:hidden; white-space:nowrap; font-size:.8125rem; color:var(--muted); flex:none; }
+.status-row > * { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.status-row > .connection-strip:not(.is-offline), .status-row > .input-lock { flex:none; }
 .status-row p { margin:0; }
 .status-row .connection-strip { margin:0; gap:6px; }
 .game-status { display:flex; align-items:center; gap:6px; }
 .game-status.conflict { color:var(--error); font-weight:650; }
 .game-status svg { flex-shrink:0; width:18px; height:18px; }
 .input-lock { color:var(--error); font-weight:650; }
-.input-lock:empty { display:none; }
+.input-lock:empty, .live-feedback:empty { display:none; }
+.game-status span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.live-feedback { color:var(--foreground); font-weight:600; }
+.input-lock:not(:empty) ~ .live-feedback { display:none; }
 .game-layout { flex:1; display:flex; flex-direction:column; gap:10px; }
 .board-wrap { flex:1 1 0; min-height:min(280px,100vw); min-width:0; display:grid; place-items:center; container-type:size; }
 .input-panel { display:flex; flex-direction:column; gap:8px; }
@@ -219,9 +225,20 @@ legend { font-size:.85rem; color:var(--muted); margin-bottom:8px; padding:0; fon
 .tool[aria-checked="true"] svg { color:inherit; }
 .game-messages { display:grid; gap:6px; }
 .game .notice { margin:0; padding:8px 12px; font-size:.8125rem; }
-.hint-notice { border-color:var(--accent); background:var(--selected); }
-.hint-notice p { margin-bottom:4px; }
-.hint-actions { display:flex; gap:18px; flex-wrap:wrap; }
+/* Hint: a card laid over the keys. It is taken out of the flow, so the board and the keys keep their place and size. */
+.input-keys { position:relative; display:flex; flex-direction:column; gap:8px; }
+.hint-card { position:absolute; left:0; right:0; bottom:0; z-index:3; min-height:100%; max-height:calc(100% + 6px); overflow-y:auto; overscroll-behavior:contain; display:flex; flex-direction:column; justify-content:center; gap:10px; margin:0; padding:10px 12px; border:1.5px solid var(--accent); border-radius:16px; background:var(--background); box-shadow:var(--shadow); }
+.hint-card p { margin:0; display:flex; align-items:flex-start; gap:8px; font-size:.9rem; line-height:1.4; color:var(--foreground); text-wrap:pretty; }
+.hint-card p svg { flex:none; width:20px; height:20px; margin-top:1px; color:var(--accent); }
+.hint-actions { display:flex; gap:8px; flex:none; }
+.hint-actions button { flex:1 1 0; min-width:0; min-height:44px; padding:6px 10px; border-radius:12px; font-size:.95rem; box-shadow:none; }
+.hint-actions .secondary-button { flex:0 1 auto; border-color:var(--border); color:var(--foreground); }
+/* Passing notices float over the title and timer, between the back and pause buttons; they never push the board. */
+.game-toast { position:absolute; top:0; left:56px; right:56px; z-index:4; min-height:48px; display:flex; align-items:center; gap:2px; padding:2px 2px 2px 12px; border-radius:14px; background:var(--foreground); color:var(--canvas); box-shadow:var(--shadow); font-size:.8125rem; line-height:1.3; }
+.game-toast p { flex:1; min-width:0; margin:6px 0; overflow-wrap:anywhere; text-wrap:pretty; }
+.toast-close { flex:none; width:40px; height:44px; display:grid; place-items:center; border:0; border-radius:12px; background:transparent; color:inherit; }
+.toast-close:focus-visible { outline-color:currentColor; outline-offset:-3px; }
+.toast-close svg { width:20px; height:20px; }
 .debug-only { display:none; }
 html[data-debug] .debug-only { display:block; }
 .selection-info { font-size:.8rem; color:var(--muted); margin:0 0 8px; }
@@ -235,6 +252,8 @@ html[data-debug] body[data-view="game"] .site-header, html[data-debug] body[data
 body[data-view="game"] .app-shell { padding-inline:max(12px,env(safe-area-inset-left)) max(12px,env(safe-area-inset-right)); }
 body[data-view="game"] main { display:flex; flex-direction:column; padding:calc(8px + env(safe-area-inset-top)) 0 calc(8px + env(safe-area-inset-bottom)); }
 html[data-debug] body[data-view="game"] main { padding-top:12px; }
+/* 6×6 on a phone: two rows of three large keys (the same height as the 9×9 pad, so a hint card always has room). */
+@media (orientation:portrait) and (max-width:559px) { .number-pad[data-size="6"] { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 @media (max-width:339px) { .number-pad[data-size="6"] { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 /* Tall phones: a calculator-style pad under the board fills the thumb zone instead of leaving it empty. */
 @media (orientation:portrait) and (min-height:790px) and (max-width:559px) {
@@ -259,10 +278,12 @@ html[data-debug] body[data-view="game"] main { padding-top:12px; }
   body[data-view="game"] main { padding-top:calc(4px + env(safe-area-inset-top)); padding-bottom:calc(4px + env(safe-area-inset-bottom)); }
   .game { gap:4px; }
   .tool { min-height:48px; }
-  .status-row { min-height:18px; }
+  .status-row { height:18px; }
+  .input-keys { gap:6px; }
   .hud.race .meter { display:none; }
 }
 @media (max-height:600px) and (orientation:portrait) { .game-layout,.input-panel { gap:6px; } }
+@media (max-height:600px) and (orientation:landscape) { .input-keys { gap:8px; } }
 
 /* Pause and results */
 .paused,.result { text-align:center; padding:32px 0; max-width:440px; margin:auto; }
@@ -283,6 +304,16 @@ html[data-debug] body[data-view="game"] main { padding-top:12px; }
 .score-side.rival .score-name { order:-1; }
 .result .connection-strip { justify-content:center; }
 .result-note { color:var(--muted); font-size:.92rem; margin-bottom:8px; text-wrap:pretty; }
+
+/* Confirmation sheet: rises from the bottom on phones, centred on wide screens. */
+.sheet { width:min(100%,460px); max-width:none; max-height:85dvh; margin:auto auto 0; padding:22px 20px calc(20px + env(safe-area-inset-bottom)); border:0; border-radius:24px 24px 0 0; background:var(--background); color:var(--foreground); box-shadow:0 -8px 40px rgb(0 0 0 / .25); overflow-y:auto; overscroll-behavior:contain; opacity:0; transform:translateY(16px); transition:opacity 220ms var(--ease-out),transform 220ms var(--ease-out),overlay 220ms allow-discrete,display 220ms allow-discrete; }
+.sheet[open] { opacity:1; transform:none; }
+@starting-style { .sheet[open] { opacity:0; transform:translateY(16px); } }
+.sheet::backdrop { background:rgb(12 12 14 / .5); }
+.sheet p { margin:0 0 18px; font-size:1.02rem; line-height:1.45; text-wrap:pretty; }
+.sheet-actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.sheet-actions button { min-width:0; padding-inline:12px; }
+@media (min-width:560px) { .sheet { margin:auto; border-radius:24px; padding-bottom:22px; } }
 
 /* Settings */
 .settings-list { border:1px solid var(--line); border-radius:20px; background:var(--background); padding:0 16px; margin-top:8px; }
@@ -328,6 +359,9 @@ html[data-debug] body[data-view="game"] main { padding-top:12px; }
   .mode-art { width:56px; height:56px; }
   .room-code { gap:4px; }
 }
+.sheet-actions button { overflow-wrap:anywhere; }
+@media (prefers-reduced-motion:reduce) { .sheet { transition:none; transform:none; } }
+:root[data-reduce-motion="true"] .sheet { transition:none; transform:none; }
 @media (prefers-reduced-motion:reduce) { button,.segment,.size-option,.settings-row input[type="checkbox"],.settings-row input[type="checkbox"]::after,.meter.time i { transition:none; } button:active:not(:disabled) { transform:none; } }
 :root[data-reduce-motion="true"] :is(button,.segment,.size-option,.settings-row input[type="checkbox"],.settings-row input[type="checkbox"]::after,.meter.time i) { transition:none; }
 :root[data-reduce-motion="true"] button:active:not(:disabled) { transform:none; }

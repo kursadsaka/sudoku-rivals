@@ -29,6 +29,9 @@
     <main id="content" tabindex="-1"><p class="loading" role="status">Oyun hazırlanıyor…</p></main>
     <footer class="site-footer"><span id="offline-status" role="status">Çevrimdışı kullanım hazırlanıyor</span><span>6×6 &amp; 9×9</span></footer>
   </div>
+  <dialog id="confirm" class="sheet" aria-labelledby="confirm-text">
+    <form method="dialog"><p id="confirm-text"></p><div class="sheet-actions"><button class="secondary-button" value="cancel">Vazgeç</button><button class="primary-button" value="ok">Devam et</button></div></form>
+  </dialog>
   <div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
   <script type="module" src="/main.js"></script>
 </body>

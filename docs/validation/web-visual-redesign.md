@@ -7,9 +7,22 @@ Kapsam: yalnız `apps/web` ve onu sunan allowlist/paket listeleri (`server/src/h
 - **Kâğıt ve mürekkep**: sıcak kâğıt zemin, basılı (siyah) verilen sayılar, tükenmez mavisi oyuncu girişleri, kurşun kalem gri notlar. Marka mavisi uygulama simgesiyle aynıdır (`#1d4ed8`). **Kehribar her yerde rakibi** gösterir (yarış çubuğu, düello puanı, lobi, sonuç). Koyu temada nötr koyu zemin kullanılır. Yazı tipi sistem yığınıdır; sayılar ve başlıklarda varsa `ui-rounded`. Harici font/görsel yok.
 - **Ana ekran**: iki mod kartı (solo dolu marka kartı; arkadaş kartında mavi/kehribar yarış çubukları), "Kaldığın yerden" kartlarında boyut rozeti.
 - **Oyun ekranı**: üstte geri · `mod · boyut` + büyük süre · duraklat. Altında ince bir **gösterge**: solo'da doluluk, yarışta `Sen %` ↔ `% Rakip` karşılıklı iki çubuk, düelloda puanlar + 90 saniyelik kalan süre çubuğu (son 10 saniyede kırmızı). Seçili hücre dolu marka rengi; aynı sayı, ilgili satır/sütun/kutu ve çakışma ayrı tonlardadır (çakışmada ayrıca `!` ve "Çakışma var" metni).
-- **Sayı tuşları**: her tuşta o rakamdan kaç tane eksik olduğu yazar (ekran okuyucuda gizli); biten rakam soluklaşır. Kalem modunda tuşlar kesik çizgili ve gri olur. Yüksekliği ≥790 px olan dikey telefonlarda tuşlar hesap makinesi düzeninde 3 sütundur (boşluk yerine büyük tuş); daha kısa ekranlarda 9×9 için `5+4`, 6×6 için tek sıra korunur.
+- **Sayı tuşları**: her tuşta o rakamdan kaç tane eksik olduğu yazar (ekran okuyucuda gizli); biten rakam soluklaşır. Kalem modunda tuşlar kesik çizgili ve gri olur. Yüksekliği ≥790 px olan dikey telefonlarda tuşlar hesap makinesi düzeninde 3 sütundur (boşluk yerine büyük tuş); daha kısa ekranlarda 9×9 `5+4` kalır. 6×6 dikey telefonda her zaman `3+3` iki sıradır (9×9 ile aynı yükseklik; ipucu kartına yer bırakır).
 - **Arkadaş kurulumu/lobi/sonuç**: mod ve boyut için bölmeli seçim, oda kodu harf harf karolarda, oyuncu satırlarında baş harf ve "Hazır/Bekliyor" rozeti; düello sonucu iki sütunlu skor.
 - **Ayarlar**: tek kartta dil, ses, hareketi azalt, titreşim (bu sürümde kapalı) anahtarları.
+
+## İletiler tahtayı ve tuşları oynatmaz
+
+Kullanıcı geri bildirimi: İpucu'na basınca alttan çıkan ileti tahtayı küçültüp tuşları yukarı itiyordu. Artık oyun sırasında beliren hiçbir geçici içerik akışa girmez:
+
+- **İpucu kartı** sayı tuşları + araçlar alanının üstüne (`.input-keys` içinde mutlak konumlu) oturur; tahta tümüyle görünür kalır ve ipucu hücresi seçilidir. Kart tuş alanından en çok 6 px taşabilir, sığmayan metin kart içinde kayar. "Bu sayıyı yaz" ve "Kapat" 44 px; odak birincil eyleme taşınır, açıklama canlı bölgeden okunur, `Esc` veya başka hücre seçimi kapatır ve odağı tahtaya döndürür.
+- **Anlık iletiler** (ipucu bulunamadı, çakışmayı düzelt, verilen hücre, dolu hücreye not) başlık ve sürenin üstünde, geri ve duraklat düğmelerinin arasında koyu bir şerit olarak görünür; kapatma düğmesi, `Esc` veya sonraki hamle kaldırır.
+- **Canlı maç hamle geri bildirimi** (yanlış hamle, tahta henüz doğru değil, çok hızlı giriş) durum satırında tek satır metindir; kilit sayacı görünürken gizlenir. Durum satırı artık sabit yükseklikte ve tek satırdır (taşan metin `…` ile kısalır).
+- Akışta kalanlar yalnız kalıcı hata durumlarıdır: kayıt yazılamadı (tekrar dene), sunucu/bağlantı hatası ve yarış uzlaştırma seçimi. Bunlar görünürken tahta küçülebilir.
+
+## Onay sayfası
+
+Tarayıcının `confirm()` penceresi yerine uygulama içi `<dialog>` kullanılır (telefonda alttan sayfa, geniş ekranda ortada): kayıtlı oyunu değiştirme, kaydetmeden çıkma, maçtan ayrılma ("Maçta kal" / "Ayrıl"), canlı kaydı sıfırlama ve sunucu tahtasını kabul etme. Odak pencere içinde kalır; `Esc` ve arka plana dokunma vazgeçer. Ayrılma sorusu açıkken maç bittiyse ayrılma komutu yeniden değerlendirilir. `<dialog>` yoksa `confirm()` yedeği çalışır.
 
 ## Hareket
 
@@ -43,7 +56,7 @@ Hücre seçimi, ok tuşlarıyla gezinme, sayaç ve rakip ilerlemesi sessizdir.
 | Görünüm | Sonuç |
 | --- | --- |
 | 390×844, 412×780, 390×664, 375×667, 360×640 | Kaydırma yok; 9×9 tahta 333–388 px |
-| 375×553 (adres çubuklu küçük Safari), 320×568 | Kaydırma yok; 9×9 tahta 280–296 px. Yalnız ipucu açıklaması görünürken +13–29 px kayar |
+| 375×553 (adres çubuklu küçük Safari), 320×568 | Kaydırma yok; tahta 282–328 px; ipucu ve iletiler açıkken de kayma yok |
 | 844×390, 667×375 yatay | Kaydırma yok; sayılar/araçlar yanda |
 | 1280×800 masaüstü | Kaydırma yok; tahta 596 px, sağda 300 px panel |
 
@@ -56,6 +69,7 @@ Dokunma hedefleri ≥48 px (ayar anahtarları 52×32, satırın tamamı 60 px y�
 - `SUDOKU_SERVER_URL=… node tests/web-multiplayer.mjs --http`: yarış/düello × 6/9 geçti.
 - `node tests/web-solo.mjs --browser`: yalnız [önceden belgelenen](web-game-screen-layout.md#bilinen-açıklar) 175. satırda düşer; o satır geçici atlanınca tarayıcı akışının tamamı geçer.
 - `sh scripts/staging-build.sh` + `python3 tests/staging-package.py`: paket yeni dosyalarla açılıyor, HTTP maç matrisi geçti.
+- İpucu/ileti: 320×568, 360×640, 375×553, 375×667, 393×659, 390×844, 844×390 ve 1280×800'de 6×6 ve 9×9 için ipucu kartı ve ileti şeridi açılmadan önce/sonra başlık, tahta, sayı tuşları ve araçların konum ve boyutu ölçüldü: birebir aynı; kart tahtayla, şerit tahta ve düğmelerle kesişmiyor. Düello (375×553, 320×568) ve yarışta hamle geri bildirimi yerleşimi değiştirmiyor; ayrılma onay sayfasından geçiyor, tarayıcı penceresi açılmıyor.
 - Ses, başsız Chromium'da sayaçlı `AudioContext` ile denendi: varsayılanda bağlam ve kütüphane isteği yok; anahtar açılınca onay sesi; oyun etkileşimlerinde ses; yeniden yüklemede etkileşimden önce ses yok; kapatınca sessiz.
 
 ## Açık kalanlar
