@@ -29,9 +29,17 @@ Tarayıcının `confirm()` penceresi yerine uygulama içi `<dialog>` kullanılı
 
 Seçim yapılmadıysa solo ve arkadaş kurulumunda tahta **9×9**, mod klasik yarıştır. Son seçilen solo boyutu, arkadaş modu/boyutu ve görünen ad `sudoku-rivals.preferences.v1` içinde (`soloSize`, `liveSize`, `liveMode`, `displayName`) saklanır ve sonraki açılışta geri gelir; eski kayıtlarda bu alanlar yoksa varsayılanlar geçerlidir.
 
-## Zorluk seviyesi: yok, varmış gibi de gösterilmiyor
+## Zorluk seviyeleri
 
-Motor yalnız boş hücre sayısıyla üretir (`generate_puzzle(size, seed, blanks)`; istemci ve sunucu 6×6 için 18, 9×9 için 43 boş kullanır) ve kurallar boş sayısından kolay/orta/zor etiketi üretmeyi açıkça yasaklar (`docs/rules.md`, `docs/ui-contract.md`). Çekirdekte `analyze_techniques` (yalnız tekli teknik adımlarını sayar) vardır ama WASM'a açılmamıştır ve kalibre bir insan zorluk ölçüsü değildir. Bu yüzden zorluk seçimi eklenmedi; kurulumdaki "Zorluk seçimi henüz kullanılamıyor" satırı da kaldırıldı. Öneri (motor/kural kararı gerektirir): `analyze_techniques` WASM'a açılıp üretilen bulmacalar "yalnız teklilerle çözülür" / "tekliler yetmez" diye iki banda ayrılabilir; adlandırma insan testiyle doğrulandıktan sonra yapılmalıdır. Aynı ayrım "ipucu bulunamadı" durumunun ne sıklıkta çıktığını da belirler.
+Solo kurulumda boyutun altında **Kolay / Orta / Zor** seçimi ve seçilen seviyenin ne gerektirdiğini söyleyen bir satır vardır; varsayılan Kolay, son seçim hatırlanır (`soloDifficulty`). Seviyeler çekirdekte tekniğe göre üretilir ve derecelendirilir: [difficulty-levels.md](difficulty-levels.md). Başlat düğmesi üretim sürerken "Bulmaca hazırlanıyor…" olur. Seviye oyun başlığında (`Solo · 9×9 · Orta`), duraklatma/sonuç ekranında ve ana ekrandaki kayıt kartında gösterilir; derecelendirilemeyen eski kayıtlarda etiket yoktur. İpucu kartı Zor bulmacalarda eleme adımlarını da açıklar ve desen hücrelerini tahtada çerçeveler.
+
+## Tema
+
+Ayarlar'da **Sistem / Açık / Koyu** seçimi vardır; varsayılan Sistem'dir ve seçim `theme` alanında saklanır. Açık/Koyu seçiliyse `index.html` başındaki küçük satır içi betik, stil dosyası boyanmadan önce `html[data-theme]` ve `theme-color` değerlerini ayarlar; böylece sayfa sistem temasıyla açılıp sonradan sıçramaz. Uygulama betiği engellenmiş yeniden yüklemede de koyu zeminle açıldığı doğrulandı. Sistem seçilince öznitelik kaldırılır ve cihaz teması izlenir.
+
+## Titreşim
+
+Standart Titreşim API'si (`navigator.vibrate`) yalnız onu sunan dokunmatik cihazlarda (pratikte Android tarayıcıları) çalışır; **iOS Safari'de yoktur**. Ayar yalnız API ve kaba işaretçi birlikte varsa gösterilir, yoksa satır hiç çizilmez (masaüstünde ve API'siz ortamda gizli olduğu doğrulandı). Varsayılan kapalıdır. Açıkken: sayı girişi 8 ms, not 6 ms, anahtar/seçim 8–10 ms, ipucu 12 ms, hata 18-50-18, bitiş 12-70-24, maç başlangıcı 30-60-30 ms. Gerçek cihazda hissedilmesi denenmedi.
 
 ## "Ayrılma onayı bekleniyor" iletisi
 
@@ -84,6 +92,7 @@ Dokunma hedefleri ≥48 px (ayar anahtarları 52×32, satırın tamamı 60 px y�
 - `sh scripts/staging-build.sh` + `python3 tests/staging-package.py`: paket yeni dosyalarla açılıyor, HTTP maç matrisi geçti.
 - İpucu/ileti: 320×568, 360×640, 375×553, 375×667, 393×659, 390×844, 844×390 ve 1280×800'de 6×6 ve 9×9 için ipucu kartı ve ileti şeridi açılmadan önce/sonra başlık, tahta, sayı tuşları ve araçların konum ve boyutu ölçüldü: birebir aynı; kart tahtayla, şerit tahta ve düğmelerle kesişmiyor. Düello (375×553, 320×568) ve yarışta hamle geri bildirimi yerleşimi değiştirmiyor; ayrılma onay sayfasından geçiyor, tarayıcı penceresi açılmıyor.
 - 3. tur (başsız Chromium): ana ekran göstergesi tek simge ve "6×6 & 9×9" yok; solo ve arkadaşta varsayılan 9×9, seçim/ad yeniden yüklemede korunuyor; davet bağlantısı üç dar telefonda kod + ad + Katıl görünür; bağlantı → kod; Enter ile katılma; ayrıldıktan sonra kurulum ekranında eski ileti yok; sayfa hatası ve tarayıcı penceresi yok.
+- 4. tur (başsız Chromium): zorluk seçimi ve ipuçlarıyla uçtan uca çözüm (5 kombinasyon), tema (varsayılan, kalıcılık, betik engelliyken ilk boyama, sistem takibi), titreşim ayarının görünürlüğü ve kapalıyken sessizliği, arkadaş kurulumunda logo–Geri boşluğu 4 px (Geri hedefi 48 px).
 - Ses, başsız Chromium'da sayaçlı `AudioContext` ile denendi: varsayılanda bağlam ve kütüphane isteği yok; anahtar açılınca onay sesi; oyun etkileşimlerinde ses; yeniden yüklemede etkileşimden önce ses yok; kapatınca sessiz.
 
 ## Açık kalanlar

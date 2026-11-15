@@ -21,7 +21,7 @@ Maçta geri eylemi ayrılma onayı açar; onaylanırsa sunucuya pes komutu gider
 | Rakip | Yok | Dolu hücre oranı; doğruluk bilgisi yok | Skor; hücreleri ve serisi yok |
 | Kopma | Oynanır ve kaydedilir | Yerelde oynanır; son onaylı sürümden tek sync | Giriş kapanır; süre sürer; eski hamleler biriktirilmez |
 
-Aynı tahta boyutu ve moda uygun kontroller üç platformda da bulunur. Zorluk bir insan çözüm tekniğiyle doğrulanana kadar boş hücre sayısından “kolay/orta/zor” etiketi üretilmez. İpucu henüz desteklenmiyorsa doğru rakamı uyduran bir UI işlevi yazılmaz; çekirdek desteği tamamlanana kadar araç devre dışıdır. Bu eksikler tamamlandı sayılmaz.
+Aynı tahta boyutu ve moda uygun kontroller üç platformda da bulunur. Boş hücre sayısından “kolay/orta/zor” etiketi üretilmez; seviye yalnız çekirdeğin teknik tabanlı derecelendirmesinden gelir (solo kurulumda `difficulty`; web'de var, yerel uygulamalar henüz benimsemedi) ve derecelendirilemeyen bulmacada etiket gösterilmez. İpucu henüz desteklenmiyorsa doğru rakamı uyduran bir UI işlevi yazılmaz; çekirdek desteği tamamlanana kadar araç devre dışıdır. Bu eksikler tamamlandı sayılmaz.
 
 ## Veri ve hata durumları
 

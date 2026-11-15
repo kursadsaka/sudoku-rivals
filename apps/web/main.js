@@ -1,7 +1,7 @@
 import { LiveScreens } from '/live.js';
 import init, * as core from '/pkg/sudoku_wasm.js';
 import { SoloSession, readSavedGames, formatTime } from '/session.js';
-import { cue, preloadSound, setSound } from '/sound.js';
+import { cue as soundCue, preloadSound, setSound } from '/sound.js';
 
 const text = {
   tr: {
@@ -10,13 +10,16 @@ const text = {
     solo:'Tek başına oyna', soloDescription:'6×6 veya 9×9. İnternetsiz de yanında.', friends:'Arkadaşınla yarış', friendsDescription:'Klasik yarış ve 90 saniyelik düello.',
     friendsPending:'Arkadaş maçları bu sürümde henüz hazır değil. Şimdilik tek başına oynayabilirsin.', continue:'Kaldığın yerden', resume:'Devam et', completed:'Tamamlandı', savedGame:'Kayıtlı oyun',
     choose:'Tahtanı seç', chooseIntro:'Kısa bir mola ya da biraz daha uzun bir oyun.', boardSize:'Tahta boyutu', six:'Daha küçük bir tahta', nine:'Klasik Sudoku', start:'Oyunu başlat',
-    generatorNote:'Her oyun tek çözümlü yeni bir bulmacayla başlar.',
+    generatorNote:'Her oyun tek çözümlü, tahmin gerektirmeyen yeni bir bulmacayla başlar.', difficulty:'Zorluk', easy:'Kolay', medium:'Orta', hard:'Zor', soloShort:'Solo', preparing:'Bulmaca hazırlanıyor…',
+    easyHelp:'Her adımda bir sayının satır, sütun veya kutuda girebileceği tek yer vardır.', mediumHelp:'Tek yer aramak yetmez; bazı hücrelerde adayları sayıp kalan tek sayıyı bulursun.', hardHelp:'Tekliler tıkanır; önce aday elemen gerekir (kilitli adaylar, çiftler).',
     replace:'Bu boyuttaki kayıtlı oyun yeni oyunla değiştirilecek. Devam edilsin mi?', replaceCorrupt:'Bu boyuttaki kayıt açılamıyor. Yeni oyun başlatırsan bu kayıt değiştirilecek. Devam edilsin mi?',
     paused:'Kısa bir mola.', pausedIntro:'Tahtan ve notların burada. Hazır olduğunda devam et.', pause:'Duraklat', saveExit:'Kaydedip çık', discardExit:'Kaydetmeden çık', confirmDiscard:'Kaydedilemeyen değişiklikler kaybolacak. Önceki kayıt korunacak. Yine de çıkılsın mı?', elapsed:'Geçen süre',
     numbers:'Bir sayı seç', notes:'Kalem', erase:'Sil', undo:'Geri al', redo:'Yinele', hint:'İpucu', hintApply:'Bu sayıyı yaz', hintDismiss:'Kapat', cancel:'Vazgeç',
     hintNone:'Bu konumda tekli tekniklerle açıklanabilir bir ipucu bulunamadı.', hintConflict:'İpucu için önce tahtadaki çakışmaları düzelt.', hintUnavailable:'Bu tahta için açıklanabilir ipucu bulunamadı.',
     hintNaked:'{row}. satır, {column}. sütunda yalnızca {value} kullanılabilir. Aynı satır, sütun ve kutudaki sayılar diğer adayları eliyor.',
-    hintHidden:'{unit} içinde {value} yalnızca {row}. satır, {column}. sütuna yerleşebilir.', row:'{number}. satır', column:'{number}. sütun', box:'{number}. kutu',
+    hintHidden:'{unit} içinde {value} yalnızca {row}. satır, {column}. sütuna yerleşebilir.',
+    hintLocked:'{unit} içinde {value} yalnızca {target} ile kesişen hücrelere girebilir; {target} içindeki diğer hücrelerden {value} elenir.', hintNakedPair:'{unit} içinde iki hücre yalnızca {a} ve {b} alabilir; bu sayılar {unit} içindeki diğer hücrelerden elenir.', hintHiddenPair:'{unit} içinde {a} ve {b} yalnızca aynı iki hücreye girebilir; o hücrelerin diğer adayları elenir.',
+    hintNakedThen:'Böylece {row}. satır, {column}. sütuna yalnızca {value} kalır.', hintHiddenThen:'Böylece {unit} içinde {value} yalnızca {row}. satır, {column}. sütuna girebilir.', row:'{number}. satır', column:'{number}. sütun', box:'{number}. kutu',
     inProgress:'Oyun devam ediyor', conflict:'Çakışan hücreleri kontrol et.', conflictShort:'Çakışma var', saved:'Bu cihazda kaydedildi', savingFailed:'Oyun kaydedilemedi. Açık oyunun korunuyor.', retry:'Tekrar dene',
     corrupt:'{size} kaydı açılamadı. Kaydın korunuyor; tekrar deneyebilir veya farklı boyutta oynayabilirsin.', storageUnavailable:'Yerel kayıtlara erişilemiyor. Bu oturumda oynayabilirsin; kalıcı kayıt garanti edilemiyor.',
     cell:'Satır {row}, sütun {column}, {kind}, {value}, notlar: {notes}{conflict}', given:'verilen', locked:'kilitli', editable:'girilebilir', empty:'boş', noNotes:'yok', cellConflict:', çakışma var',
@@ -24,7 +27,7 @@ const text = {
     keyHelp:'Klavye: oklar ile gezin · 1–{size} sayı · N kalem · Delete sil · Ctrl/⌘ Z geri al',
     resultTitle:'Tahta tamamlandı.', resultIntro:'Her satır, sütun ve kutu yerli yerinde.', newGame:'Yeni oyun', offlinePreparing:'Çevrimdışı kullanım hazırlanıyor', offlineReady:'Çevrimdışı oynamaya hazır', offlineUnavailable:'Çevrimdışı açılış henüz hazır değil',
     offlineLocal:'Solo oyun için bağlantı gerekmez', sound:'Ses', haptics:'Titreşim', motion:'Hareketi azalt', language:'Dil', storage:'Yerel kayıtlar', preferencesNote:'Kayıtlar yalnızca bu tarayıcıda saklanır. Tarayıcı verilerini temizlemek kayıtlarını da kaldırır.',
-    soundNote:'Tuş, hata ve bitiş sesleri. Varsayılan olarak kapalıdır.', hapticsNote:'Bu sürümde yok.', settingsSaved:'Tercihler kaydedildi', settingsFailed:'Tercihler bu oturum için uygulandı; kaydedilemedi.', loadFailed:'Oyun yüklenemedi. Sayfayı yenileyip tekrar deneyebilirsin.', loadAgain:'Sayfayı yenile',
+    soundNote:'Tuş, hata ve bitiş sesleri. Varsayılan olarak kapalıdır.', hapticsNote:'Sayı girişinde, hatada ve bitişte kısa titreşim.', theme:'Tema', themeSystem:'Sistem', themeLight:'Açık', themeDark:'Koyu', settingsSaved:'Tercihler kaydedildi', settingsFailed:'Tercihler bu oturum için uygulandı; kaydedilemedi.', loadFailed:'Oyun yüklenemedi. Sayfayı yenileyip tekrar deneyebilirsin.', loadAgain:'Sayfayı yenile',
     genericError:'Bu işlem tamamlanamadı. Açık oyunun korunuyor.', badCell:'Verilen hücreler değiştirilemez.', filledNotes:'Not eklemek için önce hücredeki sayıyı sil.',
   },
   en: {
@@ -33,13 +36,16 @@ const text = {
     solo:'Play solo', soloDescription:'6×6 or 9×9. Yours to play offline, too.', friends:'Play with a friend', friendsDescription:'Classic races and 90-second duels.',
     friendsPending:'Friend matches are not ready in this version. You can play solo for now.', continue:'Pick up where you left off', resume:'Resume', completed:'Complete', savedGame:'Saved game',
     choose:'Choose your board', chooseIntro:'A short break, or a little more time to think.', boardSize:'Board size', six:'A smaller board', nine:'Classic Sudoku', start:'Start game',
-    generatorNote:'Every game starts with a new puzzle with one solution.',
+    generatorNote:'Every game starts with a new puzzle that has one solution and needs no guessing.', difficulty:'Difficulty', easy:'Easy', medium:'Medium', hard:'Hard', soloShort:'Solo', preparing:'Preparing your puzzle…',
+    easyHelp:'Every step is a digit with only one place left in a row, column or box.', mediumHelp:'Looking for the one place is not enough; some cells need their candidates counted until one digit is left.', hardHelp:'Singles run out; candidates must be eliminated first (locked candidates, pairs).',
     replace:'The saved game of this size will be replaced by a new game. Continue?', replaceCorrupt:'The save of this size cannot be opened. Starting a new game will replace it. Continue?',
     paused:'Take your time.', pausedIntro:'Your board and notes are here. Continue whenever you are ready.', pause:'Pause', saveExit:'Save and exit', discardExit:'Exit without saving', confirmDiscard:'Unsaved changes will be lost. The previous save will remain. Exit anyway?', elapsed:'Elapsed',
     numbers:'Choose a number', notes:'Notes', erase:'Erase', undo:'Undo', redo:'Redo', hint:'Hint', hintApply:'Enter this number', hintDismiss:'Dismiss', cancel:'Cancel',
     hintNone:'No explainable hint using singles was found here.', hintConflict:'Resolve the board conflicts before asking for a hint.', hintUnavailable:'No explainable hint was found for this board.',
     hintNaked:'Only {value} can go in row {row}, column {column}. The numbers in its row, column and box rule out the other candidates.',
-    hintHidden:'In {unit}, {value} can only go in row {row}, column {column}.', row:'row {number}', column:'column {number}', box:'box {number}',
+    hintHidden:'In {unit}, {value} can only go in row {row}, column {column}.',
+    hintLocked:'In {unit}, {value} fits only where it crosses {target}, so {value} is removed from the rest of {target}.', hintNakedPair:'In {unit}, two cells can only hold {a} and {b}, so both are removed from the other cells of {unit}.', hintHiddenPair:'In {unit}, {a} and {b} fit only the same two cells, so those cells lose their other candidates.',
+    hintNakedThen:'That leaves only {value} for row {row}, column {column}.', hintHiddenThen:'So in {unit}, {value} can only go in row {row}, column {column}.', row:'row {number}', column:'column {number}', box:'box {number}',
     inProgress:'Game in progress', conflict:'Check the conflicting cells.', conflictShort:'Conflict', saved:'Saved on this device', savingFailed:'Could not save. Your open game is preserved.', retry:'Retry',
     corrupt:'The {size} save could not be opened. It is preserved; you can retry or play the other size.', storageUnavailable:'Local saves are unavailable. You can play this session, but saving cannot be guaranteed.',
     cell:'Row {row}, column {column}, {kind}, {value}, notes: {notes}{conflict}', given:'given', locked:'locked', editable:'editable', empty:'empty', noNotes:'none', cellConflict:', conflict',
@@ -47,7 +53,7 @@ const text = {
     keyHelp:'Keyboard: arrows to move · 1–{size} enter · N notes · Delete erase · Ctrl/⌘ Z undo',
     resultTitle:'Board complete.', resultIntro:'Every row, column and box is in its place.', newGame:'New game', offlinePreparing:'Preparing offline play', offlineReady:'Ready to play offline', offlineUnavailable:'Offline opening is not ready yet',
     offlineLocal:'Solo play needs no connection', sound:'Sound', haptics:'Haptics', motion:'Reduce motion', language:'Language', storage:'Local saves', preferencesNote:'Saves stay in this browser. Clearing browser data also removes your saves.',
-    soundNote:'Key, error and finish cues. Off by default.', hapticsNote:'Not available in this version.', settingsSaved:'Preferences saved', settingsFailed:'Preferences applied for this session, but could not be saved.', loadFailed:'The game could not load. Refresh the page to try again.', loadAgain:'Refresh page',
+    soundNote:'Key, error and finish cues. Off by default.', hapticsNote:'A short buzz on entries, mistakes and finishes.', theme:'Theme', themeSystem:'System', themeLight:'Light', themeDark:'Dark', settingsSaved:'Preferences saved', settingsFailed:'Preferences applied for this session, but could not be saved.', loadFailed:'The game could not load. Refresh the page to try again.', loadAgain:'Refresh page',
     genericError:'This action could not be completed. Your open game is preserved.', badCell:'Given cells cannot be changed.', filledNotes:'Erase the number in this cell before adding notes.',
   },
 };
@@ -78,12 +84,19 @@ try {
   else if (flag === '0') storage.setItem('sudoku-rivals.debug','0');
   debug = storage.getItem('sudoku-rivals.debug') === '1';
 } catch { debug = new URLSearchParams(location.search).get('debug') === '1'; }
+const LEVELS = ['easy','medium','hard'];
+const THEMES = ['system','light','dark'];
+// The standard Vibration API exists on Android browsers, not on iOS Safari; the setting is offered only
+// where it can work (a touch device that has the API).
+const canVibrate = typeof navigator.vibrate === 'function' && matchMedia('(pointer: coarse)').matches;
+const BUZZ = {tap:8,type:6,toggle:10,select:8,ready:12,error:[18,50,18],success:[12,70,24],attention:[30,60,30]};
 // Board size defaults to 9×9 everywhere until the player picks one; the last pick is remembered.
-let preferences = { language:navigator.language.startsWith('tr') ? 'tr' : 'en', reduceMotion:matchMedia('(prefers-reduced-motion: reduce)').matches, sound:false, soloSize:9, liveSize:9, liveMode:'race', displayName:'' };
+let preferences = { language:navigator.language.startsWith('tr') ? 'tr' : 'en', reduceMotion:matchMedia('(prefers-reduced-motion: reduce)').matches, sound:false, haptics:false, theme:'system', soloSize:9, soloDifficulty:'easy', liveSize:9, liveMode:'race', displayName:'' };
 try {
   const stored = JSON.parse(storage.getItem('sudoku-rivals.preferences.v1'));
-  if (stored && ['tr','en'].includes(stored.language) && typeof stored.reduceMotion === 'boolean') preferences = { language:stored.language, reduceMotion:stored.reduceMotion, sound:stored.sound === true,
-    soloSize:[6,9].includes(stored.soloSize) ? stored.soloSize : 9, liveSize:[6,9].includes(stored.liveSize) ? stored.liveSize : 9,
+  if (stored && ['tr','en'].includes(stored.language) && typeof stored.reduceMotion === 'boolean') preferences = { language:stored.language, reduceMotion:stored.reduceMotion, sound:stored.sound === true, haptics:stored.haptics === true,
+    theme:THEMES.includes(stored.theme) ? stored.theme : 'system',
+    soloSize:[6,9].includes(stored.soloSize) ? stored.soloSize : 9, soloDifficulty:LEVELS.includes(stored.soloDifficulty) ? stored.soloDifficulty : 'easy', liveSize:[6,9].includes(stored.liveSize) ? stored.liveSize : 9,
     liveMode:['race','duel'].includes(stored.liveMode) ? stored.liveMode : 'race', displayName:typeof stored.displayName === 'string' ? stored.displayName.slice(0,32) : '' };
 } catch { /* Defaults remain usable when storage is blocked or malformed. */ }
 const t = (key, values = {}) => Object.entries(values).reduce((message,[name,value]) => message.replaceAll(`{${name}}`,String(value)),text[preferences.language][key] || key);
@@ -95,6 +108,7 @@ let session;
 let live;
 let screen = 'home';
 let selectedSize = preferences.soloSize;
+let selectedDifficulty = preferences.soloDifficulty;
 let homeNotice = '';
 let gameNotice = '';
 let hint = null;
@@ -107,6 +121,11 @@ let liveSeen = null;
 if (preferences.sound) setSound(true);
 
 function announce(message) { announcer.textContent = message; }
+// One call for both kinds of feedback; each is opt-in and off by default.
+function cue(name,options) {
+  soundCue(name,options);
+  if (preferences.haptics && canVibrate && BUZZ[name]) { try { navigator.vibrate(BUZZ[name]); } catch { /* Not worth surfacing. */ } }
+}
 function savePreferences() {
   try { storage.setItem('sudoku-rivals.preferences.v1',JSON.stringify(preferences)); return true; }
   catch { return false; }
@@ -119,6 +138,12 @@ function setOffline(state) {
 function applyPreferences() {
   document.documentElement.lang = preferences.language;
   document.documentElement.dataset.reduceMotion = String(preferences.reduceMotion);
+  // The same rule as the inline script in index.html, which applies it before the first paint.
+  if (preferences.theme === 'system') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = preferences.theme;
+  for (const meta of document.querySelectorAll('meta[name="theme-color"]')) {
+    meta.content = preferences.theme === 'system' ? meta.dataset.color : preferences.theme === 'dark' ? '#121214':'#f4f1ea';
+  }
   if (debug) document.documentElement.dataset.debug = 'true';
   document.querySelector('.skip-link').textContent = t('skip');
   document.querySelector('#brand-home').setAttribute('aria-label',`Sudoku Rivals · ${t('home')}`);
@@ -150,14 +175,28 @@ function renderHome() {
       ${card('','friends','friend-start',art.friends,'friends','friendsDescription')}
     </div>
     ${live?.view()?.snapshot && !live.view().voluntarily_left ? `<button class="resume-card live-resume" data-action="live-resume" data-testid="live-resume"><span>${preferences.language==='tr'?'Maçına dön':'Return to your match'}</span><span class="resume-go" aria-hidden="true">${svg('arrow')}</span></button>`:''}
-    ${readySaves.length ? `<p class="section-label">${t('continue')}</p><div class="resume-list" data-testid="solo-resume">${readySaves.map(slot => `<button class="resume-card" data-action="restore" data-size="${slot.size}" data-testid="solo-resume-${slot.size}"><span class="resume-main"><span class="size-badge">${slot.size}×${slot.size}</span><span><strong>${slot.complete ? t('completed') : t('savedGame')}</strong><small>${formatTime(slot.saved.elapsedMs)}</small></span></span><span class="resume-go">${slot.complete ? svg('arrow') : t('resume') + svg('play')}</span></button>`).join('')}</div>` : ''}
+    ${readySaves.length ? `<p class="section-label">${t('continue')}</p><div class="resume-list" data-testid="solo-resume">${readySaves.map(slot => `<button class="resume-card" data-action="restore" data-size="${slot.size}" data-testid="solo-resume-${slot.size}"><span class="resume-main"><span class="size-badge">${slot.size}×${slot.size}</span><span><strong>${slot.complete ? t('completed') : t('savedGame')}</strong><small>${[levelOf(slot.saved.game) ? t(levelOf(slot.saved.game)) : '',formatTime(slot.saved.elapsedMs)].filter(Boolean).join(' · ')}</small></span></span><span class="resume-go">${slot.complete ? svg('arrow') : t('resume') + svg('play')}</span></button>`).join('')}</div>` : ''}
     ${problems.map(slot => `<p class="notice error" data-testid="storage-status" role="alert">${escape(slot.status === 'corrupt' ? t('corrupt',{size:`${slot.size}×${slot.size}`}) : t('storageUnavailable'))} <button data-action="refresh-saves">${t('retry')}</button></p>`).join('')}
   </section>`;
 }
+// The level is derived from the puzzle's givens by the engine, so saves carry no extra field and
+// older or unrated puzzles simply show no level.
+const rated = new Map();
+function levelOf(game) {
+  if (!core.solo_difficulty || !game) return null;
+  const key = JSON.stringify(JSON.parse(game).givens);
+  if (!rated.has(key)) {
+    try { rated.set(key,JSON.parse(core.solo_difficulty(game)).level); } catch { rated.set(key,null); }
+  }
+  return rated.get(key);
+}
+const sizeAndLevel = (size,game) => { const level = levelOf(game); return `${size}×${size}${level ? ` · ${t(level)}`:''}`; };
 function renderSetup() {
   const art = size => `<svg class="size-art" viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="1.5" y="1.5" width="33" height="33" rx="6"/><path d="${size === 6 ? 'M18 1.5v33M1.5 12.5h33M1.5 23.5h33':'M12.5 1.5v33M23.5 1.5v33M1.5 12.5h33M1.5 23.5h33'}"/></svg>`;
   content.innerHTML = `<section class="panel" data-screen="solo-setup">${backButton()}<p class="eyebrow">${t('solo')}</p><h1>${t('choose')}</h1><p class="lede">${t('chooseIntro')}</p>
     <fieldset data-testid="board-size"><legend>${t('boardSize')}</legend><div class="size-options">${[6,9].map(size => `<label class="size-option"><input type="radio" name="size" value="${size}" ${selectedSize === size ? 'checked' : ''}>${art(size)}<strong>${size}×${size}</strong><small>${t(size === 6 ? 'six':'nine')}</small></label>`).join('')}</div></fieldset>
+    <fieldset data-testid="difficulty"><legend>${t('difficulty')}</legend><div class="segmented">${LEVELS.map(level => `<label class="segment"><input type="radio" name="difficulty" value="${level}" data-testid="difficulty-${level}" aria-describedby="difficulty-help" ${selectedDifficulty === level ? 'checked' : ''}>${t(level)}</label>`).join('')}</div>
+      <p class="note level-help" id="difficulty-help">${t(selectedDifficulty + 'Help')}</p></fieldset>
     <p class="note">${t('generatorNote')}</p>
     <button class="primary-button full" data-action="start" data-testid="game-start">${t('start')}</button>
     ${gameNotice ? `<p class="notice error" role="alert">${escape(gameNotice)}</p>` : ''}
@@ -170,7 +209,7 @@ function cellLabel(index, board, conflicts) {
     kind:t(board.givens[index] ? 'given':board.locked?.[index] ? 'locked':'editable'),value:cell.value || t('empty'),
     notes:notes.length ? notes.join(', ') : t('noNotes'),conflict:conflicts.has(index) ? t('cellConflict') : ''});
 }
-function renderBoard(board, conflicts, selected = session.selected) {
+function renderBoard(board, conflicts, selected = session.selected, marked = new Set()) {
   const size = board.size;
   const boxRows = size === 6 ? 2 : 3;
   const selectedRow = Math.floor(selected / size);
@@ -180,7 +219,7 @@ function renderBoard(board, conflicts, selected = session.selected) {
     const index = row * size + column;
     const cell = board.cells[index];
     const related = row === selectedRow || column === selectedColumn || (Math.floor(row / boxRows) === Math.floor(selectedRow / boxRows) && Math.floor(column / 3) === Math.floor(selectedColumn / 3));
-    const classes = ['cell',board.givens[index] ? 'given':'',related ? 'related':'',selectedValue && cell.value === selectedValue ? 'same':'',index === selected ? 'selected':'',conflicts.has(index) ? 'conflicting':'',column % 3 === 2 ? 'box-right':'',row % boxRows === boxRows - 1 ? 'box-bottom':'',column === size - 1 ? 'last-column':'',row === size - 1 ? 'last-row':''].filter(Boolean).join(' ');
+    const classes = ['cell',board.givens[index] ? 'given':'',related ? 'related':'',selectedValue && cell.value === selectedValue ? 'same':'',index === selected ? 'selected':'',conflicts.has(index) ? 'conflicting':'',marked.has(index) ? 'hint-pattern':'',column % 3 === 2 ? 'box-right':'',row % boxRows === boxRows - 1 ? 'box-bottom':'',column === size - 1 ? 'last-column':'',row === size - 1 ? 'last-row':''].filter(Boolean).join(' ');
     const notes = `<span class="cell-notes" aria-hidden="true">${Array.from({length:size},(_,v) => `<span>${cell.notes & (1 << v) ? v + 1 : ''}</span>`).join('')}</span>`;
     return `<button class="${classes}" role="gridcell" aria-rowindex="${row + 1}" aria-colindex="${column + 1}" aria-selected="${index === selected}" aria-readonly="${Boolean(board.givens[index] || board.locked?.[index])}" ${conflicts.has(index) ? 'aria-invalid="true"' : ''} tabindex="${index === selected ? 0 : -1}" data-action="select" data-index="${index}" data-testid="cell-${row + 1}-${column + 1}" aria-label="${escape(cellLabel(index,board,conflicts))}">${cell.value ? `<span aria-hidden="true">${cell.value}</span>` : cell.notes ? notes : ''}${conflicts.has(index) ? '<span class="conflict-mark" aria-hidden="true">!</span>' : ''}</button>`;
   }).join('')}</div>`).join('')}</div>`;
@@ -201,14 +240,22 @@ function numberPad(board,{action,group,label,disabled = false,notes = false}) {
     return `<button class="number-button ${left ? '':'is-done'}" data-action="${action}" data-value="${digit}" data-testid="number-${digit}" aria-label="${label(digit)}" ${disabled ? 'disabled':''}>${digit}${left ? `<small aria-hidden="true">${left}</small>`:''}</button>`;
   }).join('')}</div>`;
 }
+// One sentence per elimination the placement depends on, then the placement itself.
+function hintLines() {
+  const size = session.board.size;
+  const unit = value => t(value.kind,{number:value.index + 1});
+  const steps = (hint.eliminations || []).map(step => step.technique === 'locked_candidates'
+    ? t('hintLocked',{unit:unit(step.unit),target:unit(step.target),value:step.digits[0]})
+    : t(step.technique === 'naked_pair' ? 'hintNakedPair':'hintHiddenPair',{unit:unit(step.unit),a:step.digits[0],b:step.digits[1]}));
+  const naked = hint.technique === 'naked_single';
+  const last = t(`${naked ? 'hintNaked':'hintHidden'}${steps.length ? 'Then':''}`,
+    {row:Math.floor(hint.index / size) + 1,column:hint.index % size + 1,value:hint.value,unit:hint.unit ? unit(hint.unit) : ''});
+  return [...steps,last];
+}
 function renderHint() {
   if (!hint) return '';
-  const row = Math.floor(hint.index / session.board.size) + 1;
-  const column = hint.index % session.board.size + 1;
-  const unit = hint.unit ? t(hint.unit.kind,{number:hint.unit.index + 1}) : '';
-  const explanation = t(hint.technique === 'naked_single' ? 'hintNaked':'hintHidden',{row,column,value:hint.value,unit});
   // Laid over the keys, so the board and the controls keep their place and size while the hint is read.
-  return `<aside class="hint-card hint-notice" aria-label="${t('hint')}" data-testid="hint-card"><p>${svg('hint')}<span>${escape(explanation)}</span></p><div class="hint-actions"><button class="secondary-button" data-action="hint-dismiss" data-testid="hint-dismiss">${t('hintDismiss')}</button><button class="primary-button" data-action="hint-apply" data-testid="hint-apply">${t('hintApply')}</button></div></aside>`;
+  return `<aside class="hint-card hint-notice" aria-label="${t('hint')}" data-testid="hint-card"><p>${svg('hint')}<span class="hint-lines">${hintLines().map(line => `<span>${escape(line)}</span>`).join(' ')}</span></p><div class="hint-actions"><button class="secondary-button" data-action="hint-dismiss" data-testid="hint-dismiss">${t('hintDismiss')}</button><button class="primary-button" data-action="hint-apply" data-testid="hint-apply">${t('hintApply')}</button></div></aside>`;
 }
 function renderGame(focusCell = false) {
   const board = session.board;
@@ -224,10 +271,10 @@ function renderGame(focusCell = false) {
   const toast = gameNotice ? `<div class="game-toast" data-testid="game-notice"><p>${escape(gameNotice)}</p><button class="toast-close" data-action="notice-dismiss" aria-label="${t('hintDismiss')}">${svg('close')}</button></div>` : '';
   const info = debug ? `<p class="selection-info debug-only">${editable ? t('selected',{row:Math.floor(session.selected / size) + 1,column:session.selected % size + 1}) : t('givenSelected')}${selectedNotes.length ? `<br>${t('notesList',{notes:selectedNotes.join(', ')})}`:''}</p>` : '';
   content.innerHTML = `<section class="game" data-screen="solo-game" data-size="${size}">
-    <div class="game-top">${backButton('home','home')}<div class="game-heading"><h1>${t('solo')} · ${size}×${size}</h1><span class="timer" role="timer" aria-label="${t('elapsed')}" data-testid="timer">${formatTime(session.time)}</span></div><div class="game-trailing"><button class="icon-button" data-action="pause" data-testid="pause" aria-label="${t('pause')}" title="${t('pause')}">${svg('pause')}</button></div></div>${toast}
+    <div class="game-top">${backButton('home','home')}<div class="game-heading"><h1>${t('soloShort')} · ${sizeAndLevel(size,session.game)}</h1><span class="timer" role="timer" aria-label="${t('elapsed')}" data-testid="timer">${formatTime(session.time)}</span></div><div class="game-trailing"><button class="icon-button" data-action="pause" data-testid="pause" aria-label="${t('pause')}" title="${t('pause')}">${svg('pause')}</button></div></div>${toast}
     <div class="meter" aria-hidden="true"><i style="--p:${progress(board).toFixed(3)}"></i></div>
     <div class="status-row"><p class="game-status ${valid ? '' : 'conflict'}" data-testid="game-status" role="status">${valid ? `<span class="sr-only">${t('inProgress')}</span>` : `${svg('warning')}<span>${t('conflictShort')}</span>`}</p></div>
-    <div class="game-layout"><div class="board-wrap">${renderBoard(board,conflicts)}</div>
+    <div class="game-layout"><div class="board-wrap">${renderBoard(board,conflicts,session.selected,new Set((hint?.eliminations || []).flatMap(step => step.cells)))}</div>
     <div class="input-panel"><div class="input-keys">${numberPad(board,{action:'digit',group:t('numbers'),label:digit => t('enterDigit',{digit}),disabled:!editable,notes:session.notesMode})}
       <div class="tools">${tool('notes','notes','notes',false,`role="switch" aria-checked="${session.notesMode}"`)}${tool('erase','erase','erase',!editable)}${tool('undo','undo','undo',board.undo.length === 0)}${tool('redo','redo','redo',board.redo.length === 0)}${tool('hint','hint','hint',!core.solo_hint)}</div>${renderHint()}</div>
       ${messages ? `<div class="game-messages">${messages}</div>` : ''}
@@ -238,10 +285,10 @@ function renderGame(focusCell = false) {
   if (focusCell) content.querySelector(`[data-index="${session.selected}"]`)?.focus({preventScroll:true});
 }
 function renderPaused() {
-  content.innerHTML = `<section class="paused" data-screen="solo-paused"><div class="pause-symbol">${svg('pause')}</div><h1>${t('paused')}</h1><p class="lede">${t('pausedIntro')}</p><p class="stat timer"><small>${session.board.size}×${session.board.size}</small><span class="sr-only"> · </span>${formatTime(session.time)}</p>${storageMessage()}<div class="action-stack"><button class="primary-button" data-action="resume" data-testid="resume">${t('resume')}</button><button class="secondary-button" data-action="home" data-testid="save-exit">${t('saveExit')}</button>${session.saveError ? `<button class="text-button" data-action="discard-exit">${t('discardExit')}</button>`:''}</div></section>`;
+  content.innerHTML = `<section class="paused" data-screen="solo-paused"><div class="pause-symbol">${svg('pause')}</div><h1>${t('paused')}</h1><p class="lede">${t('pausedIntro')}</p><p class="stat timer"><small>${sizeAndLevel(session.board.size,session.game)}</small><span class="sr-only"> · </span>${formatTime(session.time)}</p>${storageMessage()}<div class="action-stack"><button class="primary-button" data-action="resume" data-testid="resume">${t('resume')}</button><button class="secondary-button" data-action="home" data-testid="save-exit">${t('saveExit')}</button>${session.saveError ? `<button class="text-button" data-action="discard-exit">${t('discardExit')}</button>`:''}</div></section>`;
 }
 function renderResult() {
-  content.innerHTML = `<section class="result" data-screen="solo-result"><div class="pause-symbol">${svg('check')}</div><p class="eyebrow">${t('completed')}</p><h1 data-testid="result-heading">${t('resultTitle')}</h1><p class="lede">${t('resultIntro')}</p><p class="stat timer" data-testid="result-details"><small>${session.board.size}×${session.board.size}</small><span class="sr-only"> · </span>${formatTime(session.time)}</p>${storageMessage()}<div class="action-stack"><button class="primary-button" data-action="setup">${t('newGame')}</button><button class="secondary-button" data-action="home" data-testid="home">${t('home')}</button>${session.saveError ? `<button class="text-button" data-action="discard-exit">${t('discardExit')}</button>`:''}</div></section>`;
+  content.innerHTML = `<section class="result" data-screen="solo-result"><div class="pause-symbol">${svg('check')}</div><p class="eyebrow">${t('completed')}</p><h1 data-testid="result-heading">${t('resultTitle')}</h1><p class="lede">${t('resultIntro')}</p><p class="stat timer" data-testid="result-details"><small>${sizeAndLevel(session.board.size,session.game)}</small><span class="sr-only"> · </span>${formatTime(session.time)}</p>${storageMessage()}<div class="action-stack"><button class="primary-button" data-action="setup">${t('newGame')}</button><button class="secondary-button" data-action="home" data-testid="home">${t('home')}</button>${session.saveError ? `<button class="text-button" data-action="discard-exit">${t('discardExit')}</button>`:''}</div></section>`;
 }
 function renderSettings() {
   const saves = readSavedGames(storage,core);
@@ -251,7 +298,8 @@ function renderSettings() {
       <label class="settings-row"><span>${t('language')}</span><select id="language-select" name="language" data-testid="language"><option value="tr" ${preferences.language === 'tr' ? 'selected':''}>Türkçe</option><option value="en" ${preferences.language === 'en' ? 'selected':''}>English</option></select></label>
       <label class="settings-row"><span>${t('sound')}<small>${t('soundNote')}</small></span><input id="sound-toggle" type="checkbox" role="switch" data-testid="sound-toggle" ${preferences.sound ? 'checked':''}></label>
       <label class="settings-row"><span>${t('motion')}</span><input id="motion-toggle" type="checkbox" role="switch" data-testid="motion-toggle" ${preferences.reduceMotion ? 'checked':''}></label>
-      <label class="settings-row"><span>${t('haptics')}<small>${t('hapticsNote')}</small></span><input type="checkbox" role="switch" data-testid="haptics-toggle" disabled></label>
+      ${canVibrate ? `<label class="settings-row"><span>${t('haptics')}<small>${t('hapticsNote')}</small></span><input id="haptics-toggle" type="checkbox" role="switch" data-testid="haptics-toggle" ${preferences.haptics ? 'checked':''}></label>`:''}
+      <div class="settings-row" role="radiogroup" aria-label="${t('theme')}" data-testid="theme"><span>${t('theme')}</span><div class="segmented">${THEMES.map(theme => `<label class="segment"><input type="radio" name="theme" value="${theme}" data-testid="theme-${theme}" ${preferences.theme === theme ? 'checked':''}>${t('theme' + theme[0].toUpperCase() + theme.slice(1))}</label>`).join('')}</div></div>
     </div>
     <h2 class="section-label">${t('storage')}</h2><p class="note">${t('preferencesNote')}</p><div class="storage-list" data-testid="storage-status">${saves.map(slot => `<p>${slot.size}×${slot.size} · ${slot.status === 'ready' ? `${t(slot.complete ? 'completed':'savedGame')} · ${formatTime(slot.saved.elapsedMs)}` : slot.status === 'missing' ? '—' : escape(t(slot.status === 'corrupt' ? 'corrupt':'storageUnavailable',{size:`${slot.size}×${slot.size}`}))}</p>`).join('')}</div>
     ${settingsNotice ? `<p class="notice" role="status">${escape(settingsNotice)}</p>`:''}
@@ -387,12 +435,20 @@ async function handleAction(button) {
     const slot = readSavedGames(storage,core).find(slot => slot.size === selectedSize);
     const exists = slot.status !== 'missing';
     if (exists && !await confirmDialog(t(slot.status === 'corrupt' ? 'replaceCorrupt':'replace'),{ok:t('start')})) return;
-    try {
-      const seed = crypto.getRandomValues(new Uint32Array(1))[0];
-      session.start(selectedSize,seed,exists);
-      cue('open');
-      navigate('solo-game');
-    } catch { gameNotice = t('genericError'); renderSetup(); }
+    // Digging a rated puzzle is synchronous and can take a moment on a phone: say so first.
+    button.disabled = true;
+    button.textContent = t('preparing');
+    await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve,0)));
+    if (screen !== 'solo-setup') return;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        session.start(selectedSize,crypto.getRandomValues(new Uint32Array(1))[0],exists,selectedDifficulty);
+        cue('open');
+        return navigate('solo-game');
+      } catch (error) { if (!String(error).includes('CannotReachDifficulty')) break; }
+    }
+    gameNotice = t('genericError');
+    renderSetup();
     return;
   }
   if (action === 'restore') {
@@ -425,7 +481,7 @@ async function handleAction(button) {
   else if (action === 'erase') applyCommand({type:'erase',index:session.selected});
   else if (action === 'hint') {
     try {
-      hint = JSON.parse(core.solo_hint(session.game));
+      hint = JSON.parse((core.solo_technique_hint || core.solo_hint)(session.game));
       gameNotice = hint ? '' : t('hintNone');
       if (hint) session.selected = hint.index;
     } catch {
@@ -439,7 +495,7 @@ async function handleAction(button) {
       layer?.querySelector('[data-action="hint-apply"]')?.focus({preventScroll:true});
     }
     appear(layer,hint ? 8 : -8);
-    announce(gameNotice || layer?.querySelector('p')?.textContent || '');
+    announce(gameNotice || (hint ? hintLines().join(' ') : ''));
   } else if (action === 'hint-apply' && hint) {
     const {index,value} = hint;
     applyCommand({type:'set',index,value});
@@ -456,14 +512,23 @@ content.addEventListener('input',event => { if(screen==='live' && event.target.d
 content.addEventListener('change',event => {
   if(screen==='live' && event.target.dataset.liveField) {live.input(event.target.dataset.liveField,event.target.value,event.target,true);return;}
   if (event.target.name === 'size') { selectedSize = preferences.soloSize = Number(event.target.value); savePreferences(); cue('select'); }
-  if (['language-select','motion-toggle','sound-toggle'].includes(event.target.id)) {
+  if (event.target.name === 'difficulty' && LEVELS.includes(event.target.value)) {
+    selectedDifficulty = preferences.soloDifficulty = event.target.value;
+    savePreferences();
+    cue('select');
+    renderSetup();
+    content.querySelector(`input[name="difficulty"][value="${selectedDifficulty}"]`)?.focus({preventScroll:true});
+  }
+  if (['language-select','motion-toggle','sound-toggle','haptics-toggle'].includes(event.target.id) || event.target.name === 'theme') {
     if (event.target.id === 'language-select') { preferences.language = event.target.value; cue('select'); }
+    else if (event.target.name === 'theme') { if (THEMES.includes(event.target.value)) preferences.theme = event.target.value; cue('select'); }
+    else if (event.target.id === 'haptics-toggle') { preferences.haptics = event.target.checked; cue('toggle'); }
     else if (event.target.id === 'sound-toggle') { preferences.sound = event.target.checked; setSound(preferences.sound,{confirm:true}); }
     else { preferences.reduceMotion = event.target.checked; cue('toggle'); }
     settingsNotice = t(savePreferences() ? 'settingsSaved':'settingsFailed');
     renderSettings();
     applyPreferences();
-    content.querySelector(`#${event.target.id}`)?.focus();
+    (event.target.name === 'theme' ? content.querySelector(`input[name="theme"][value="${preferences.theme}"]`) : content.querySelector(`#${event.target.id}`))?.focus();
   }
 });
 content.addEventListener('keydown',event => {

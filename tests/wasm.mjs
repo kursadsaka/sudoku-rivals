@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
-import init, { validate_board, new_solo, update_solo, solo_is_complete, new_generated_solo, solo_conflicts, solo_hint } from '../apps/web/pkg/sudoku_wasm.js';
+import init, { validate_board, new_solo, update_solo, solo_is_complete, new_generated_solo, new_rated_solo, solo_difficulty, solo_technique_hint, solo_conflicts, solo_hint } from '../apps/web/pkg/sudoku_wasm.js';
 await init({module_or_path: fs.readFileSync(new URL('../apps/web/pkg/sudoku_wasm_bg.wasm', import.meta.url))});
 for (const fixture of JSON.parse(fs.readFileSync(new URL('../vectors/boards.json', import.meta.url)))) {
   for (const [key, expected] of [['uniquePuzzle', true], ['solution', true], ['invalidDuplicate', false], ['multipleSolutions', true]]) {
@@ -39,6 +39,34 @@ for (const fixture of JSON.parse(fs.readFileSync(new URL('../vectors/boards.json
 }
 assert.throws(() => new_generated_solo(6, 0, 37));
 console.log('WASM generation vectors passed');
+// Rated generation gives the same puzzle as native for a seed, and its rating and hints hold in WASM.
+for (const fixture of JSON.parse(fs.readFileSync(new URL('../vectors/boards.json', import.meta.url)))) {
+  for (const level of ['easy', 'medium', 'hard']) {
+    let saved = new_rated_solo(fixture.size, fixture.rated.seed, level);
+    assert.deepEqual(JSON.parse(saved).givens, fixture.rated[level]);
+    const rating = JSON.parse(solo_difficulty(saved));
+    assert.equal(rating.level, level);
+    assert.equal(rating.remaining_cells, 0);
+    // Every step to the end is explainable; a hard puzzle needs at least one elimination.
+    let eliminations = 0;
+    for (;;) {
+      const hint = JSON.parse(solo_technique_hint(saved));
+      if (hint === null) break;
+      eliminations += hint.eliminations.length;
+      saved = update_solo(saved, JSON.stringify({ type: 'set', index: hint.index, value: hint.value }));
+    }
+    assert.equal(solo_is_complete(saved), true);
+    assert.equal(eliminations > 0, level === 'hard');
+    assert.equal(JSON.parse(solo_difficulty(saved)).level, level, 'progress does not change the rating');
+  }
+  // Puzzles from the blank-count generator keep working and are rated or left unrated, never mislabelled.
+  const legacy = JSON.parse(solo_difficulty(new_generated_solo(fixture.size, fixture.generated.seed, fixture.generated.blanks)));
+  assert.equal(legacy.level === null, legacy.remaining_cells > 0);
+}
+assert.throws(() => new_rated_solo(9, 1, 'expert'));
+assert.throws(() => new_rated_solo(7, 1, 'easy'));
+assert.throws(() => new_rated_solo(9, -1, 'easy'));
+console.log('WASM rated generation vectors, ratings and full hint paths passed');
 
 for (const fixture of JSON.parse(fs.readFileSync(new URL('../vectors/boards.json', import.meta.url)))) {
   const cells = Uint8Array.from(fixture.solution);

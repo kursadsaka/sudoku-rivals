@@ -12,7 +12,7 @@ Bu belge, Sistem konuşmasındaki kesin kapsamı ve bağımsız G01 inceleme dü
 - Notlar elle değiştirilir. Rakam yazmak yalnız o hücrenin notlarını siler; eş hücre notları otomatik silinmez. Sil hem rakamı hem notları temizler. Undo/redo bütün bu değişikliği geri alır. No-op/ret geçmişi bozmaz; yeni değişiklik redo dalını siler.
 - Sürüm 1 JSON kayıt tahta, verilenler, notlar ve undo/redo taşır. Yükleme en fazla 1 MiB; toplam geçmiş 4096 işlem, daha eskiler atılır. Bunlar kaynak koruma varsayılanlarıdır. Süre/pause gibi sunum bilgileri platform zarfındadır; bozuk veri sessizce ezilmez ve başarısız kayıtta başarı söylenmez.
 - İpucu cevap aramasının sonucunu göstermeden görünür adaylardan açık tekli veya birim içindeki gizli tekliyi açıklar. Hücreyi otomatik kilitlemez; kullanıcı uygularsa sıradan, geri alınabilir bir giriş olur. Çelişkili/çözümsüz durumda ipucu verilmez. Dışarıdan gelen tahtalarda arama 50.000 düğümle sınırlıdır; bütçe aşımı `SearchLimit` olarak ayrılır ve “çözümsüz” sayılmaz. Bu teknikler yetmiyorsa “bu tekniklerle ipucu bulunamadı” denir.
-- Üretim tohumu aynı boyut/boş sayısıyla dört çalışma ortamında aynı bulmacayı vermelidir. Boş sayısı zorluk değildir. Çekirdek desteklenen tekniklerin adım sayılarını raporlayabilir; insan seviyesi derecelendirmesi, ileri teknikler ve üretim bantları henüz kalibre edilmemiştir.
+- Üretim tohumu aynı boyut/boş sayısıyla dört çalışma ortamında aynı bulmacayı vermelidir. Boş sayısı zorluk değildir. Solo seviyeler tekniğe dayanır: Kolay yalnız gizli teklilerle, Orta en az bir çıplak tekliyle, Zor aday elemeyle (kilitli adaylar, çiftler) çözülen bulmacadır; çekirdek istenen seviyede tek çözümlü bulmaca üretir ve desteklenen tekniklerle bitmeyen tahtayı derecelendirmez ([ayrıntı](validation/difficulty-levels.md)). İnsanlarla kalibrasyon ve çiftlerin ötesindeki teknikler yoktur; çok oyunculu maçlar seviye kullanmaz.
 
 ## Oda, gizlilik ve zaman
 
@@ -65,4 +65,4 @@ Süre sonunda yüksek skor; eşitse az cezalı yanlış; o da eşitse beraberlik
 
 ## Kanıt ve açık konular
 
-G01 inceleme gerekçesi vardır; insan oyun dengesi testi yoktur. G04, G06 ve istemci testleri uygulama kurallarını kanıtlamalıdır; belge tek başına tamamlanma kanıtı değildir. İnsan zorluk dereceleri, ileri ipucu teknikleri, mağaza fiyatı/reklam, alan adı/barındırma ve imzalama kararları henüz verilmiş sayılmaz. Temel öğe/durumlar `ui-contract.json`, platform kabul matrisi `acceptance-scenarios.md`, güncel durum `PROGRESS.md` içindedir.
+G01 inceleme gerekçesi vardır; insan oyun dengesi testi yoktur. G04, G06 ve istemci testleri uygulama kurallarını kanıtlamalıdır; belge tek başına tamamlanma kanıtı değildir. İnsanlarla zorluk kalibrasyonu, çiftlerin ötesindeki ipucu teknikleri, mağaza fiyatı/reklam, alan adı/barındırma ve imzalama kararları henüz verilmiş sayılmaz. Temel öğe/durumlar `ui-contract.json`, platform kabul matrisi `acceptance-scenarios.md`, güncel durum `PROGRESS.md` içindedir.

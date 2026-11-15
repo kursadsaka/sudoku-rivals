@@ -4,13 +4,23 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="description" content="6×6 ve 9×9 Sudoku. Kendi hızında çöz, çevrimdışı devam et.">
-  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f1ea">
-  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121214">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f1ea" data-color="#f4f1ea">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121214" data-color="#121214">
   <meta name="color-scheme" content="light dark">
   <link rel="icon" href="/icon.svg" type="image/svg+xml" sizes="any">
   <link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="manifest" href="/manifest.webmanifest">
+  <script>
+    // A chosen Light/Dark theme is applied before the stylesheet paints, so the page never flashes the system theme.
+    try {
+      var saved = JSON.parse(localStorage.getItem('sudoku-rivals.preferences.v1'));
+      if (saved && (saved.theme === 'light' || saved.theme === 'dark')) {
+        document.documentElement.dataset.theme = saved.theme;
+        document.querySelectorAll('meta[name="theme-color"]').forEach(function (meta) { meta.content = saved.theme === 'dark' ? '#121214' : '#f4f1ea'; });
+      }
+    } catch (error) { /* Blocked or malformed storage: the system theme stays. */ }
+  </script>
   <link rel="stylesheet" href="/styles.css">
   <title>Sudoku Rivals</title>
 </head>

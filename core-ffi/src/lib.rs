@@ -62,6 +62,14 @@ mod tests {
         assert_eq!(super::solo_conflicts(conflict.clone()).unwrap(), vec![0, 1]);
         assert!(super::solo_hint(conflict).is_err());
         assert!(super::new_generated_solo(6, 42, 18).is_ok());
+        let rated = super::new_rated_solo(9, 42, "hard".into()).unwrap();
+        assert!(super::solo_difficulty(rated.clone())
+            .unwrap()
+            .contains(r#""level":"hard""#));
+        assert!(super::solo_technique_hint(rated)
+            .unwrap()
+            .contains(r#""eliminations""#));
+        assert!(super::new_rated_solo(9, 42, "expert".into()).is_err());
     }
 }
 
@@ -74,6 +82,41 @@ pub fn new_generated_solo(size: u8, seed: u32, blanks: u8) -> Result<String, Sol
         }
     })?;
     new_solo(givens, size)
+}
+
+/// A new game whose puzzle needs exactly the techniques of `difficulty`
+/// ("easy", "medium" or "hard"). Added next to `new_generated_solo`, which is
+/// unchanged.
+#[uniffi::export]
+pub fn new_rated_solo(size: u8, seed: u32, difficulty: String) -> Result<String, SoloError> {
+    let invalid = |reason: String| SoloError::InvalidInput { reason };
+    let difficulty = sudoku_core::Difficulty::parse(&difficulty)
+        .ok_or_else(|| invalid("InvalidValue".into()))?;
+    let givens = sudoku_core::generate_rated_puzzle(size, seed, difficulty)
+        .map_err(|error| invalid(error.to_string()))?;
+    new_solo(givens, size)
+}
+
+/// JSON rating of the puzzle as given: {level,hardest,blanks,...}; level is
+/// null when the supported techniques cannot finish it.
+#[uniffi::export]
+pub fn solo_difficulty(saved: String) -> Result<String, SoloError> {
+    sudoku_core::SoloGame::load(&saved)?
+        .difficulty_json()
+        .map_err(|error| SoloError::InvalidInput {
+            reason: error.to_string(),
+        })
+}
+
+/// JSON null, or {index,value,technique,unit,eliminations}. `solo_hint` keeps
+/// its singles-only answer for existing callers.
+#[uniffi::export]
+pub fn solo_technique_hint(saved: String) -> Result<String, SoloError> {
+    sudoku_core::SoloGame::load(&saved)?
+        .technique_hint_json()
+        .map_err(|error| SoloError::InvalidInput {
+            reason: error.to_string(),
+        })
 }
 
 #[uniffi::export]

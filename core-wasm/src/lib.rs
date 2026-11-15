@@ -42,6 +42,41 @@ pub fn new_generated_solo(size: f64, seed: f64, blanks: f64) -> Result<String, J
     new_solo(&givens, size as f64)
 }
 
+/// A new game whose puzzle needs exactly the techniques of `difficulty`
+/// ("easy", "medium" or "hard"); see `sudoku_core::Difficulty`.
+#[wasm_bindgen]
+pub fn new_rated_solo(size: f64, seed: f64, difficulty: &str) -> Result<String, JsValue> {
+    let size = checked_u8(size)?;
+    if !seed.is_finite() || seed.fract() != 0.0 || !(0.0..=u32::MAX as f64).contains(&seed) {
+        return Err(JsValue::from_str("InvalidValue"));
+    }
+    let difficulty = sudoku_core::Difficulty::parse(difficulty)
+        .ok_or_else(|| JsValue::from_str("InvalidValue"))?;
+    let givens = sudoku_core::generate_rated_puzzle(size, seed as u32, difficulty)
+        .map_err(|error| JsValue::from_str(&error.to_string()))?;
+    new_solo(&givens, size as f64)
+}
+
+/// JSON rating of the puzzle as given: {level,hardest,blanks,...}; level is
+/// null when the supported techniques cannot finish it (older saves).
+#[wasm_bindgen]
+pub fn solo_difficulty(saved: &str) -> Result<String, JsValue> {
+    sudoku_core::SoloGame::load(saved)
+        .map_err(|error| JsValue::from_str(&error.to_string()))?
+        .difficulty_json()
+        .map_err(|error| JsValue::from_str(&error.to_string()))
+}
+
+/// JSON null, or {index,value,technique,unit,eliminations}: like `solo_hint`,
+/// plus the candidate eliminations a harder step depends on.
+#[wasm_bindgen]
+pub fn solo_technique_hint(saved: &str) -> Result<String, JsValue> {
+    sudoku_core::SoloGame::load(saved)
+        .map_err(|error| JsValue::from_str(&error.to_string()))?
+        .technique_hint_json()
+        .map_err(|error| JsValue::from_str(&error.to_string()))
+}
+
 #[wasm_bindgen]
 pub fn solo_conflicts(saved: &str) -> Result<Vec<u32>, JsValue> {
     sudoku_core::SoloGame::load(saved)

@@ -45,13 +45,14 @@ export class SoloSession {
     return this.elapsedMs + (this.running ? Math.max(0, Math.floor(this.now() - this.startedAt)) : 0);
   }
 
-  start(size, seed, replaceConfirmed = false) {
+  // difficulty: 'easy' | 'medium' | 'hard' — the engine digs a puzzle that needs exactly that level's techniques.
+  start(size, seed, replaceConfirmed = false, difficulty = 'easy') {
     if (![6, 9].includes(size)) throw new Error('InvalidSize');
     let existing;
     try { existing = this.storage.getItem(saveKey(size)); }
     catch { existing = 'unavailable'; }
     if (existing !== null && !replaceConfirmed) throw new Error('ReplaceConfirmationRequired');
-    const game = this.engine.new_generated_solo(size, seed, size === 6 ? 18 : 43);
+    const game = this.engine.new_rated_solo(size, seed, difficulty);
     this.game = game;
     this.elapsedMs = 0;
     this.startedAt = this.now();

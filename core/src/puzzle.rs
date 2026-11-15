@@ -7,6 +7,7 @@ pub enum PuzzleError {
     UnsolvableBoard,
     SearchLimit,
     CannotReachBlankCount,
+    CannotReachDifficulty,
 }
 impl fmt::Display for PuzzleError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -107,11 +108,47 @@ fn search(
 
 // Fixed integer arithmetic makes a seed reproducible across native and WASM.
 // This is a puzzle permutation, never a source of session tokens or secrets.
-fn shuffle<T>(items: &mut [T], state: &mut u32) {
+pub(crate) fn shuffle<T>(items: &mut [T], state: &mut u32) {
     for index in (1..items.len()).rev() {
         *state = state.wrapping_mul(1664525).wrapping_add(1013904223);
         items.swap(index, *state as usize % (index + 1));
     }
+}
+
+/// A complete valid grid: one base pattern under digit, row, column, band and
+/// stack permutations drawn from `state`. Shared by every generator so a seed
+/// keeps meaning the same grid.
+pub(crate) fn solved_grid(n: usize, state: &mut u32) -> Vec<u8> {
+    let box_rows = if n == 6 { 2 } else { 3 };
+    let mut digits: Vec<u8> = (1..=n as u8).collect();
+    shuffle(&mut digits, state);
+    let mut rows: Vec<usize> = (0..n).collect();
+    for band in rows.chunks_mut(box_rows) {
+        shuffle(band, state);
+    }
+    let mut bands: Vec<usize> = (0..n / box_rows).collect();
+    shuffle(&mut bands, state);
+    let rows: Vec<usize> = bands
+        .iter()
+        .flat_map(|&b| rows[b * box_rows..(b + 1) * box_rows].iter().copied())
+        .collect();
+    let mut cols: Vec<usize> = (0..n).collect();
+    for stack in cols.chunks_mut(3) {
+        shuffle(stack, state);
+    }
+    let mut stacks: Vec<usize> = (0..n / 3).collect();
+    shuffle(&mut stacks, state);
+    let cols: Vec<usize> = stacks
+        .iter()
+        .flat_map(|&s| cols[s * 3..(s + 1) * 3].iter().copied())
+        .collect();
+    rows.iter()
+        .flat_map(|&r| {
+            let digits = &digits;
+            cols.iter()
+                .map(move |&c| digits[(r * 3 + r / box_rows + c) % n])
+        })
+        .collect()
 }
 
 /// Generates a unique puzzle with an exact requested number of blanks.
@@ -127,38 +164,8 @@ pub fn generate_puzzle(size: u8, seed: u32, blanks: u8) -> Result<Vec<u8>, Puzzl
     if blanks as usize > n * n {
         return Err(PuzzleError::InvalidBlankCount);
     }
-    let box_rows = if n == 6 { 2 } else { 3 };
     let mut state = seed;
-    let mut digits: Vec<u8> = (1..=size).collect();
-    shuffle(&mut digits, &mut state);
-    let mut rows: Vec<usize> = (0..n).collect();
-    for band in rows.chunks_mut(box_rows) {
-        shuffle(band, &mut state);
-    }
-    let mut bands: Vec<usize> = (0..n / box_rows).collect();
-    shuffle(&mut bands, &mut state);
-    let rows: Vec<usize> = bands
-        .iter()
-        .flat_map(|&b| rows[b * box_rows..(b + 1) * box_rows].iter().copied())
-        .collect();
-    let mut cols: Vec<usize> = (0..n).collect();
-    for stack in cols.chunks_mut(3) {
-        shuffle(stack, &mut state);
-    }
-    let mut stacks: Vec<usize> = (0..n / 3).collect();
-    shuffle(&mut stacks, &mut state);
-    let cols: Vec<usize> = stacks
-        .iter()
-        .flat_map(|&s| cols[s * 3..(s + 1) * 3].iter().copied())
-        .collect();
-    let mut cells: Vec<u8> = rows
-        .iter()
-        .flat_map(|&r| {
-            let digits = &digits;
-            cols.iter()
-                .map(move |&c| digits[(r * 3 + r / box_rows + c) % n])
-        })
-        .collect();
+    let mut cells = solved_grid(n, &mut state);
     let mut order: Vec<usize> = (0..n * n).collect();
     shuffle(&mut order, &mut state);
     let mut removed = 0;

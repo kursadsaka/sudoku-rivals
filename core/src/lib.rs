@@ -1,13 +1,19 @@
 pub mod multiplayer;
 pub mod protocol;
 
-mod puzzle;
+pub(crate) mod puzzle;
 pub use puzzle::{conflicting_cells, count_solutions, generate_puzzle, solve_board, PuzzleError};
 
-mod hint;
+pub(crate) mod hint;
 pub use hint::{
     analyze_techniques, find_logical_hint, HintTechnique, HintUnit, LogicalHint, TechniqueAnalysis,
     UnitKind,
+};
+
+mod difficulty;
+pub use difficulty::{
+    find_technique_hint, generate_rated_puzzle, rate_puzzle, Difficulty, DifficultyRating,
+    HintElimination, Technique, TechniqueHint,
 };
 
 mod solo;

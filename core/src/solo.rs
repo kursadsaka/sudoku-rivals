@@ -224,6 +224,20 @@ impl SoloGame {
         serde_json::to_string(&self.hint()?).map_err(|_| crate::PuzzleError::InvalidBoard)
     }
 
+    /// The next placement with the eliminations behind it; covers every step
+    /// of a rated puzzle. JSON null when the supported techniques are stuck.
+    pub fn technique_hint_json(&self) -> Result<String, crate::PuzzleError> {
+        serde_json::to_string(&crate::find_technique_hint(&self.values(), self.size)?)
+            .map_err(|_| crate::PuzzleError::InvalidBoard)
+    }
+
+    /// Rating of the puzzle as given, independent of the player's progress.
+    /// It is derived from the givens, so saves need no extra field.
+    pub fn difficulty_json(&self) -> Result<String, crate::PuzzleError> {
+        serde_json::to_string(&crate::rate_puzzle(&self.givens, self.size)?)
+            .map_err(|_| crate::PuzzleError::InvalidBoard)
+    }
+
     fn editable(&self, index: u32) -> Result<(), SoloError> {
         match self.givens.get(index as usize) {
             None => Err(SoloError::InvalidCell),

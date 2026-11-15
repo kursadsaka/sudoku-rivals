@@ -351,6 +351,11 @@
       "role": "combobox",
       "region": "content",
       "textKey": "settings.language"
+    },
+    "difficulty": {
+      "role": "radiogroup",
+      "region": "content",
+      "textKey": "setup.difficulty"
     }
   },
   "screens": [
@@ -383,6 +388,7 @@
         "back",
         "app-title",
         "board-size",
+        "difficulty",
         "game-start"
       ],
       "states": [
@@ -906,6 +912,22 @@
     "settings.storage": {
       "tr": "Yerel kayıtlar",
       "en": "Local saves"
+    },
+    "setup.difficulty": {
+      "tr": "Zorluk",
+      "en": "Difficulty"
+    },
+    "difficulty.easy": {
+      "tr": "Kolay",
+      "en": "Easy"
+    },
+    "difficulty.medium": {
+      "tr": "Orta",
+      "en": "Medium"
+    },
+    "difficulty.hard": {
+      "tr": "Zor",
+      "en": "Hard"
     }
   }
 }
