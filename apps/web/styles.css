@@ -398,3 +398,7 @@ html[data-debug] body[data-view="game"] main { padding-top:12px; }
 @media (prefers-reduced-motion:reduce) { button,.segment,.size-option,.settings-row input[type="checkbox"],.settings-row input[type="checkbox"]::after,.meter.time i { transition:none; } button:active:not(:disabled) { transform:none; } }
 :root[data-reduce-motion="true"] :is(button,.segment,.size-option,.settings-row input[type="checkbox"],.settings-row input[type="checkbox"]::after,.meter.time i) { transition:none; }
 :root[data-reduce-motion="true"] button:active:not(:disabled) { transform:none; }
+
+/* Transient confirmations never consume layout space or intercept board/input taps. */
+.transient-notice { position:fixed; z-index:20; bottom:calc(20px + env(safe-area-inset-bottom)); left:max(16px,env(safe-area-inset-left)); right:max(16px,env(safe-area-inset-right)); width:fit-content; max-width:min(460px,calc(100% - 32px - env(safe-area-inset-left) - env(safe-area-inset-right))); margin-inline:auto; padding:12px 18px; border-radius:14px; background:var(--foreground); color:var(--canvas); box-shadow:var(--shadow); font-size:.875rem; line-height:1.4; overflow-wrap:anywhere; pointer-events:none; }
+.transient-notice:empty { padding:0; box-shadow:none; }
