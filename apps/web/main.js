@@ -195,9 +195,8 @@ function renderSetup() {
   const art = size => `<svg class="size-art" viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="1.5" y="1.5" width="33" height="33" rx="6"/><path d="${size === 6 ? 'M18 1.5v33M1.5 12.5h33M1.5 23.5h33':'M12.5 1.5v33M23.5 1.5v33M1.5 12.5h33M1.5 23.5h33'}"/></svg>`;
   content.innerHTML = `<section class="panel" data-screen="solo-setup">${backButton()}<p class="eyebrow">${t('solo')}</p><h1>${t('choose')}</h1><p class="lede">${t('chooseIntro')}</p>
     <fieldset data-testid="board-size"><legend>${t('boardSize')}</legend><div class="size-options">${[6,9].map(size => `<label class="size-option"><input type="radio" name="size" value="${size}" ${selectedSize === size ? 'checked' : ''}>${art(size)}<strong>${size}×${size}</strong><small>${t(size === 6 ? 'six':'nine')}</small></label>`).join('')}</div></fieldset>
-    <fieldset data-testid="difficulty"><legend>${t('difficulty')}</legend><div class="segmented">${LEVELS.map(level => `<label class="segment"><input type="radio" name="difficulty" value="${level}" data-testid="difficulty-${level}" aria-describedby="difficulty-help" ${selectedDifficulty === level ? 'checked' : ''}>${t(level)}</label>`).join('')}</div>
-      <p class="note level-help" id="difficulty-help">${t(selectedDifficulty + 'Help')}</p></fieldset>
-    <p class="note">${t('generatorNote')}</p>
+    <fieldset data-testid="difficulty"><legend>${t('difficulty')}</legend><div class="segmented">${LEVELS.map(level => `<label class="segment"><input type="radio" name="difficulty" value="${level}" data-testid="difficulty-${level}" ${selectedDifficulty === level ? 'checked' : ''}>${t(level)}</label>`).join('')}</div>
+    </fieldset>
     <button class="primary-button full" data-action="start" data-testid="game-start">${t('start')}</button>
     ${gameNotice ? `<p class="notice error" role="alert">${escape(gameNotice)}</p>` : ''}
   </section>`;
