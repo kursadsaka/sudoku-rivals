@@ -164,6 +164,9 @@ enum Action {
         name: String,
         mode: Mode,
         size: u8,
+        /// Optional: callers that never send it create an unrated room as before.
+        #[serde(default)]
+        difficulty: Option<crate::Difficulty>,
         #[serde(default)]
         guest: Option<String>,
     },
@@ -255,6 +258,7 @@ impl MultiplayerClient {
                 name,
                 mode,
                 size,
+                difficulty,
                 guest,
             } => {
                 self.new_session_allowed()?;
@@ -264,8 +268,12 @@ impl MultiplayerClient {
                 let guest = self.session_guest(guest)?;
                 self.pending_http = None;
                 self.last_error = None;
-                request = Some(self.start(Operation::Create, "/v1/rooms".into(),
-                    serde_json::json!({"protocol":PROTOCOL,"guest":guest,"name":name,"mode":mode,"size":size}), now)?);
+                let mut body = serde_json::json!({"protocol":PROTOCOL,"guest":guest,"name":name,"mode":mode,"size":size});
+                // Sent only when chosen, so the request stays the v1 shape otherwise.
+                if let Some(level) = difficulty {
+                    body["difficulty"] = serde_json::json!(level);
+                }
+                request = Some(self.start(Operation::Create, "/v1/rooms".into(), body, now)?);
             }
             Action::Join {
                 invite,
@@ -712,7 +720,12 @@ impl MultiplayerClient {
                         && (sent["mode"]
                             != serde_json::to_value(session.snapshot.mode)
                                 .map_err(|_| ClientError::InvalidSnapshot)?
-                            || sent["size"] != session.snapshot.size))
+                            || sent["size"] != session.snapshot.size
+                            // A requested level must be the level the room really has.
+                            || sent.get("difficulty").is_some_and(|level| {
+                                serde_json::to_value(session.snapshot.difficulty).ok().as_ref()
+                                    != Some(level)
+                            })))
                     || (matches!(http.operation, Operation::Join)
                         && http.wire.path
                             != format!("/v1/rooms/{}/join", session.snapshot.room_code))

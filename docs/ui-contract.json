@@ -409,6 +409,7 @@
         "app-title",
         "board-size",
         "game-mode",
+        "difficulty",
         "room-create",
         "room-code",
         "room-join"

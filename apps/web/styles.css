@@ -7,6 +7,8 @@
   --error:#b42318; --error-bg:#fdecea; --ok:#15803d; --rival:#a8500a; --rival-soft:#fbe6c4; --track:#e6e0d3;
   --shadow:0 1px 2px rgb(28 27 24 / .06), 0 4px 14px rgb(28 27 24 / .05);
   --ease-out:cubic-bezier(.23,1,.32,1);
+  /* Page rhythm: the one gap between the header row and the first thing on any page. */
+  --content-top:12px;
   --font:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
   --font-display:ui-rounded,"SF Pro Rounded",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
   font-family:var(--font); font-synthesis:none; font-size:16px; line-height:1.5;
@@ -45,19 +47,22 @@ h2 { font-size:1.2rem; line-height:1.25; letter-spacing:-.02em; font-weight:650;
 
 /* Shell */
 .app-shell { min-height:100dvh; max-width:1040px; margin:auto; padding:0 max(20px,env(safe-area-inset-right)) 0 max(20px,env(safe-area-inset-left)); display:flex; flex-direction:column; }
-.site-header { display:flex; justify-content:space-between; align-items:center; padding:calc(14px + env(safe-area-inset-top)) 0 14px; }
+.site-header { display:flex; justify-content:space-between; align-items:center; padding:calc(14px + env(safe-area-inset-top)) 0 4px; }
 .wordmark { color:var(--foreground); text-decoration:none; display:flex; align-items:center; gap:10px; min-height:48px; font-family:var(--font-display); font-size:1.15rem; letter-spacing:-.02em; border-radius:12px; }
 .wordmark strong { font-weight:750; }
 .wordmark svg { border-radius:9px; flex:none; }
 .icon-button { width:48px; height:48px; flex:none; display:grid; place-items:center; background:var(--background); border:1px solid var(--line); border-radius:14px; color:var(--foreground); }
-main { flex:1; padding:12px 0 40px; outline:none; }
+main { flex:1; padding:var(--content-top) 0 40px; outline:none; }
+/* Back is a 48px target around a 24px glyph. Where it opens a page the target overhangs upward, so the glyph
+   (what the eye sees) sits on the same line every other page starts on. The target itself stays 48px. */
+main > section > .back-button:first-child { margin-top:-12px; }
 .site-footer { display:none; justify-content:space-between; flex-wrap:wrap; gap:12px; padding:16px 0 calc(16px + env(safe-area-inset-bottom)); color:var(--muted); font-size:.8rem; }
 body[data-screen="home"] .site-footer, body[data-screen="settings"] .site-footer { display:flex; }
 .offline-indicator { display:inline-flex; align-items:center; gap:8px; }
 .offline-indicator svg { display:none; flex:none; }
 .offline-indicator[data-state="offlineReady"] .when-ready { display:block; color:var(--ok); }
 .offline-indicator[data-state="offlinePreparing"] .when-preparing, .offline-indicator[data-state="offlineUnavailable"] .when-unavailable { display:block; }
-.loading { color:var(--muted); padding:40px 0; }
+.loading { color:var(--muted); padding:0 0 40px; }
 
 /* Text bits */
 .eyebrow { color:var(--accent); font-size:.74rem; font-weight:700; letter-spacing:.12em; text-transform:uppercase; margin:0 0 10px; }
@@ -74,11 +79,11 @@ body[data-screen="home"] .site-footer, body[data-screen="settings"] .site-footer
 .secondary-button { background:var(--background); color:var(--accent); border-color:var(--line); }
 .text-button { background:transparent; border:0; color:var(--muted); text-decoration:underline; text-underline-offset:3px; min-height:48px; }
 .full { width:100%; }
-.back-button { border:0; padding:0 12px 0 4px; min-height:48px; min-width:48px; background:transparent; color:var(--muted); display:inline-flex; align-items:center; gap:4px; margin:0 0 12px -8px; border-radius:12px; font-weight:550; }
+.back-button { border:0; padding:0 12px 0 4px; min-height:48px; min-width:48px; background:transparent; color:var(--muted); display:inline-flex; align-items:center; gap:4px; margin:0 0 6px -8px; border-radius:12px; font-weight:550; }
 .action-stack { display:grid; gap:10px; margin-top:26px; }
 
 /* Home */
-.home { max-width:720px; margin:8px auto 0; }
+.home { max-width:720px; margin:0 auto; }
 .home h1 { font-size:clamp(2.3rem,7vw,3.4rem); }
 .mode-options { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
 .mode-card { position:relative; text-align:left; padding:18px; border:1px solid var(--line); border-radius:22px; background:var(--background); box-shadow:var(--shadow); display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:16px; min-height:104px; }
@@ -128,7 +133,6 @@ legend { font-size:.85rem; color:var(--muted); margin-bottom:8px; padding:0; fon
 .text-input:focus-visible { outline-offset:0; border-color:var(--accent); }
 .friend-setup h1 { font-size:clamp(1.6rem,6vw,2.2rem); margin-bottom:8px; }
 .friend-setup h1:has(+ .tabs) { margin-bottom:14px; }
-.friend-setup .back-button { margin-bottom:6px; }
 .friend-setup .lede { margin-bottom:16px; }
 .tabs { margin-bottom:18px; }
 .setup-form > .text-input { margin-bottom:16px; }
@@ -160,6 +164,8 @@ legend { font-size:.85rem; color:var(--muted); margin-bottom:8px; padding:0; fon
 .players small { color:var(--muted); display:block; font-weight:500; }
 .seat-state { color:var(--muted); white-space:nowrap; font-size:.82rem; font-weight:600; padding:5px 10px; border-radius:99px; background:var(--track); }
 .seat-state.is-ready { background:#15803d; color:#fff; }
+.room-level { margin:0 0 14px; padding:10px 12px; border-radius:14px; background:var(--selected); color:var(--foreground); }
+.room-level strong { color:var(--accent); }
 .countdown { color:var(--accent); text-align:center; font-family:var(--font-display); font-weight:700; font-size:1.15rem; font-variant-numeric:tabular-nums; }
 
 /* Board */
@@ -307,7 +313,7 @@ html[data-debug] body[data-view="game"] main { padding-top:12px; }
 @media (max-height:600px) and (orientation:landscape) { .input-keys { gap:8px; } }
 
 /* Pause and results */
-.paused,.result { text-align:center; padding:32px 0; max-width:440px; margin:auto; }
+.paused,.result { text-align:center; padding:0 0 20px; max-width:440px; margin:auto; }
 .paused .lede,.result .lede { margin-inline:auto; }
 .pause-symbol { width:76px; height:76px; display:grid; place-items:center; border-radius:24px; margin:0 auto 20px; background:var(--selected); color:var(--accent); }
 .pause-symbol svg { width:34px; height:34px; stroke-width:2.2; }
@@ -365,14 +371,11 @@ html[data-debug] body[data-view="game"] main { padding-top:12px; }
 @media (max-width:700px) {
   .app-shell { padding-inline:max(16px,env(safe-area-inset-left)) max(16px,env(safe-area-inset-right)); }
   main { padding-bottom:28px; }
-  /* Friend setup: the logo row and Back sat 33px apart on phones; keep Back's 48px target, drop the dead space. */
-  body[data-screen="friend-setup"] .site-header { padding-bottom:4px; }
-  body[data-screen="friend-setup"] main { padding-top:0; }
   .mode-options { grid-template-columns:1fr; gap:12px; }
-  .paused,.result { padding:20px 0; }
 }
 @media (min-width:701px) {
-  main { padding-top:32px; }
+  :root { --content-top:24px; }
+  .site-header { padding-bottom:8px; }
   .mode-card { grid-template-columns:1fr auto; grid-template-rows:auto auto; align-items:start; padding:22px; min-height:190px; }
   .mode-art { grid-row:1; grid-column:1; }
   .mode-go { grid-row:1; grid-column:2; }

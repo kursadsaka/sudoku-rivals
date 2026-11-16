@@ -14,13 +14,13 @@ Bütün yollar POST, `Content-Type: application/json`; gövde üst sınırı 16 
 
 | Yol | Gövde | Başarılı yanıt |
 | --- | --- | --- |
-| `/v1/rooms` | `{protocol, guest?, name, mode, size}` | `Session` |
+| `/v1/rooms` | `{protocol, guest?, name, mode, size, difficulty?}` | `Session` |
 | `/v1/rooms/{code}/join` | `{protocol, guest?, name}` | `Session` |
 | `/v1/rooms/{code}/resume` | `{protocol, token}` | `Snapshot` |
 | `/v1/rooms/{code}/state` | `{protocol, token, generation}` | `Snapshot` |
 | `/v1/rooms/{code}/command` | `Envelope` | `{receipt, snapshot}` |
 
-`mode`: `race` veya `duel`; `size`: 6 veya 9. Görünen ad 1–16 Unicode karakteri, kontrol karakteri yok. `guest` verilmezse kişisel veri içermeyen rastgele 256 bit misafir belirteci üretilir. Verilirse önceki `Session.guest` gönderilir; etkin lobide/maçta aynı misafir ikinci koltuk alamaz. Bitmiş maç yeni oda açmayı engellemez. Bu yerel misafir modeli hesap veya cihaz doğrulaması değildir.
+`mode`: `race` veya `duel`; `size`: 6 veya 9. `difficulty` isteğe bağlıdır: `easy`, `medium` veya `hard`; bilinmeyen değer 4xx ile reddedilir, verilmezse oda seviyesiz (v1 davranışı) kurulur. Görünen ad 1–16 Unicode karakteri, kontrol karakteri yok. `guest` verilmezse kişisel veri içermeyen rastgele 256 bit misafir belirteci üretilir. Verilirse önceki `Session.guest` gönderilir; etkin lobide/maçta aynı misafir ikinci koltuk alamaz. Bitmiş maç yeni oda açmayı engellemez. Bu yerel misafir modeli hesap veya cihaz doğrulaması değildir.
 
 `Session`: `{protocol, guest, token, invite_path, snapshot}`. `guest` ve odaya özel `token` ayrı 256 bit `/dev/urandom` değerleridir. Hata durumunda sabit veya öngörülebilir token'a düşülmez. `invite_path` örneği `/r/ABC234`; oda kodu altı karakter, büyük/küçük harf duyarsızdır. Alfabe `23456789ABCDEFGHJKMNPQRSTUVWXYZ`, seçim modulo yanlılığı olmadan yapılır. Kapanmış oda kodu 24 saat tekrar kullanılmaz; süreç yeniden başlarsa eski odalar kurtarılmaz.
 
@@ -40,11 +40,22 @@ Bütün yollar POST, `Content-Type: application/json`; gövde üst sınırı 16 
 | `rematch` | — | Sonuç ekranında rövanş iste; ikisi de bağlı ve istekliyse yeni maç |
 | `lobby` | — | Sonuçtan lobiye dön; sonraki iki hazır isteği yeni maç açar |
 
-Yeni maçın kimliği, bulmaca tohumu, işlem sıraları, skorları ve tahtaları yenidir. İki koltuk aynı bulmaca dizisini kendi hızlarında oynar. Tohum ve çözüm gönderilmez. Bulmaca parametreleri 6×6'da 18, 9×9'da 43 boş hücredir; bunlara “kolay” etiketi verilmez. Üretilen tahtalar ortak çekirdek tarafından tek çözümle doğrulanır. Kaldırma sırası bu sayıya ulaşamazsa en çok 16 belirlenimli aday denenir; arıza sessizce başka kurala dönüşmez.
+Yeni maçın kimliği, bulmaca tohumu, işlem sıraları, skorları ve tahtaları yenidir. İki koltuk aynı bulmaca dizisini kendi hızlarında oynar. Tohum ve çözüm gönderilmez. Seviyesiz odada bulmaca parametreleri 6×6'da 18, 9×9'da 43 boş hücredir; bunlara “kolay” etiketi verilmez. Üretilen tahtalar ortak çekirdek tarafından tek çözümle doğrulanır. Kaldırma sırası bu sayıya ulaşamazsa en çok 16 belirlenimli aday denenir; arıza sessizce başka kurala dönüşmez.
+
+### Oda zorluğu
+
+Zorluk, mod ve boyut gibi **oda kurulurken sabitlenen** bir ayardır; yalnız kurucu seçer, sonradan değişmez ve `Snapshot.difficulty` ile iki koltuğa lobiden itibaren bildirilir. Seviyeli odada sunucu her tahtayı çekirdeğin `generate_rated_puzzle` fonksiyonuyla o seviyede üretir ([difficulty-levels.md](validation/difficulty-levels.md)); üretim, çözüm ve doğrulama yine yalnız sunucudadır.
+
+- **Yarış:** iki koltuk aynı tek bulmacayı alır.
+- **Düello:** dizideki her tahta (ilk ve bir tahta bitince açılan sonrakiler) aynı seviyededir; aynı `board_id` iki koltuk için aynı tahtadır, herkes diziyi kendi hızında ilerletir.
+- **Rövanş ve lobiye dönüş:** aynı odada yeni maç = yeni kimlik ve yeni tohum, aynı mod/boyut/seviye. Seviyeyi değiştirmek için yeni oda kurulur.
+- **Kayıp create yanıtı:** tekrar yalnız ad, mod, boyut **ve seviye** aynıysa aynı odayı döndürür.
+
+Uyumluluk: `difficulty` göndermeyen istemciler (bugünkü Android/iOS) eskisi gibi seviyesiz oda kurar; `Snapshot` bu odalarda `difficulty` anahtarını hiç taşımaz. Seviyeli odaya katılan eski istemci bulmacayı ve maçı normal oynar, yalnız seviyeyi göstermez (bilinmeyen Snapshot alanı yok sayılır). `difficulty` gönderen yeni istemci, alanı tanımayan eski bir sunucuda 4xx alır; web istemcisi sunucuyla aynı origin'den geldiği için birlikte güncellenir.
 
 ## Snapshot ve erişim sınırı
 
-Üst alanlar: `protocol, room_code, match_id, generation, mode, size, phase, server_ms, event_order, start_ms, end_ms, own, opponent, result`.
+Üst alanlar: `protocol, room_code, match_id, generation, mode, size, difficulty?, phase, server_ms, event_order, start_ms, end_ms, own, opponent, result`.
 
 - `phase`: `lobby`, `countdown`, `playing`, `finished`, `closed`.
 - `own`: `seat` (0 veya 1), `name`, `ready`, `connected`, `next_sequence`, `board_id`, `board_version`, `givens`, `cells`, `score`, `combo`, `wrong`, `locked_until_ms`, `rematch`.

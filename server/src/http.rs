@@ -127,6 +127,9 @@ struct CreateRequest {
     name: String,
     mode: Mode,
     size: u8,
+    /// Optional: v1 clients omit it and get an unrated room.
+    #[serde(default)]
+    difficulty: Option<sudoku_core::Difficulty>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -213,7 +216,15 @@ async fn create(
     Ok(Json(
         shared
             .call(move |state, at| {
-                state.create(&peer, body.guest, body.name, body.mode, body.size, at)
+                state.create_rated(
+                    &peer,
+                    body.guest,
+                    body.name,
+                    body.mode,
+                    body.size,
+                    body.difficulty,
+                    at,
+                )
             })
             .await?,
     ))
@@ -462,9 +473,16 @@ mod static_tests {
 
     #[test]
     fn install_icons_are_public_assets_with_png_types() {
-        for name in ["icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png"] {
+        for name in [
+            "icon-192.png",
+            "icon-512.png",
+            "icon-maskable-512.png",
+            "apple-touch-icon.png",
+        ] {
             assert!(
-                WEB_ASSETS.iter().any(|&(asset, mime)| asset == name && mime == "image/png"),
+                WEB_ASSETS
+                    .iter()
+                    .any(|&(asset, mime)| asset == name && mime == "image/png"),
                 "{name} must be an allowlisted image/png"
             );
         }

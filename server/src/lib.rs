@@ -108,6 +108,7 @@ struct Room {
     match_id: String,
     mode: Mode,
     size: u8,
+    difficulty: Option<sudoku_core::Difficulty>,
     seats: [Option<Seat>; 2],
     puzzles: Vec<Puzzle>,
     seed: u32,
@@ -121,7 +122,14 @@ struct Room {
     archived: Vec<(String, [(String, Vec<StoredReceipt>); 2])>,
 }
 impl Room {
-    fn new(code: String, mode: Mode, size: u8, seat: Seat, now: u64) -> Result<Self, Error> {
+    fn new(
+        code: String,
+        mode: Mode,
+        size: u8,
+        difficulty: Option<sudoku_core::Difficulty>,
+        seat: Seat,
+        now: u64,
+    ) -> Result<Self, Error> {
         if ![6, 9].contains(&size) {
             return Err(Error::InvalidInput);
         }
@@ -131,6 +139,7 @@ impl Room {
             match_id: random_hex()?,
             mode,
             size,
+            difficulty,
             seats: [Some(seat), None],
             puzzles: vec![],
             seed,
@@ -146,8 +155,12 @@ impl Room {
     }
     fn puzzle(&mut self, board_id: u32) -> Result<(), Error> {
         if board_id as usize == self.puzzles.len() {
-            self.puzzles
-                .push(make_puzzle(self.size, self.seed, board_id)?);
+            self.puzzles.push(make_puzzle(
+                self.size,
+                self.seed,
+                board_id,
+                self.difficulty,
+            )?);
         }
         Ok(())
     }
@@ -326,6 +339,7 @@ impl Room {
             generation: own.generation,
             mode: self.mode,
             size: self.size,
+            difficulty: self.difficulty,
             phase: self.phase.clone(),
             server_ms: now,
             event_order: self.event_order,
@@ -674,7 +688,8 @@ impl Room {
     fn new_match(&mut self, now: u64) -> Result<(), Error> {
         let next_id = random_hex()?;
         let seed = u32::from_le_bytes(random_bytes::<4>()?);
-        let puzzle = make_puzzle(self.size, seed, 0)?;
+        // A rematch is a new match in the same room: new seed, same mode, size and level.
+        let puzzle = make_puzzle(self.size, seed, 0, self.difficulty)?;
         let previous = std::array::from_fn(|i| {
             self.seats[i]
                 .as_mut()
@@ -693,10 +708,26 @@ impl Room {
     }
 }
 
-fn make_puzzle(size: u8, seed: u32, board_id: u32) -> Result<Puzzle, Error> {
-    // Experimental blank counts. They do not establish human difficulty.
-    let blanks = if size == 6 { 18 } else { 43 };
+/// Board `board_id` of a match. Both seats get the same board for the same id,
+/// so a duel's later boards are the same sequence for both players.
+fn make_puzzle(
+    size: u8,
+    seed: u32,
+    board_id: u32,
+    difficulty: Option<sudoku_core::Difficulty>,
+) -> Result<Puzzle, Error> {
     let base = seed.wrapping_add(board_id.wrapping_mul(0x9e3779b9));
+    if let Some(level) = difficulty {
+        // Rated: needs exactly this level's techniques and has one solution by construction.
+        let givens =
+            sudoku_core::generate_rated_puzzle(size, base, level).map_err(|_| Error::Internal)?;
+        let solution = sudoku_core::solve_board(&givens, size)
+            .map_err(|_| Error::Internal)?
+            .ok_or(Error::Internal)?;
+        return Ok(Puzzle { givens, solution });
+    }
+    // No level requested: experimental blank counts that do not establish human difficulty.
+    let blanks = if size == 6 { 18 } else { 43 };
     for attempt in 0..16u32 {
         if let Ok(givens) = sudoku_core::generate_puzzle(size, base.wrapping_add(attempt), blanks) {
             let solution = sudoku_core::solve_board(&givens, size)
@@ -850,6 +881,7 @@ impl Service {
                 && room.seats.iter().flatten().any(|s| s.guest == guest)
         })
     }
+    /// A room without a difficulty, as every v1 client creates it.
     pub fn create(
         &mut self,
         peer: &str,
@@ -857,6 +889,20 @@ impl Service {
         name: String,
         mode: Mode,
         size: u8,
+        now: u64,
+    ) -> Result<Session, Error> {
+        self.create_rated(peer, guest, name, mode, size, None, now)
+    }
+    /// A room whose puzzles are all generated at `difficulty` when one is given.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_rated(
+        &mut self,
+        peer: &str,
+        guest: Option<String>,
+        name: String,
+        mode: Mode,
+        size: u8,
+        difficulty: Option<sudoku_core::Difficulty>,
         now: u64,
     ) -> Result<Session, Error> {
         self.advance(now)?;
@@ -876,7 +922,12 @@ impl Service {
         if let Some(session) = self.replay(
             &guest,
             &name,
-            |room, index| index == 0 && room.mode == mode && room.size == size,
+            |room, index| {
+                index == 0
+                    && room.mode == mode
+                    && room.size == size
+                    && room.difficulty == difficulty
+            },
             now,
         ) {
             return Ok(session);
@@ -902,6 +953,7 @@ impl Service {
             code.clone(),
             mode,
             size,
+            difficulty,
             Seat::new(guest.clone(), token.clone(), name, now),
             now,
         )?;

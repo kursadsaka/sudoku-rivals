@@ -24,7 +24,7 @@ Mantık çözücüsünün attığı her adım zorunlu olduğundan, onun bitirdi�
 2. **Kolay:** hücreler, bulmaca gizli teklilerle çözülebilir kaldıkça çıkarılır; 6×6'da 19, 9×9'da 42 boşta durur.
 3. **9×9 Orta/Zor:** önce bir alt seviyenin teknikleriyle belli derinliğe kazılır (44 / 46 boş). Sonra "alt seviyenin çözemediği ama bu seviyenin çözdüğü" çıkarma aranır; bulmacayı o seviyeye taşıyan tam olarak bu çıkarmadır. Yoksa bir hücre daha kazılıp tekrar bakılır (üst sınır 54 / 58 boş).
 4. **6×6 Orta/Zor:** bu boyutta tekli ötesi teknik yalnız seyrek bulmacalarda gerekir. Seviyenin teknikleri izin verdikçe kazılır, alt seviye artık çözemiyorsa kabul edilir (genelde 24–28 boş, yani 8–12 ipucu).
-5. Tutmayan deneme türetilmiş tohumla yinelenir. Aynı tohum her platformda aynı bulmacayı verir (yalnız tam sayı aritmetiği; `vectors/boards.json` içindeki `rated` vektörleri Rust ve WASM'da karşılaştırılır).
+5. Tutmayan deneme türetilmiş tohumla yinelenir; deneme tohumu, tohum ile deneme sayısı karıştırılarak (hash) elde edilir. Böylece yakın tohumlar birbirinin denemelerine girmez (sunucu düelloda tahta başına bir tohum türetir; toplamalı adım, ikinci tahtanın birincinin aynısı çıkmasına yol açıyordu ve testle yakalandı). Aynı tohum her platformda aynı bulmacayı verir (yalnız tam sayı aritmetiği; `vectors/boards.json` içindeki `rated` vektörleri Rust ve WASM'da karşılaştırılır).
 
 Boş sayısı pencereleri yalnız bir seviyenin bulmacalarını benzer uzunlukta tutar; seviyeyi belirlemez.
 
@@ -33,11 +33,11 @@ Boş sayısı pencereleri yalnız bir seviyenin bulmacalarını benzer uzunlukta
 | Boyut · seviye | Başarısız | Ortalama | En yavaş | Boş (min–ortanca–maks) | En zor teknik dağılımı |
 | --- | --- | --- | --- | --- | --- |
 | 6×6 Kolay | 0 | 0,12 ms | 0,45 ms | 19 | gizli tekli |
-| 6×6 Orta | 0 | 14 ms | 110 ms | 24–26–28 | çıplak tekli |
-| 6×6 Zor | 0 | 71 ms | 478 ms | 23–26–28 | kilitli aday 1807, çıplak çift 170, gizli çift 23 |
+| 6×6 Orta | 0 | 14 ms | 88 ms | 24–26–28 | çıplak tekli |
+| 6×6 Zor | 0 | 73 ms | 547 ms | 23–26–28 | kilitli aday 1806, çıplak çift 180, gizli çift 14 |
 | 9×9 Kolay | 0 | 0,7 ms | 1,1 ms | 42 | gizli tekli |
-| 9×9 Orta | 0 | 10 ms | 80 ms | 45–50–54 | çıplak tekli |
-| 9×9 Zor | 0 | 25 ms | 191 ms | 47–52–58 | kilitli aday 1534, çıplak çift 353, gizli çift 113 |
+| 9×9 Orta | 0 | 10 ms | 60 ms | 45–50–54 | çıplak tekli |
+| 9×9 Zor | 0 | 25 ms | 204 ms | 47–51–58 | kilitli aday 1514, çıplak çift 378, gizli çift 108 |
 
 WASM'da (Node 26, masaüstü; 300 tohum) ortanca / p99: 6×6 Orta 12 / 85 ms, 6×6 Zor 54 / 387 ms (en uzun 538 ms), 9×9 Orta 8 / 44 ms, 9×9 Zor 16 / 128 ms; Kolay 1 ms altı. Telefonda birkaç kat yavaş olması beklenir; bu yüzden web başlat düğmesi üretimden önce "Bulmaca hazırlanıyor…" durumuna geçer.
 
@@ -52,7 +52,7 @@ Web ipucu kartı her elemeyi bir cümleyle, ardından yerleştirmeyi yazar ve de
 ## Uyumluluk
 
 - **Kayıtlar:** seviye kaydedilmez; `solo_difficulty` onu kaydın ipuçlarından (givens) her seferinde türetir. `SoloGame` kayıt alanları aynıdır (testte alan listesi sabitlenmiştir). Eski kayıtlar ve boş sayısıyla üretilmiş bulmacalar açılır; teknikler yetiyorsa seviye gösterilir, yetmiyorsa etiket gösterilmez.
-- **Çok oyunculu:** sunucu `generate_puzzle(size, seed, blanks)` kullanmayı sürdürür; fonksiyon ve tohum vektörleri değişmedi (ızgara kurulumu yardımcı fonksiyona taşındı, çıktı aynı).
+- **Çok oyunculu:** oda kurulurken isteğe bağlı `difficulty` seçilebilir; seçilirse yarışın bulmacası, düellonun bütün tahtaları ve rövanşlar o seviyede üretilir ve iki oyuncuya aynı tahta verilir ([match-protocol.md](../match-protocol.md#oda-zorluğu)). Seçilmezse sunucu `generate_puzzle(size, seed, blanks)` kullanmayı sürdürür; o fonksiyon ve tohum vektörleri değişmedi.
 - **Android / iOS:** UniFFI'ye yalnız ekleme yapıldı: `new_rated_solo`, `solo_difficulty`, `solo_technique_hint`. Mevcut fonksiyonların imzası, JSON biçimi ve sağlama toplamları aynı; iki uygulama `new_generated_solo(…, 18/43)` ve `solo_hint` ile olduğu gibi derlenip çalışmaya devam etmelidir. Yerel uygulamalar bu turda derlenmedi; seviye seçimi onlarda yoktur. Benimsemek için: kurulum ekranına seviye seçimi + `new_rated_solo`, başlıkta `solo_difficulty`, ipucunda `solo_technique_hint` (yeni `eliminations` alanı ve `technique` değerleri için metinler).
 - `PuzzleError` içine `CannotReachDifficulty` eklendi; hata metni olarak taşınır, eşleştiren kod yoktur.
 
@@ -67,5 +67,6 @@ Web ipucu kartı her elemeyi bir cümleyle, ardından yerleştirmeyi yazar ve de
 - İnsan kalibrasyonu yok; seviye adları teknik ölçütün kısaltmasıdır.
 - Zor'un tavanı çiftlerdir: üçlüler, X-Wing ve ötesi yoktur; bunları gerektiren bulmaca üretilmez.
 - 6×6 Orta/Zor bulmacaları zorunlu olarak seyrektir (8–12 ipucu) ve üretimi en yavaş olanlardır.
-- Çok oyunculu maçlar seviye seçmez; eski boş sayısı üretimiyle devam eder.
+- Arkadaş maçında seviyeli tahtalar sunucuda, maçın işlendiği iş parçacığında üretilir: 6×6 Zor ortalama ~70 ms, en kötü ~0,5 s (yerel ölçüm); zayıf bir staging işlemcisinde daha uzun sürebilir ve o an diğer istekler bekler. Düelloda sonraki tahta, bir oyuncu tahtayı bitirdiği hamlede üretilir.
+- Yerel uygulamalar oda kurarken seviye göndermez; seviyeli odaya katılabilir ama seviyeyi göstermez.
 - Yerel uygulamalar ve gerçek cihazda üretim süresi ölçülmedi.

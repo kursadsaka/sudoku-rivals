@@ -33,6 +33,20 @@ Seçim yapılmadıysa solo ve arkadaş kurulumunda tahta **9×9**, mod klasik ya
 
 Solo kurulumda boyutun altında **Kolay / Orta / Zor** seçimi ve seçilen seviyenin ne gerektirdiğini söyleyen bir satır vardır; varsayılan Kolay, son seçim hatırlanır (`soloDifficulty`). Seviyeler çekirdekte tekniğe göre üretilir ve derecelendirilir: [difficulty-levels.md](difficulty-levels.md). Başlat düğmesi üretim sürerken "Bulmaca hazırlanıyor…" olur. Seviye oyun başlığında (`Solo · 9×9 · Orta`), duraklatma/sonuç ekranında ve ana ekrandaki kayıt kartında gösterilir; derecelendirilemeyen eski kayıtlarda etiket yoktur. İpucu kartı Zor bulmacalarda eleme adımlarını da açıklar ve desen hücrelerini tahtada çerçeveler.
 
+### Arkadaş maçında zorluk
+
+"Oda kur" sekmesinde boyutun altında aynı Kolay / Orta / Zor seçimi vardır (varsayılan Kolay, `liveDifficulty` olarak hatırlanır); altındaki satır seviyeyi ve "iki oyuncu aynı bulmacayı alır; düellodaki sonraki tahtalar ve rövanş da bu seviyededir" kuralını söyler. Lobide üst satırda (`90 saniye düello · 6×6 · Orta`) ve mavi bilgi kutusunda seviye ile açıklaması **iki oyuncuya da** gösterilir; katılan oyuncu neye girdiğini hazır demeden önce görür. Oyun başlığı (`Düello · 6×6 · Orta`) ve sonuç ekranı seviyeyi taşır. Seviyesiz kurulmuş odalarda (eski istemciler) etiket çizilmez.
+
+### Başlık ile içerik arası boşluk (ortak yerleşim)
+
+Kullanıcı logo satırı ile ekranın ilk öğesi arasındaki boşluğu fazla buldu. Kök neden üç boşluğun üst üste binmesiydi: başlığın alt dolgusu (14 px), `main` üst dolgusu (12 px, masaüstünde 32 px) ve Geri düğmesinin 48 px'lik dokunma kutusunun simgenin üstünde bıraktığı 12 px. Ekran bazlı yamalar yerine tek kural kondu:
+
+- Başlık alt dolgusu 4 px (masaüstünde 8 px); `main` üst dolgusu tek değişken `--content-top` (12 px, masaüstünde 24 px).
+- Sayfayı Geri ile açan ekranlarda düğmenin dokunma kutusu 12 px yukarı taşar (`main > section > .back-button:first-child`); kutu 48 px kalır, gözün gördüğü simge diğer sayfaların başladığı hizaya oturur.
+- Ana ekran, duraklatma ve sonuç bölümlerinin kendi üst boşlukları kaldırıldı.
+
+Ölçüm (logo altı → ilk görünür öğe): ana ekran, solo kurulum, ayarlar, arkadaş kurulumu, lobi, duraklatma, solo sonuç ve maç sonucu 320 ve 393 px'te **23 px**, 1280 px'te **39 px** (hepsi eşit; önceki 33–45 px). Oyun ekranlarında site başlığı yoktur; üst satır 8 px iç boşlukla başlar ve sayfa kaymaz. Geri, duraklat ve ayarlar hedefleri 48 px; içerik kutusu başlık satırıyla çakışmıyor, yatay taşma yok.
+
 ## Tema
 
 Ayarlar'da **Sistem / Açık / Koyu** seçimi vardır; varsayılan Sistem'dir ve seçim `theme` alanında saklanır. Açık/Koyu seçiliyse `index.html` başındaki küçük satır içi betik, stil dosyası boyanmadan önce `html[data-theme]` ve `theme-color` değerlerini ayarlar; böylece sayfa sistem temasıyla açılıp sonradan sıçramaz. Uygulama betiği engellenmiş yeniden yüklemede de koyu zeminle açıldığı doğrulandı. Sistem seçilince öznitelik kaldırılır ve cihaz teması izlenir.
@@ -93,6 +107,7 @@ Dokunma hedefleri ≥48 px (ayar anahtarları 52×32, satırın tamamı 60 px y�
 - İpucu/ileti: 320×568, 360×640, 375×553, 375×667, 393×659, 390×844, 844×390 ve 1280×800'de 6×6 ve 9×9 için ipucu kartı ve ileti şeridi açılmadan önce/sonra başlık, tahta, sayı tuşları ve araçların konum ve boyutu ölçüldü: birebir aynı; kart tahtayla, şerit tahta ve düğmelerle kesişmiyor. Düello (375×553, 320×568) ve yarışta hamle geri bildirimi yerleşimi değiştirmiyor; ayrılma onay sayfasından geçiyor, tarayıcı penceresi açılmıyor.
 - 3. tur (başsız Chromium): ana ekran göstergesi tek simge ve "6×6 & 9×9" yok; solo ve arkadaşta varsayılan 9×9, seçim/ad yeniden yüklemede korunuyor; davet bağlantısı üç dar telefonda kod + ad + Katıl görünür; bağlantı → kod; Enter ile katılma; ayrıldıktan sonra kurulum ekranında eski ileti yok; sayfa hatası ve tarayıcı penceresi yok.
 - 4. tur (başsız Chromium): zorluk seçimi ve ipuçlarıyla uçtan uca çözüm (5 kombinasyon), tema (varsayılan, kalıcılık, betik engelliyken ilk boyama, sistem takibi), titreşim ayarının görünürlüğü ve kapalıyken sessizliği, arkadaş kurulumunda logo–Geri boşluğu 4 px (Geri hedefi 48 px).
+- 5. tur (başsız Chromium, iki gerçek oyuncu): kurucu düello 6×6 Orta ve yarış 9×9 Zor oda kurdu; Türkçe arayüzle katılan arkadaş lobide seviyeyi ve açıklamasını gördü; iki tarafın ekranındaki verilen rakamlar aynı ve motor onları odanın seviyesinde derecelendirdi; seviye yeniden yüklemede hatırlandı.
 - Ses, başsız Chromium'da sayaçlı `AudioContext` ile denendi: varsayılanda bağlam ve kütüphane isteği yok; anahtar açılınca onay sesi; oyun etkileşimlerinde ses; yeniden yüklemede etkileşimden önce ses yok; kapatınca sessiz.
 
 ## Açık kalanlar

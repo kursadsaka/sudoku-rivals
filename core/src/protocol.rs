@@ -152,6 +152,11 @@ pub struct Snapshot {
     pub generation: u64,
     pub mode: Mode,
     pub size: u8,
+    /// Room setting fixed at creation, like mode and size: every board of every
+    /// match in the room is generated at this level. Absent for rooms created
+    /// without one (older clients); those keep the unrated blank-count puzzles.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub difficulty: Option<crate::Difficulty>,
     pub phase: Phase,
     pub server_ms: u64,
     pub event_order: u64,

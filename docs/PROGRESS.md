@@ -62,3 +62,8 @@ Kullanıcı web görünümünü zayıf bulduğu için yalnız `apps/web` yeniden
 ## Teknik tabanlı zorluk seviyeleri, tema ve titreşim (16 Kasım)
 
 Kullanıcı yetkisiyle ortak çekirdeğe gerçek zorluk eklendi: yalnız adlandırılmış teknikleri kullanan mantık çözücüsü, buna dayalı derecelendirme (Kolay = gizli tekli, Orta = çıplak tekli, Zor = kilitli adaylar/çiftler), istenen seviyede tek çözümlü üretim ve eleme adımlarını açıklayan ipuçları. WASM ve UniFFI'ye üç fonksiyon eklendi; mevcut fonksiyonlar, kayıt biçimi, sunucu ve çok oyunculu üretim değişmedi. Web solo kurulumu seviye seçer; yerel uygulamalar bu turda derlenmedi ve seviyeyi henüz kullanmıyor. Web Ayarlar'a Sistem/Açık/Koyu tema ve (yalnız desteklenen cihazlarda görünen) titreşim ayarı eklendi. İnsan kalibrasyonu ve gerçek cihaz ölçümü yok. Ayrıntı: [difficulty-levels](validation/difficulty-levels.md), [web-visual-redesign](validation/web-visual-redesign.md).
+
+## Arkadaş maçında zorluk (16 Kasım)
+
+Oda kuran artık Kolay/Orta/Zor seçebiliyor. Protokole isteğe bağlı `difficulty` eklendi (create gövdesi ve `Snapshot`); alan gönderilmezse sunucu ve istemciler v1 davranışını aynen sürdürür. Seviyeli odada yarış bulmacası, düellonun bütün tahtaları ve rövanşlar o seviyede sunucuda üretilir ve iki koltuğa aynı tahta verilir. Web kurulumda seçim, lobide iki oyuncuya görünen açıklama var. Yerel uygulamalar derlenmedi; seviye göndermezler, seviyeli odaya katılabilirler. Ayrıntı: [match-protocol](match-protocol.md#oda-zorluğu), [difficulty-levels](validation/difficulty-levels.md).
+

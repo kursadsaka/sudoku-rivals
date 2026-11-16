@@ -347,3 +347,45 @@ fn configured_web_root_is_used_without_exposing_other_files() {
     drop(server);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn room_difficulty_is_optional_over_http() {
+    let server = Server::start();
+    // With a level: both the creator and the joiner are told which one.
+    let (status, a) = server.post(
+        "/v1/rooms",
+        json!({"protocol":1,"name":"A","mode":"duel","size":6,"difficulty":"medium"}),
+    );
+    assert_eq!(status, 200);
+    assert_eq!(a["snapshot"]["difficulty"], "medium");
+    let code = a["snapshot"]["room_code"].as_str().unwrap();
+    let (status, b) = server.post(
+        &format!("/v1/rooms/{code}/join"),
+        json!({"protocol":1,"name":"B"}),
+    );
+    assert_eq!(status, 200);
+    assert_eq!(b["snapshot"]["difficulty"], "medium");
+    // The v1 body still works and its snapshot has no difficulty key.
+    let (status, plain) = server.post(
+        "/v1/rooms",
+        json!({"protocol":1,"name":"C","mode":"race","size":9}),
+    );
+    assert_eq!(status, 200);
+    assert!(plain["snapshot"].get("difficulty").is_none());
+    // An unknown level is a client error, never a silently different room.
+    // (Axum answers a body it cannot decode in plain text, so this request is sent by hand.)
+    let body =
+        json!({"protocol":1,"name":"D","mode":"race","size":9,"difficulty":"expert"}).to_string();
+    let mut socket = TcpStream::connect(server.address).unwrap();
+    write!(
+        socket,
+        "POST /v1/rooms HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        server.address,
+        body.len(),
+        body
+    )
+    .unwrap();
+    let mut response = String::new();
+    socket.read_to_string(&mut response).unwrap();
+    assert!(response.starts_with("HTTP/1.1 4"), "{response}");
+}

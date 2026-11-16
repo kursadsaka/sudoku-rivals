@@ -33,6 +33,7 @@ fn lobby(mode: Mode, size: u8) -> Snapshot {
         generation: 1,
         mode,
         size,
+        difficulty: None,
         phase: Phase::Lobby,
         server_ms: 0,
         event_order: 0,

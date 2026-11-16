@@ -533,6 +533,20 @@ fn attempts(n: usize) -> u32 {
     }
 }
 
+/// The seed of one attempt. Seed and attempt are mixed, not added: a caller
+/// that derives nearby seeds (the match server takes one per duel board) must
+/// never walk into another seed's attempts and get the same puzzle twice.
+fn attempt_seed(seed: u32, attempt: u32) -> u32 {
+    fn mix(mut x: u32) -> u32 {
+        x ^= x >> 16;
+        x = x.wrapping_mul(0x7FEB_352D);
+        x ^= x >> 15;
+        x = x.wrapping_mul(0x846C_A68B);
+        x ^ (x >> 16)
+    }
+    mix(seed ^ mix(attempt ^ 0x9E37_79B9))
+}
+
 /// Generates a puzzle whose rating is exactly `difficulty`.
 ///
 /// Cells are removed from a complete grid only while the level's techniques
@@ -555,7 +569,7 @@ pub fn generate_rated_puzzle(
     let solvable =
         |cells: &[u8], ceiling| solve(&mut Grid::new(&geo, cells), ceiling).remaining == 0;
     'attempt: for attempt in 0..attempts(n) {
-        let mut state = seed.wrapping_add(attempt.wrapping_mul(0x9E37_79B9));
+        let mut state = attempt_seed(seed, attempt);
         let mut cells = random_grid(&geo, &mut state);
         let mut order: Vec<usize> = (0..n * n).collect();
         shuffle(&mut order, &mut state);
