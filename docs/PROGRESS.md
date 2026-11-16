@@ -67,3 +67,7 @@ Kullanıcı yetkisiyle ortak çekirdeğe gerçek zorluk eklendi: yalnız adland�
 
 Oda kuran artık Kolay/Orta/Zor seçebiliyor. Protokole isteğe bağlı `difficulty` eklendi (create gövdesi ve `Snapshot`); alan gönderilmezse sunucu ve istemciler v1 davranışını aynen sürdürür. Seviyeli odada yarış bulmacası, düellonun bütün tahtaları ve rövanşlar o seviyede sunucuda üretilir ve iki koltuğa aynı tahta verilir. Web kurulumda seçim, lobide iki oyuncuya görünen açıklama var. Yerel uygulamalar derlenmedi; seviye göndermezler, seviyeli odaya katılabilirler. Ayrıntı: [match-protocol](match-protocol.md#oda-zorluğu), [difficulty-levels](validation/difficulty-levels.md).
 
+## Beş kademeli zorluk (16 Kasım)
+
+Kullanıcı isteğiyle üç kademe, her biri bir teknik fazlasını gerektiren beş gerçek kademeye genişletildi: Başlangıç (kutu teklileri), Kolay (satır/sütun teklileri), Orta (çıplak tekli), Zor (kilitli adaylar), Uzman (çiftler). İki boyutta da üretiliyor; tek kısıt 6×6 Uzman'da: çift gerektiren 6×6 bulmaca ~5.000 kazıda bir çıktığı için bu kademe, aramanın bulduğu 64 doğrulanmış bulmacadan simetriyle türetiliyor. Solo ve arkadaş kurulumu, lobi ve başlıklar beş kademeyi gösteriyor; protokol tanımadığı kademe adını "seviye yok" okuyacak biçimde toleranslı. Yerel uygulamalar derlenmedi. Ayrıntı ve ölçüm: [difficulty-levels](validation/difficulty-levels.md).
+

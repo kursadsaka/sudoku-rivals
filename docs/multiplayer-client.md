@@ -99,5 +99,5 @@ Oyuncu komutu (`ready`, `move`, `rematch`…) yoldaki bir heartbeat `poll` iste�
 
 ## Oda zorluğu (isteğe bağlı)
 
-`create` eylemi isteğe bağlı `difficulty` (`"easy" | "medium" | "hard"`) alır: `{"type":"create","name":…,"mode":…,"size":…,"difficulty":"medium"}`. Verilmezse istek gövdesi anahtar anahtar eski v1 gövdesidir. Verilirse sunucunun döndürdüğü oda o seviyede değilse yanıt kabul edilmez. `view().snapshot.difficulty` seviyeli odalarda dolu, diğerlerinde yoktur. Kayıtlı istemci durumu (bekleyen create dahil) geriye dönük uyumludur.
+`create` eylemi isteğe bağlı `difficulty` (`"beginner" | "easy" | "medium" | "hard" | "expert"`) alır: `{"type":"create","name":…,"mode":…,"size":…,"difficulty":"medium"}`. Verilmezse istek gövdesi anahtar anahtar eski v1 gövdesidir. Verilirse sunucunun döndürdüğü oda o seviyede değilse yanıt kabul edilmez. `view().snapshot.difficulty` seviyeli odalarda dolu, diğerlerinde yoktur. Kayıtlı istemci durumu (bekleyen create dahil) geriye dönük uyumludur.
 

@@ -31,11 +31,11 @@ Seçim yapılmadıysa solo ve arkadaş kurulumunda tahta **9×9**, mod klasik ya
 
 ## Zorluk seviyeleri
 
-Solo kurulumda boyutun altında **Kolay / Orta / Zor** seçimi ve seçilen seviyenin ne gerektirdiğini söyleyen bir satır vardır; varsayılan Kolay, son seçim hatırlanır (`soloDifficulty`). Seviyeler çekirdekte tekniğe göre üretilir ve derecelendirilir: [difficulty-levels.md](difficulty-levels.md). Başlat düğmesi üretim sürerken "Bulmaca hazırlanıyor…" olur. Seviye oyun başlığında (`Solo · 9×9 · Orta`), duraklatma/sonuç ekranında ve ana ekrandaki kayıt kartında gösterilir; derecelendirilemeyen eski kayıtlarda etiket yoktur. İpucu kartı Zor bulmacalarda eleme adımlarını da açıklar ve desen hücrelerini tahtada çerçeveler.
+Solo kurulumda boyutun altında tek satırda beş kademe vardır: **Başlangıç / Kolay / Orta / Zor / Uzman** (EN: Beginner / Easy / Medium / Hard / Expert); varsayılan Kolay, son seçim hatırlanır (`soloDifficulty`). Açıklama satırı kullanıcı tarafından sadeleştirildi; adlar kendi başına sıralı bir ölçek olarak okunur. Satır 320 px'te sığar ve her seçenek en az 48 px genişliktedir. Seviyeler çekirdekte tekniğe göre üretilir ve derecelendirilir: [difficulty-levels.md](difficulty-levels.md). Başlat düğmesi üretim sürerken "Bulmaca hazırlanıyor…" olur. Seviye oyun başlığında (`Solo · 9×9 · Orta`), duraklatma/sonuç ekranında ve ana ekrandaki kayıt kartında gösterilir; derecelendirilemeyen eski kayıtlarda etiket yoktur. İpucu kartı Zor bulmacalarda eleme adımlarını da açıklar ve desen hücrelerini tahtada çerçeveler.
 
 ### Arkadaş maçında zorluk
 
-"Oda kur" sekmesinde boyutun altında aynı Kolay / Orta / Zor seçimi vardır (varsayılan Kolay, `liveDifficulty` olarak hatırlanır); altındaki satır seviyeyi ve "iki oyuncu aynı bulmacayı alır; düellodaki sonraki tahtalar ve rövanş da bu seviyededir" kuralını söyler. Lobide üst satırda (`90 saniye düello · 6×6 · Orta`) ve mavi bilgi kutusunda seviye ile açıklaması **iki oyuncuya da** gösterilir; katılan oyuncu neye girdiğini hazır demeden önce görür. Oyun başlığı (`Düello · 6×6 · Orta`) ve sonuç ekranı seviyeyi taşır. Seviyesiz kurulmuş odalarda (eski istemciler) etiket çizilmez.
+"Oda kur" sekmesinde boyutun altında aynı beş kademeli seçim vardır (varsayılan Kolay, `liveDifficulty` olarak hatırlanır); altındaki satır seviyeyi ve "iki oyuncu aynı bulmacayı alır; düellodaki sonraki tahtalar ve rövanş da bu seviyededir" kuralını söyler. Lobide üst satırda (`90 saniye düello · 6×6 · Orta`) ve mavi bilgi kutusunda seviye ile açıklaması **iki oyuncuya da** gösterilir; katılan oyuncu neye girdiğini hazır demeden önce görür. Oyun başlığı (`Düello · 6×6 · Orta`) ve sonuç ekranı seviyeyi taşır. Seviyesiz kurulmuş odalarda (eski istemciler) etiket çizilmez.
 
 ### Başlık ile içerik arası boşluk (ortak yerleşim)
 
@@ -108,6 +108,7 @@ Dokunma hedefleri ≥48 px (ayar anahtarları 52×32, satırın tamamı 60 px y�
 - 3. tur (başsız Chromium): ana ekran göstergesi tek simge ve "6×6 & 9×9" yok; solo ve arkadaşta varsayılan 9×9, seçim/ad yeniden yüklemede korunuyor; davet bağlantısı üç dar telefonda kod + ad + Katıl görünür; bağlantı → kod; Enter ile katılma; ayrıldıktan sonra kurulum ekranında eski ileti yok; sayfa hatası ve tarayıcı penceresi yok.
 - 4. tur (başsız Chromium): zorluk seçimi ve ipuçlarıyla uçtan uca çözüm (5 kombinasyon), tema (varsayılan, kalıcılık, betik engelliyken ilk boyama, sistem takibi), titreşim ayarının görünürlüğü ve kapalıyken sessizliği, arkadaş kurulumunda logo–Geri boşluğu 4 px (Geri hedefi 48 px).
 - 5. tur (başsız Chromium, iki gerçek oyuncu): kurucu düello 6×6 Orta ve yarış 9×9 Zor oda kurdu; Türkçe arayüzle katılan arkadaş lobide seviyeyi ve açıklamasını gördü; iki tarafın ekranındaki verilen rakamlar aynı ve motor onları odanın seviyesinde derecelendirdi; seviye yeniden yüklemede hatırlandı.
+- 6. tur (beş kademe): on boyut·kademe kombinasyonu yalnız ipuçlarıyla çözüldü; beş seçenek 320 px'te tek satırda ve ≥48 px; arkadaş maçında düello 6×6 Uzman ve yarış 9×9 Başlangıç dahil dört oda iki oyuncuya aynı, doğru kademede bulmacayı verdi.
 - Ses, başsız Chromium'da sayaçlı `AudioContext` ile denendi: varsayılanda bağlam ve kütüphane isteği yok; anahtar açılınca onay sesi; oyun etkileşimlerinde ses; yeniden yüklemede etkileşimden önce ses yok; kapatınca sessiz.
 
 ## Açık kalanlar

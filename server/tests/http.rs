@@ -375,7 +375,7 @@ fn room_difficulty_is_optional_over_http() {
     // An unknown level is a client error, never a silently different room.
     // (Axum answers a body it cannot decode in plain text, so this request is sent by hand.)
     let body =
-        json!({"protocol":1,"name":"D","mode":"race","size":9,"difficulty":"expert"}).to_string();
+        json!({"protocol":1,"name":"D","mode":"race","size":9,"difficulty":"master"}).to_string();
     let mut socket = TcpStream::connect(server.address).unwrap();
     write!(
         socket,

@@ -155,7 +155,13 @@ pub struct Snapshot {
     /// Room setting fixed at creation, like mode and size: every board of every
     /// match in the room is generated at this level. Absent for rooms created
     /// without one (older clients); those keep the unrated blank-count puzzles.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// A level this build does not know (a newer server) reads as absent, so the
+    /// room stays playable and simply shows no label.
+    #[serde(
+        default,
+        deserialize_with = "known_difficulty",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub difficulty: Option<crate::Difficulty>,
     pub phase: Phase,
     pub server_ms: u64,
@@ -178,4 +184,11 @@ pub struct Session {
 pub struct CommandResponse {
     pub receipt: Receipt,
     pub snapshot: Snapshot,
+}
+
+fn known_difficulty<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<crate::Difficulty>, D::Error> {
+    let name = Option::<String>::deserialize(deserializer)?;
+    Ok(name.as_deref().and_then(crate::Difficulty::parse))
 }

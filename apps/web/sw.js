@@ -1,5 +1,5 @@
 // Bump this version when shipping changed app or WASM assets.
-const CACHE = 'sudoku-rivals-app-v15';
+const CACHE = 'sudoku-rivals-app-v16';
 const ASSETS = ['/', '/index.html', '/main.js', '/session.js', '/live.js', '/sound.js', '/styles.css',
   '/icon.svg', '/icon-192.png', '/icon-512.png', '/icon-maskable-512.png', '/apple-touch-icon.png', '/manifest.webmanifest', '/pkg/sudoku_wasm.js', '/pkg/sudoku_wasm_bg.wasm'];
 // Only fetched once sound is switched on; kept for offline play from then on.

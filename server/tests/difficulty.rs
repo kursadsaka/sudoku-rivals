@@ -130,7 +130,11 @@ fn both_players_get_the_same_puzzle_at_the_room_level_in_every_mode_and_size() {
 
 #[test]
 fn duel_follow_up_boards_keep_the_level_and_are_the_same_sequence_for_both() {
-    for (size, level) in [(6, Difficulty::Medium), (9, Difficulty::Easy)] {
+    for (size, level) in [
+        (6, Difficulty::Medium),
+        (6, Difficulty::Expert),
+        (9, Difficulty::Easy),
+    ] {
         let (mut service, mut a, mut b) = started(Mode::Duel, size, Some(level));
         let first = a.snapshot.own.givens.clone();
         let now = a.finish_duel_board(&mut service, 3000);
@@ -214,6 +218,18 @@ fn rematch_and_return_to_lobby_start_a_new_puzzle_at_the_same_level() {
     assert_eq!(a.snapshot.phase, Phase::Playing);
     assert_ne!(a.snapshot.own.givens, second_board);
     assert_eq!(a.level(), Some(level));
+}
+
+#[test]
+fn a_level_this_build_does_not_know_reads_as_no_level() {
+    // A client built before a level existed must still be able to play in such a room.
+    let (_, a, _) = started(Mode::Race, 6, Some(Difficulty::Expert));
+    let mut wire = serde_json::to_value(&a.snapshot).unwrap();
+    assert_eq!(wire["difficulty"], "expert");
+    wire["difficulty"] = json!("grandmaster");
+    let parsed: Snapshot = serde_json::from_value(wire).unwrap();
+    assert_eq!(parsed.difficulty, None);
+    assert_eq!(parsed.own.givens, a.snapshot.own.givens);
 }
 
 #[test]
@@ -372,7 +388,7 @@ fn shared_client_sends_the_level_only_when_chosen_and_checks_the_answer() {
     // An unknown level is refused before anything is sent.
     assert!(legacy
         .dispatch_json(
-            &json!({"type":"create","name":"C","mode":"race","size":9,"difficulty":"expert"})
+            &json!({"type":"create","name":"C","mode":"race","size":9,"difficulty":"master"})
                 .to_string(),
             1,
         )

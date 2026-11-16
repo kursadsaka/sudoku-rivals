@@ -3,14 +3,19 @@
 //! generator that digs a puzzle for a requested level, and hints that explain
 //! every step of such a puzzle.
 //!
-//! A level is a statement about techniques, not about blank counts:
+//! A level is a statement about techniques, not about blank counts. Each of
+//! the five needs one technique more than the level below it:
 //!
-//! * `Easy`   – every step is a hidden single (a digit has one place left in a
-//!   row, column or box).
-//! * `Medium` – hidden singles are not enough; at least one naked single (a
-//!   cell has one digit left) is needed.
-//! * `Hard`   – singles are not enough; candidates must be eliminated with
-//!   locked candidates, naked pairs or hidden pairs before singles appear.
+//! * `Beginner` – every step is found by looking at one box (the digit has one
+//!   place left in the box) or is the last empty cell of a row, column or box.
+//! * `Easy`     – boxes are not enough; some digit must be placed because it
+//!   has one place left in a row or a column.
+//! * `Medium`   – looking for a digit's one place is not enough; at least one
+//!   cell must be solved by counting its candidates (naked single).
+//! * `Hard`     – singles run out; candidates must first be removed with
+//!   locked candidates (pointing or claiming).
+//! * `Expert`   – locked candidates are not enough either; a naked or hidden
+//!   pair must remove candidates.
 //!
 //! A puzzle the logical solver finishes has exactly one solution, because
 //! every step it takes is forced. Puzzles needing anything beyond these
@@ -24,19 +29,29 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Difficulty {
+    Beginner,
     Easy,
     Medium,
     Hard,
+    Expert,
 }
 impl Difficulty {
-    pub const ALL: [Difficulty; 3] = [Difficulty::Easy, Difficulty::Medium, Difficulty::Hard];
+    pub const ALL: [Difficulty; 5] = [
+        Difficulty::Beginner,
+        Difficulty::Easy,
+        Difficulty::Medium,
+        Difficulty::Hard,
+        Difficulty::Expert,
+    ];
 
     /// Stable lowercase name used at every platform boundary.
     pub fn name(self) -> &'static str {
         match self {
+            Difficulty::Beginner => "beginner",
             Difficulty::Easy => "easy",
             Difficulty::Medium => "medium",
             Difficulty::Hard => "hard",
+            Difficulty::Expert => "expert",
         }
     }
     pub fn parse(name: &str) -> Option<Self> {
@@ -45,18 +60,20 @@ impl Difficulty {
     /// The hardest technique a puzzle of this level may need.
     fn ceiling(self) -> Technique {
         match self {
-            Difficulty::Easy => Technique::HiddenSingle,
+            Difficulty::Beginner => Technique::BoxSingle,
+            Difficulty::Easy => Technique::LineSingle,
             Difficulty::Medium => Technique::NakedSingle,
-            Difficulty::Hard => Technique::HiddenPair,
+            Difficulty::Hard => Technique::LockedCandidates,
+            Difficulty::Expert => Technique::HiddenPair,
         }
     }
     /// The ceiling of the level below, if there is one.
     fn floor(self) -> Option<Technique> {
-        match self {
-            Difficulty::Easy => None,
-            Difficulty::Medium => Some(Difficulty::Easy.ceiling()),
-            Difficulty::Hard => Some(Difficulty::Medium.ceiling()),
-        }
+        let below = Self::ALL
+            .iter()
+            .position(|&level| level == self)?
+            .checked_sub(1)?;
+        Some(Self::ALL[below].ceiling())
     }
     /// Blank counts per level and size: how deep the puzzle is dug before the
     /// level's own technique is asked for, and the most blanks it may have.
@@ -64,14 +81,17 @@ impl Difficulty {
     /// level, the techniques do.
     fn blanks(self, n: usize) -> (usize, usize) {
         match (n, self) {
-            (6, Difficulty::Easy) => (19, 19),
+            (6, Difficulty::Beginner) => (17, 17),
+            (6, Difficulty::Easy) => (18, 26),
             // On 6×6 anything beyond hidden singles only shows up in sparse
             // puzzles; the generator digs those as deep as the level allows
             // instead of using a window.
             (6, _) => (36, 36),
-            (_, Difficulty::Easy) => (42, 42),
+            (_, Difficulty::Beginner) => (38, 38),
+            (_, Difficulty::Easy) => (40, 50),
             (_, Difficulty::Medium) => (44, 54),
-            (_, Difficulty::Hard) => (46, 58),
+            (_, Difficulty::Hard) => (47, 58),
+            (_, Difficulty::Expert) => (50, 60),
         }
     }
 }
@@ -80,7 +100,10 @@ impl Difficulty {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Technique {
-    HiddenSingle,
+    /// A digit with one place left in a box, or the last empty cell of a unit.
+    BoxSingle,
+    /// A digit with one place left in a row or a column.
+    LineSingle,
     NakedSingle,
     LockedCandidates,
     NakedPair,
@@ -95,7 +118,10 @@ pub struct DifficultyRating {
     /// Hardest technique used on the easiest-first solving path.
     pub hardest: Option<Technique>,
     pub blanks: u32,
+    /// Box and line singles together.
     pub hidden_singles: u32,
+    /// Of those, the ones only a row or a column shows.
+    pub line_singles: u32,
     pub naked_singles: u32,
     pub locked_candidates: u32,
     pub naked_pairs: u32,
@@ -233,11 +259,9 @@ impl<'g> Grid<'g> {
         self.cells.iter().filter(|&&value| value == 0).count() as u32
     }
 
-    /// Boxes first, then rows and columns: the order people scan in.
-    fn hidden_single(&self) -> Option<(usize, u8, usize)> {
-        let n = self.geo.n;
-        for unit in (2 * n..3 * n).chain(0..2 * n) {
-            for value in 1..=n as u8 {
+    fn hidden_single_in(&self, units: std::ops::Range<usize>) -> Option<(usize, u8, usize)> {
+        for unit in units {
+            for value in 1..=self.geo.n as u8 {
                 let bit = 1 << (value - 1);
                 let mut places = self.geo.units[unit]
                     .iter()
@@ -248,6 +272,27 @@ impl<'g> Grid<'g> {
             }
         }
         None
+    }
+    /// What a look at one box shows, plus the last empty cell of any unit:
+    /// the first things a player learns to see.
+    fn box_single(&self) -> Option<(usize, u8, usize)> {
+        let n = self.geo.n;
+        self.hidden_single_in(2 * n..3 * n).or_else(|| {
+            (0..2 * n).find_map(|unit| {
+                let mut empty = self.geo.units[unit]
+                    .iter()
+                    .filter(|&&index| self.cells[index] == 0);
+                let (Some(&index), None) = (empty.next(), empty.next()) else {
+                    return None;
+                };
+                let mask = self.candidates[index];
+                (mask.count_ones() == 1).then(|| (index, mask.trailing_zeros() as u8 + 1, unit))
+            })
+        })
+    }
+    /// A digit with one place left in a row or a column.
+    fn line_single(&self) -> Option<(usize, u8, usize)> {
+        self.hidden_single_in(0..2 * self.geo.n)
     }
     fn naked_single(&self) -> Option<(usize, u8)> {
         self.candidates
@@ -415,7 +460,7 @@ impl<'g> Grid<'g> {
 
 #[derive(Default)]
 struct Path {
-    used: [u32; 5],
+    used: [u32; 6],
     remaining: u32,
 }
 
@@ -424,9 +469,15 @@ struct Path {
 fn solve(grid: &mut Grid, ceiling: Technique) -> Path {
     let mut path = Path::default();
     loop {
-        if let Some((index, value, _)) = grid.hidden_single() {
+        if let Some((index, value, _)) = grid.box_single() {
             grid.place(index, value);
-            path.used[Technique::HiddenSingle as usize] += 1;
+            path.used[Technique::BoxSingle as usize] += 1;
+        } else if let Some((index, value, _)) = grid
+            .line_single()
+            .filter(|_| ceiling >= Technique::LineSingle)
+        {
+            grid.place(index, value);
+            path.used[Technique::LineSingle as usize] += 1;
         } else if let Some((index, value)) = grid
             .naked_single()
             .filter(|_| ceiling >= Technique::NakedSingle)
@@ -467,8 +518,9 @@ fn level_of(geo: &Geometry, cells: &[u8]) -> (Option<Difficulty>, Path) {
 pub fn rate_puzzle(cells: &[u8], size: u8) -> Result<DifficultyRating, PuzzleError> {
     let geo = Geometry::new(board_size(cells, size)?);
     let (level, path) = level_of(&geo, cells);
-    const ORDER: [Technique; 5] = [
-        Technique::HiddenSingle,
+    const ORDER: [Technique; 6] = [
+        Technique::BoxSingle,
+        Technique::LineSingle,
         Technique::NakedSingle,
         Technique::LockedCandidates,
         Technique::NakedPair,
@@ -481,11 +533,12 @@ pub fn rate_puzzle(cells: &[u8], size: u8) -> Result<DifficultyRating, PuzzleErr
             .rev()
             .find(|&technique| path.used[technique as usize] > 0),
         blanks: cells.iter().filter(|&&value| value == 0).count() as u32,
-        hidden_singles: path.used[0],
-        naked_singles: path.used[1],
-        locked_candidates: path.used[2],
-        naked_pairs: path.used[3],
-        hidden_pairs: path.used[4],
+        hidden_singles: path.used[0] + path.used[1],
+        line_singles: path.used[1],
+        naked_singles: path.used[2],
+        locked_candidates: path.used[3],
+        naked_pairs: path.used[4],
+        hidden_pairs: path.used[5],
         remaining_cells: path.remaining,
     })
 }
@@ -536,7 +589,7 @@ fn attempts(n: usize) -> u32 {
 /// The seed of one attempt. Seed and attempt are mixed, not added: a caller
 /// that derives nearby seeds (the match server takes one per duel board) must
 /// never walk into another seed's attempts and get the same puzzle twice.
-fn attempt_seed(seed: u32, attempt: u32) -> u32 {
+pub(crate) fn attempt_seed(seed: u32, attempt: u32) -> u32 {
     fn mix(mut x: u32) -> u32 {
         x ^= x >> 16;
         x = x.wrapping_mul(0x7FEB_352D);
@@ -557,6 +610,21 @@ pub fn generate_rated_puzzle(
     seed: u32,
     difficulty: Difficulty,
 ) -> Result<Vec<u8>, PuzzleError> {
+    if size == 6 && difficulty == Difficulty::Expert {
+        return Ok(crate::expert6::puzzle(seed));
+    }
+    search_rated_puzzle(size, seed, difficulty)
+}
+
+/// The search behind `generate_rated_puzzle`, with no shortcut for the level
+/// that is too rare to search for on demand. Used to build and to check the
+/// 6×6 Expert bank.
+#[doc(hidden)]
+pub fn search_rated_puzzle(
+    size: u8,
+    seed: u32,
+    difficulty: Difficulty,
+) -> Result<Vec<u8>, PuzzleError> {
     let n = match size {
         6 => 6,
         9 => 9,
@@ -573,7 +641,7 @@ pub fn generate_rated_puzzle(
         let mut cells = random_grid(&geo, &mut state);
         let mut order: Vec<usize> = (0..n * n).collect();
         shuffle(&mut order, &mut state);
-        if n == 6 && difficulty != Difficulty::Easy {
+        if n == 6 && difficulty > Difficulty::Easy {
             // Sparse 6×6: dig as deep as this level's techniques allow and keep
             // the puzzle only if the level below can no longer solve it.
             for &index in &order {
@@ -600,7 +668,7 @@ pub fn generate_rated_puzzle(
                 cells[index] = value;
             }
         }
-        if difficulty == Difficulty::Easy {
+        if difficulty == Difficulty::Beginner {
             if removed == depth {
                 return Ok(cells);
             }
@@ -659,20 +727,21 @@ pub fn find_technique_hint(cells: &[u8], size: u8) -> Result<Option<TechniqueHin
     loop {
         let all = (1u16 << geo.n) - 1;
         // What had to be eliminated for the placement to be forced.
-        let found = if let Some((index, value, unit)) = grid.hidden_single() {
-            let bit = 1u16 << (value - 1);
-            let needs: Vec<Candidate> = geo.units[unit]
-                .iter()
-                .filter(|&&other| other != index)
-                .map(|&other| (other, bit))
-                .collect();
-            Some((index, value, HintTechnique::HiddenSingle, Some(unit), needs))
-        } else {
-            grid.naked_single().map(|(index, value)| {
-                let needs = vec![(index, all & !(1 << (value - 1)))];
-                (index, value, HintTechnique::NakedSingle, None, needs)
-            })
-        };
+        let found =
+            if let Some((index, value, unit)) = grid.box_single().or_else(|| grid.line_single()) {
+                let bit = 1u16 << (value - 1);
+                let needs: Vec<Candidate> = geo.units[unit]
+                    .iter()
+                    .filter(|&&other| other != index)
+                    .map(|&other| (other, bit))
+                    .collect();
+                Some((index, value, HintTechnique::HiddenSingle, Some(unit), needs))
+            } else {
+                grid.naked_single().map(|(index, value)| {
+                    let needs = vec![(index, all & !(1 << (value - 1)))];
+                    (index, value, HintTechnique::NakedSingle, None, needs)
+                })
+            };
         if let Some((index, value, technique, unit, mut needs)) = found {
             // Walk back: keep an elimination only if the placement, or a kept
             // later elimination, depends on a candidate it removed.

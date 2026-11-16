@@ -128,6 +128,10 @@ legend { font-size:.85rem; color:var(--muted); margin-bottom:8px; padding:0; fon
 .segment { position:relative; min-height:44px; display:grid; place-items:center; text-align:center; padding:6px 10px; border-radius:12px; font-weight:600; font-size:.95rem; line-height:1.2; color:var(--muted); cursor:pointer; transition:background-color 140ms ease,color 140ms ease; overflow-wrap:anywhere; }
 .segment:has(input:checked) { background:var(--background); color:var(--foreground); box-shadow:var(--shadow),inset 0 0 0 1.5px var(--accent); }
 .segment:has(input:disabled) { opacity:.5; cursor:not-allowed; }
+/* Five difficulty names in one row: widths follow the words, every option keeps a 48px touch width. */
+.segmented.levels { display:flex; }
+.segmented.levels .segment { flex:1 1 auto; min-width:48px; padding:6px 4px; font-size:.8rem; }
+@media (min-width:380px) { .segmented.levels .segment { font-size:.88rem; padding-inline:6px; } }
 .form-label { display:block; color:var(--muted); font-size:.85rem; font-weight:550; margin-bottom:8px; }
 .text-input { width:100%; padding:12px 14px; min-height:52px; border:1.5px solid var(--border); border-radius:14px; color:var(--foreground); background:var(--background); font-size:1rem; }
 .text-input:focus-visible { outline-offset:0; border-color:var(--accent); }

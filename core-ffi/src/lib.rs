@@ -69,7 +69,8 @@ mod tests {
         assert!(super::solo_technique_hint(rated)
             .unwrap()
             .contains(r#""eliminations""#));
-        assert!(super::new_rated_solo(9, 42, "expert".into()).is_err());
+        assert!(super::new_rated_solo(6, 42, "expert".into()).is_ok());
+        assert!(super::new_rated_solo(9, 42, "master".into()).is_err());
     }
 }
 

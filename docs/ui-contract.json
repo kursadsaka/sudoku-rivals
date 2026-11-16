@@ -929,6 +929,14 @@
     "difficulty.hard": {
       "tr": "Zor",
       "en": "Hard"
+    },
+    "difficulty.beginner": {
+      "tr": "Başlangıç",
+      "en": "Beginner"
+    },
+    "difficulty.expert": {
+      "tr": "Uzman",
+      "en": "Expert"
     }
   }
 }

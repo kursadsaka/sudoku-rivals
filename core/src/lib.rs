@@ -10,7 +10,13 @@ pub use hint::{
     UnitKind,
 };
 
-mod difficulty;
+mod expert6;
+#[doc(hidden)]
+pub use expert6::expert_6x6_bank;
+
+pub(crate) mod difficulty;
+#[doc(hidden)]
+pub use difficulty::search_rated_puzzle;
 pub use difficulty::{
     find_technique_hint, generate_rated_puzzle, rate_puzzle, Difficulty, DifficultyRating,
     HintElimination, Technique, TechniqueHint,

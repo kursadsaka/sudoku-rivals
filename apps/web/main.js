@@ -10,8 +10,7 @@ const text = {
     solo:'Tek başına oyna', soloDescription:'6×6 veya 9×9. İnternetsiz de yanında.', friends:'Arkadaşınla yarış', friendsDescription:'Klasik yarış ve 90 saniyelik düello.',
     friendsPending:'Arkadaş maçları bu sürümde henüz hazır değil. Şimdilik tek başına oynayabilirsin.', continue:'Kaldığın yerden', resume:'Devam et', completed:'Tamamlandı', savedGame:'Kayıtlı oyun',
     choose:'Tahtanı seç', chooseIntro:'Kısa bir mola ya da biraz daha uzun bir oyun.', boardSize:'Tahta boyutu', six:'Daha küçük bir tahta', nine:'Klasik Sudoku', start:'Oyunu başlat',
-    generatorNote:'Her oyun tek çözümlü, tahmin gerektirmeyen yeni bir bulmacayla başlar.', difficulty:'Zorluk', easy:'Kolay', medium:'Orta', hard:'Zor', soloShort:'Solo', preparing:'Bulmaca hazırlanıyor…',
-    easyHelp:'Her adımda bir sayının satır, sütun veya kutuda girebileceği tek yer vardır.', mediumHelp:'Tek yer aramak yetmez; bazı hücrelerde adayları sayıp kalan tek sayıyı bulursun.', hardHelp:'Tekliler tıkanır; önce aday elemen gerekir (kilitli adaylar, çiftler).',
+    generatorNote:'Her oyun tek çözümlü, tahmin gerektirmeyen yeni bir bulmacayla başlar.', difficulty:'Zorluk', beginner:'Başlangıç', easy:'Kolay', medium:'Orta', hard:'Zor', expert:'Uzman', soloShort:'Solo', preparing:'Bulmaca hazırlanıyor…',
     replace:'Bu boyuttaki kayıtlı oyun yeni oyunla değiştirilecek. Devam edilsin mi?', replaceCorrupt:'Bu boyuttaki kayıt açılamıyor. Yeni oyun başlatırsan bu kayıt değiştirilecek. Devam edilsin mi?',
     paused:'Kısa bir mola.', pausedIntro:'Tahtan ve notların burada. Hazır olduğunda devam et.', pause:'Duraklat', saveExit:'Kaydedip çık', discardExit:'Kaydetmeden çık', confirmDiscard:'Kaydedilemeyen değişiklikler kaybolacak. Önceki kayıt korunacak. Yine de çıkılsın mı?', elapsed:'Geçen süre',
     numbers:'Bir sayı seç', notes:'Kalem', erase:'Sil', undo:'Geri al', redo:'Yinele', hint:'İpucu', hintApply:'Bu sayıyı yaz', hintDismiss:'Kapat', cancel:'Vazgeç',
@@ -36,8 +35,7 @@ const text = {
     solo:'Play solo', soloDescription:'6×6 or 9×9. Yours to play offline, too.', friends:'Play with a friend', friendsDescription:'Classic races and 90-second duels.',
     friendsPending:'Friend matches are not ready in this version. You can play solo for now.', continue:'Pick up where you left off', resume:'Resume', completed:'Complete', savedGame:'Saved game',
     choose:'Choose your board', chooseIntro:'A short break, or a little more time to think.', boardSize:'Board size', six:'A smaller board', nine:'Classic Sudoku', start:'Start game',
-    generatorNote:'Every game starts with a new puzzle that has one solution and needs no guessing.', difficulty:'Difficulty', easy:'Easy', medium:'Medium', hard:'Hard', soloShort:'Solo', preparing:'Preparing your puzzle…',
-    easyHelp:'Every step is a digit with only one place left in a row, column or box.', mediumHelp:'Looking for the one place is not enough; some cells need their candidates counted until one digit is left.', hardHelp:'Singles run out; candidates must be eliminated first (locked candidates, pairs).',
+    generatorNote:'Every game starts with a new puzzle that has one solution and needs no guessing.', difficulty:'Difficulty', beginner:'Beginner', easy:'Easy', medium:'Medium', hard:'Hard', expert:'Expert', soloShort:'Solo', preparing:'Preparing your puzzle…',
     replace:'The saved game of this size will be replaced by a new game. Continue?', replaceCorrupt:'The save of this size cannot be opened. Starting a new game will replace it. Continue?',
     paused:'Take your time.', pausedIntro:'Your board and notes are here. Continue whenever you are ready.', pause:'Pause', saveExit:'Save and exit', discardExit:'Exit without saving', confirmDiscard:'Unsaved changes will be lost. The previous save will remain. Exit anyway?', elapsed:'Elapsed',
     numbers:'Choose a number', notes:'Notes', erase:'Erase', undo:'Undo', redo:'Redo', hint:'Hint', hintApply:'Enter this number', hintDismiss:'Dismiss', cancel:'Cancel',
@@ -84,7 +82,8 @@ try {
   else if (flag === '0') storage.setItem('sudoku-rivals.debug','0');
   debug = storage.getItem('sudoku-rivals.debug') === '1';
 } catch { debug = new URLSearchParams(location.search).get('debug') === '1'; }
-const LEVELS = ['easy','medium','hard'];
+// Five levels, each needing one technique more than the one before (see core/src/difficulty.rs).
+const LEVELS = ['beginner','easy','medium','hard','expert'];
 const THEMES = ['system','light','dark'];
 // The standard Vibration API exists on Android browsers, not on iOS Safari; the setting is offered only
 // where it can work (a touch device that has the API).
@@ -195,7 +194,7 @@ function renderSetup() {
   const art = size => `<svg class="size-art" viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="1.5" y="1.5" width="33" height="33" rx="6"/><path d="${size === 6 ? 'M18 1.5v33M1.5 12.5h33M1.5 23.5h33':'M12.5 1.5v33M23.5 1.5v33M1.5 12.5h33M1.5 23.5h33'}"/></svg>`;
   content.innerHTML = `<section class="panel" data-screen="solo-setup">${backButton()}<p class="eyebrow">${t('solo')}</p><h1>${t('choose')}</h1><p class="lede">${t('chooseIntro')}</p>
     <fieldset data-testid="board-size"><legend>${t('boardSize')}</legend><div class="size-options">${[6,9].map(size => `<label class="size-option"><input type="radio" name="size" value="${size}" ${selectedSize === size ? 'checked' : ''}>${art(size)}<strong>${size}×${size}</strong><small>${t(size === 6 ? 'six':'nine')}</small></label>`).join('')}</div></fieldset>
-    <fieldset data-testid="difficulty"><legend>${t('difficulty')}</legend><div class="segmented">${LEVELS.map(level => `<label class="segment"><input type="radio" name="difficulty" value="${level}" data-testid="difficulty-${level}" ${selectedDifficulty === level ? 'checked' : ''}>${t(level)}</label>`).join('')}</div>
+    <fieldset data-testid="difficulty"><legend>${t('difficulty')}</legend><div class="segmented levels">${LEVELS.map(level => `<label class="segment"><input type="radio" name="difficulty" value="${level}" data-testid="difficulty-${level}" ${selectedDifficulty === level ? 'checked' : ''}>${t(level)}</label>`).join('')}</div>
     </fieldset>
     <button class="primary-button full" data-action="start" data-testid="game-start">${t('start')}</button>
     ${gameNotice ? `<p class="notice error" role="alert">${escape(gameNotice)}</p>` : ''}
