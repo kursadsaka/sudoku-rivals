@@ -1,3 +1,13 @@
+// Kept outside screen renders so polling cannot restart the lifetime or announcement.
+export function transientNotice(element) {
+  let timer;
+  return message => {
+    clearTimeout(timer);
+    element.textContent = message;
+    timer = setTimeout(() => { element.textContent = ''; }, 5000);
+  };
+}
+
 export const LIVE_KEY = 'sudoku-rivals.live.v1';
 
 // This adapter handles transport and storage only. The shared Rust client owns
@@ -167,8 +177,8 @@ const words = {
 const LEVELS = ['beginner','easy','medium','hard','expert'];
 
 export class LiveScreens {
-  constructor({engine,storage,content,renderBoard,numberPad,progress,cue=()=>{},confirm=async message=>window.confirm(message),remembered={},remember=()=>{},svg,escape,language,onHome,onUpdate,announce,debug=false}) {
-    Object.assign(this,{engine,storage,content,renderBoard,numberPad,progress,cue,confirm,remember,svg,escape,language,onHome,onUpdate,announce,debug});
+  constructor({engine,storage,content,renderBoard,numberPad,progress,cue=()=>{},confirm=async message=>window.confirm(message),remembered={},remember=()=>{},svg,escape,language,onHome,onUpdate,announce,notify=()=>{},debug=false}) {
+    Object.assign(this,{engine,storage,content,renderBoard,numberPad,progress,cue,confirm,remember,svg,escape,language,onHome,onUpdate,announce,notify,debug});
     this.selected = 0;
     this.notesMode = false;
     // 9×9 and the classic race until the player chooses otherwise; main.js hands back what they last chose.
@@ -426,8 +436,8 @@ export class LiveScreens {
       const url=new URL(`/r/${view.snapshot.room_code}`,location.origin).href;
       try {
         if (navigator.share) await navigator.share({title:'Sudoku Rivals',url});
-        else { await navigator.clipboard.writeText(url);this.say(this.t('copied'),'info');this.cue('success',{emphasis:'subtle'}); }
-      } catch(error) { if (error.name!=='AbortError') {this.shareLink=url;this.say(this.t('copyFailed'),'info');} }
+        else { await navigator.clipboard.writeText(url);this.notify(this.t('copied'));this.cue('success',{emphasis:'subtle'}); }
+      } catch(error) { if (error.name!=='AbortError') {this.shareLink=url;this.say(this.t('copyFailed'));} }
       this.onUpdate();return;
     }
     if (action==='live-keep') { this.dispatch({type:'reconcile',keep_local:true});return; }

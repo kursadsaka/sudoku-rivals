@@ -1,4 +1,4 @@
-import { LiveScreens } from '/live.js';
+import { LiveScreens, transientNotice } from '/live.js';
 import init, * as core from '/pkg/sudoku_wasm.js';
 import { SoloSession, readSavedGames, formatTime } from '/session.js';
 import { cue as soundCue, preloadSound, setSound } from '/sound.js';
@@ -101,6 +101,7 @@ try {
 const t = (key, values = {}) => Object.entries(values).reduce((message,[name,value]) => message.replaceAll(`{${name}}`,String(value)),text[preferences.language][key] || key);
 const content = document.querySelector('#content');
 const announcer = document.querySelector('#announcer');
+const notify = transientNotice(document.querySelector('#transient-notice'));
 const offline = document.querySelector('#offline-status');
 const settingsButton = document.querySelector('#settings-button');
 let session;
@@ -300,7 +301,7 @@ function renderSettings() {
       <div class="settings-row" role="radiogroup" aria-label="${t('theme')}" data-testid="theme"><span>${t('theme')}</span><div class="segmented">${THEMES.map(theme => `<label class="segment"><input type="radio" name="theme" value="${theme}" data-testid="theme-${theme}" ${preferences.theme === theme ? 'checked':''}>${t('theme' + theme[0].toUpperCase() + theme.slice(1))}</label>`).join('')}</div></div>
     </div>
     <h2 class="section-label">${t('storage')}</h2><p class="note">${t('preferencesNote')}</p><div class="storage-list" data-testid="storage-status">${saves.map(slot => `<p>${slot.size}×${slot.size} · ${slot.status === 'ready' ? `${t(slot.complete ? 'completed':'savedGame')} · ${formatTime(slot.saved.elapsedMs)}` : slot.status === 'missing' ? '—' : escape(t(slot.status === 'corrupt' ? 'corrupt':'storageUnavailable',{size:`${slot.size}×${slot.size}`}))}</p>`).join('')}</div>
-    ${settingsNotice ? `<p class="notice" role="status">${escape(settingsNotice)}</p>`:''}
+    ${settingsNotice ? `<p class="notice error" role="alert">${escape(settingsNotice)}</p>`:''}
   </section>`;
 }
 // A layer that arrives over the game (hint card from below, notice from above); nothing under it moves.
@@ -523,7 +524,9 @@ content.addEventListener('change',event => {
     else if (event.target.id === 'haptics-toggle') { preferences.haptics = event.target.checked; cue('toggle'); }
     else if (event.target.id === 'sound-toggle') { preferences.sound = event.target.checked; setSound(preferences.sound,{confirm:true}); }
     else { preferences.reduceMotion = event.target.checked; cue('toggle'); }
-    settingsNotice = t(savePreferences() ? 'settingsSaved':'settingsFailed');
+    const saved = savePreferences();
+    settingsNotice = saved ? '' : t('settingsFailed');
+    notify(saved ? t('settingsSaved') : '');
     renderSettings();
     applyPreferences();
     (event.target.name === 'theme' ? content.querySelector(`input[name="theme"][value="${preferences.theme}"]`) : content.querySelector(`#${event.target.id}`))?.focus();
@@ -582,7 +585,7 @@ applyPreferences();
 try {
   await init();
   session = new SoloSession(core,storage);
-  live = new LiveScreens({debug,engine:core,storage,content,renderBoard,numberPad,progress,cue,confirm:confirmDialog,svg,escape,
+  live = new LiveScreens({debug,engine:core,storage,content,renderBoard,numberPad,progress,cue,notify,confirm:confirmDialog,svg,escape,
     remembered:{name:preferences.displayName,mode:preferences.liveMode,size:preferences.liveSize,difficulty:preferences.liveDifficulty},
     remember:(field,value) => { preferences[{name:'displayName',mode:'liveMode',size:'liveSize',difficulty:'liveDifficulty'}[field]] = value; savePreferences(); },language:()=>preferences.language,announce,
     onUpdate:()=>{if(screen==='live')render();},onHome:()=>{if(screen==='live'){screen='home';history.replaceState({},'', '/');render();focusContent();}}});
