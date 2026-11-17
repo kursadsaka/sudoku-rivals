@@ -71,3 +71,7 @@ Oda kuran artık Kolay/Orta/Zor seçebiliyor. Protokole isteğe bağlı `difficu
 
 Kullanıcı isteğiyle üç kademe, her biri bir teknik fazlasını gerektiren beş gerçek kademeye genişletildi: Başlangıç (kutu teklileri), Kolay (satır/sütun teklileri), Orta (çıplak tekli), Zor (kilitli adaylar), Uzman (çiftler). İki boyutta da üretiliyor; tek kısıt 6×6 Uzman'da: çift gerektiren 6×6 bulmaca ~5.000 kazıda bir çıktığı için bu kademe, aramanın bulduğu 64 doğrulanmış bulmacadan simetriyle türetiliyor. Solo ve arkadaş kurulumu, lobi ve başlıklar beş kademeyi gösteriyor; protokol tanımadığı kademe adını "seviye yok" okuyacak biçimde toleranslı. Yerel uygulamalar derlenmedi. Ayrıntı ve ölçüm: [difficulty-levels](validation/difficulty-levels.md).
 
+
+## Android web eşitlemesi (17 Kasım)
+
+Native Kotlin/Compose korunarak Android, web'in kâğıt/mürekkep görsel diline ve akışlarına eşitlendi: yeni ana sayfa, 9×9 varsayılan ve hatırlanan seçimler, solo ve arkadaş modunda beş seviye (oda kurulurken `difficulty` gönderilir), teknik ipucu kartı, kalan rakam sayaçlı tuşlar, aynalı rakip göstergesi, tema/ses/titreşim ayarları ve web'in yeni uygulama simgesi. Rust, protokol ve sunucu değişmedi. API 36 emülatöründe solo, tek ekran yerleşimi, dil, çok oyunculu ve G14 yaşam döngüsü düzenekleri koşuldu. Gerçek cihaz ve mağaza görseli yok. Ayrıntı: [g16-android-web-parity](validation/g16-android-web-parity.md).

@@ -11,7 +11,7 @@ APP = pathlib.Path(__file__).resolve().parent.parent / 'apps/android/app/src/mai
 RES = APP / 'res'
 KOTLIN = sorted((APP / 'java/com/sudokurivals').glob('*.kt'))
 # Strings that are identical in both languages on purpose (format shells, brand, numbers).
-SAME_IN_BOTH = {'lobby_mode_size', 'lobby_friend', 'app_title'}
+SAME_IN_BOTH = {'lobby_mode_size', 'app_title', 'solo_mode_label', 'live_code_placeholder'}
 # Literals that may stay in code: glyphs/icons drawn as text, separators, and developer-only tokens.
 GLYPHS = {'‹', '✎', '↶', '↷', '?', '–', '!', '·', '·', ' ', '%02d:%02d', 'Sudoku'}
 

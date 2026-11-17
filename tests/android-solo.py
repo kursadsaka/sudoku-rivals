@@ -98,13 +98,19 @@ def start_new(size):
     try:
         # Replacement is an explicit action in this test, never a silent reset.
         nodes = list(hierarchy().iter('node'))
-        replacement = next((n for n in nodes if n.attrib.get('text') == 'Yeni oyun'), None)
+        replacement = next((n for n in nodes if n.attrib.get('resource-id', '').endswith('replace-confirm')), None)
         if replacement is not None:
             x1, y1, x2, y2 = map(int, re.findall(r'\d+', replacement.attrib['bounds']))
             shell('input', 'tap', str((x1+x2)//2), str((y1+y2)//2))
             time.sleep(.3)
     except ET.ParseError:
         pass
+    # The rated puzzle is dug off the main thread; wait for the board instead of assuming it is instant.
+    for _ in range(30):
+        try:
+            find('game-board'); break
+        except AssertionError:
+            time.sleep(.5)
     find('game-board')
     visible = list(hierarchy().iter('node'))
     density = int(re.findall(r'(?:Physical|Override) density: (\d+)', shell('wm', 'density'))[-1])
@@ -181,11 +187,13 @@ try:
     print('Given protection, notes, undo/redo, erase and failed-save retry passed', flush=True)
     stop()
     launch()
-    tap('solo-resume')
-    assert not any(n.attrib.get('resource-id') == 'game-board' for n in hierarchy().iter('node')), 'Paused board is exposed'
-    tap('resume')
+    # A saved game reopens onto its board (as on the web); pausing hides the board again.
+    tap('solo-resume-6')
+    find('game-board')
     assert game(6) == persisted, 'Cold reopen lost board/history/notes'
     shell('input', 'keyevent', 'KEYCODE_ESCAPE')
+    find('resume')
+    assert not any(n.attrib.get('resource-id', '').endswith('game-board') for n in hierarchy().iter('node')), 'Paused board is exposed'
     tap('save-exit')
     game6 = game(6)
     print('Cold reopen and paused board privacy passed', flush=True)
@@ -197,10 +205,10 @@ try:
     corrupt = b'{broken-save'
     write('solo-9.json', corrupt)
     launch()
-    tap('board-size-9')
-    tap('solo-resume')
+    # Home reports the unreadable 9×9 save instead of offering to resume it.
+    assert 'açılamadı' in find('storage-status').attrib.get('text', '')
+    assert not any(n.attrib.get('resource-id', '').endswith('solo-resume-9') for n in hierarchy().iter('node')), 'Corrupt save offered for resume'
     assert read('solo-9.json') == corrupt, 'Corrupt save was overwritten during load'
-    assert 'Kayıt açılamadı' in find('storage-status').attrib.get('text', '')
     start_new(9)
     assert any(read(name) == corrupt for name in files() if '-recovery-' in name), 'Corrupt save not preserved'
     assert len(game(9)['cells']) == 81
@@ -218,14 +226,11 @@ try:
     almost['redo'] = []
     write('solo-6.json', json.dumps({'version': 1, 'size': 6, 'elapsedMillis': 1000, 'game': json.dumps(almost)}).encode())
     launch()
-    tap('solo-resume')
-    tap('resume')
+    tap('solo-resume-6')
     tap('hint', scroll=True)
-    nodes = list(hierarchy().iter('node'))
-    apply_hint = next(n for n in nodes if n.attrib.get('text') == 'Uygula')
-    x1, y1, x2, y2 = map(int, re.findall(r'\d+', apply_hint.attrib['bounds']))
-    shell('input', 'tap', str((x1+x2)//2), str((y1+y2)//2))
-    time.sleep(.2)
+    assert 'yalnızca' in find('hint-card').attrib.get('text', '') or any('yalnızca' in n.attrib.get('text', '') for n in hierarchy().iter('node')), 'Hint has no explanation'
+    tap('hint-apply')
+    time.sleep(.3)
     assert 'tamamlandı' in find('result-heading').attrib.get('text', '')
     assert game(6)['cells'][0]['value'] == solution[0]
     print('Android solo passed: offline new games in both sizes, givens, notes, erase, undo/redo, cold restore, failed-save retry, pause privacy, separate slots, corrupt-save preservation, logical hint and completion')

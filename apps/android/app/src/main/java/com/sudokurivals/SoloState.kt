@@ -1,5 +1,7 @@
 package com.sudokurivals
 
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.util.AtomicFile
 import androidx.compose.runtime.getValue
@@ -10,10 +12,12 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.ByteArrayOutputStream
 import java.security.SecureRandom
-import uniffi.sudoku_ffi.newGeneratedSolo
+import java.util.concurrent.Executors
+import uniffi.sudoku_ffi.newRatedSolo
 import uniffi.sudoku_ffi.soloConflicts
-import uniffi.sudoku_ffi.soloHint
+import uniffi.sudoku_ffi.soloDifficulty
 import uniffi.sudoku_ffi.soloIsComplete
+import uniffi.sudoku_ffi.soloTechniqueHint
 import uniffi.sudoku_ffi.updateSolo
 
 internal enum class SoloScreen { Home, Setup, Game, Paused, Result, Settings }
@@ -79,11 +83,19 @@ internal class SoloStore(private val directory: File) {
     }
 }
 
-internal class SoloState(directory: File) {
+/** What the home screen knows about one size's save: empty, saved (with its details) or corrupt. */
+internal data class Slot(val status: String, val complete: Boolean = false, val elapsedMillis: Long = 0, val level: String? = null)
+
+internal class SoloState(directory: File, private val preferences: AppPreferences, private val cue: (Cue) -> Unit = {}) {
     private val store = SoloStore(directory)
     private val random = SecureRandom()
+    private val worker = Executors.newSingleThreadExecutor()
+    private val main = Handler(Looper.getMainLooper())
     var screen by mutableStateOf(SoloScreen.Home)
-    var size by mutableStateOf(6)
+    /** 9×9 until the player picks a size; the last pick is remembered. */
+    var size by mutableStateOf(preferences.soloSize)
+    var difficulty by mutableStateOf(preferences.soloDifficulty)
+        private set
     var selected by mutableStateOf(0)
     var noteMode by mutableStateOf(false)
     var game by mutableStateOf<String?>(null)
@@ -94,48 +106,89 @@ internal class SoloState(directory: File) {
         private set
     var inputError by mutableStateOf<UiText?>(null)
         private set
-    var slotStatus by mutableStateOf(mapOf<Int, String>())
+    var slots by mutableStateOf(mapOf<Int, Slot>())
         private set
     var hint by mutableStateOf<JSONObject?>(null)
     var hintMessage by mutableStateOf<UiText?>(null)
     var replaceRequested by mutableStateOf(false)
     var corruptReplacement by mutableStateOf(false)
+    /** A rated puzzle is being dug off the main thread; the start button says so. */
+    var preparing by mutableStateOf(false)
+        private set
+    /** Where Settings returns to. */
+    var settingsReturn = SoloScreen.Home
     private var elapsedBase = 0L
     private var runningSince: Long? = null
+    private val levels = HashMap<String, String?>()
 
     init { refreshSlots() }
 
+    /** The puzzle's level, read from its givens by the engine; saves carry no extra field, and unrated or older puzzles have none. */
+    fun levelOf(saved: String?): String? {
+        if (saved == null) return null
+        val key = runCatching { JSONObject(saved).getJSONArray("givens").toString() }.getOrNull() ?: return null
+        return levels.getOrPut(key) { runCatching { JSONObject(soloDifficulty(saved)).optString("level").takeIf { it in LEVELS } }.getOrNull() }
+    }
+
     fun refreshSlots() {
-        slotStatus = listOf(6, 9).associateWith { size ->
-            if (!store.exists(size)) "empty"
-            else try { store.load(size); "saved" } catch (_: Exception) { "corrupt" }
+        slots = listOf(6, 9).associateWith { size ->
+            if (!store.exists(size)) Slot("empty")
+            else try {
+                val record = store.load(size)
+                Slot("saved", soloIsComplete(record.game), record.elapsedMillis, levelOf(record.game))
+            } catch (_: Exception) { Slot("corrupt") }
         }
     }
     fun openSetup() {
         storageError = null
         inputError = null
+        size = preferences.soloSize
+        difficulty = preferences.soloDifficulty
         screen = SoloScreen.Setup
     }
     fun selectSize(newSize: Int) {
         size = newSize
+        preferences.soloSize = (newSize)
         storageError = null
     }
+    fun selectDifficulty(level: String) {
+        if (level !in LEVELS) return
+        difficulty = level
+        preferences.soloDifficulty = (level)
+    }
     fun prepareNew() {
+        if (preparing) return
         if (store.exists(size)) {
-            corruptReplacement = slotStatus[size] == "corrupt"
+            corruptReplacement = slots[size]?.status == "corrupt"
             replaceRequested = true
         } else newGame()
     }
     fun newGame() {
+        replaceRequested = false
+        if (preparing) return
+        preparing = true
+        val wanted = size
+        val level = difficulty
+        val seeds = List(3) { random.nextInt().toUInt() }
+        // Digging a rated puzzle can take a moment on a phone: never on the main thread. A seed that cannot
+        // reach the level is retried, as on the web.
+        worker.execute {
+            val next = seeds.firstNotNullOfOrNull { seed -> runCatching { newRatedSolo(wanted.toUByte(), seed, level) }.getOrNull() }
+            main.post { finishNewGame(wanted, next) }
+        }
+    }
+    private fun finishNewGame(wanted: Int, next: String?) {
+        preparing = false
+        val replacing = corruptReplacement
+        corruptReplacement = false
+        if (screen != SoloScreen.Setup || wanted != size) return
         try {
-            val next = (0 until 8).firstNotNullOfOrNull {
-                runCatching { newGeneratedSolo(size.toUByte(), random.nextInt().toUInt(), (if (size == 6) 18 else 43).toUByte()) }.getOrNull()
-            } ?: error("Puzzle generation failed")
-            if (corruptReplacement && store.exists(size)) store.preserveCorrupt(size)
+            requireNotNull(next)
+            if (replacing && store.exists(size)) store.preserveCorrupt(size)
             game = next
             elapsedBase = 0
             elapsedDisplay = 0
-            selected = 0
+            selected = firstBlank(next)
             noteMode = false
             runningSince = SystemClock.elapsedRealtime()
             storageError = null
@@ -143,26 +196,34 @@ internal class SoloState(directory: File) {
             hint = null
             hintMessage = null
             screen = SoloScreen.Game
+            cue(Cue.Open)
             save()
         } catch (_: Exception) {
             storageError = UiText(R.string.solo_err_start)
         }
-        replaceRequested = false
-        corruptReplacement = false
     }
-    fun resumeSaved() {
+    private fun firstBlank(saved: String): Int {
+        val givens = JSONObject(saved).getJSONArray("givens")
+        return (0 until givens.length()).firstOrNull { givens.getInt(it) == 0 } ?: 0
+    }
+    fun resumeSaved(slotSize: Int) {
         try {
-            val record = store.load(size)
+            val record = store.load(slotSize)
+            size = slotSize
             game = record.game
             elapsedBase = record.elapsedMillis
             elapsedDisplay = elapsedBase
-            selected = 0
+            selected = firstBlank(record.game)
             noteMode = false
             storageError = null
             inputError = null
+            hint = null
+            hintMessage = null
             val complete = soloIsComplete(record.game)
-            screen = if (complete) SoloScreen.Result else SoloScreen.Paused
             runningSince = null
+            cue(Cue.Open)
+            // A saved game reopens straight onto its board; a finished one onto its result.
+            if (complete) screen = SoloScreen.Result else resume()
         } catch (_: Exception) {
             storageError = UiText(R.string.solo_err_open)
             refreshSlots()
@@ -179,7 +240,7 @@ internal class SoloState(directory: File) {
         elapsedBase = elapsed()
         elapsedDisplay = elapsedBase
         runningSince = null
-        hint = null
+        dismissNotices()
         screen = SoloScreen.Paused
         save()
     }
@@ -188,7 +249,7 @@ internal class SoloState(directory: File) {
         return try {
             store.save(size, SoloRecord(current, elapsed()))
             storageError = null
-            slotStatus = slotStatus + (size to "saved")
+            slots = slots + (size to Slot("saved", screen == SoloScreen.Result, elapsed(), levelOf(current)))
             true
         } catch (_: Exception) {
             storageError = UiText(R.string.solo_err_save)
@@ -222,21 +283,31 @@ internal class SoloState(directory: File) {
                 elapsedDisplay = elapsedBase
                 runningSince = null
                 screen = SoloScreen.Result
-            }
+                cue(Cue.Success)
+            } else cue(when {
+                type == "toggle_note" -> Cue.Type
+                type == "set" && selected in conflicts() -> Cue.Error
+                else -> Cue.Tap
+            })
             save()
         } catch (_: Exception) {
             inputError = UiText(R.string.solo_err_input)
+            cue(Cue.Error)
         }
     }
-    fun conflicts(): Set<Int> = game?.let { soloConflicts(it).map { index -> index.toInt() }.toSet() } ?: emptySet()
+    fun conflicts(): Set<Int> = game?.let { saved -> runCatching { soloConflicts(saved).map { index -> index.toInt() }.toSet() }.getOrNull() } ?: emptySet()
+    /** Technique hint: the eliminations the placement depends on, then the placement (shown over the keys). */
     fun requestHint() {
+        val current = game ?: return
+        inputError = null
         try {
-            val result = soloHint(game ?: return)
+            val result = soloTechniqueHint(current)
             hint = if (result == "null") null else JSONObject(result)
             hintMessage = if (hint == null) UiText(R.string.hint_none) else null
+            hint?.let { selected = it.getInt("index"); cue(Cue.Ready) }
         } catch (_: Exception) {
             hint = null
-            hintMessage = UiText(R.string.hint_conflicts)
+            hintMessage = UiText(if (conflicts().isEmpty()) R.string.hint_unavailable else R.string.hint_conflicts)
         }
     }
     fun acceptHint() {
@@ -244,10 +315,14 @@ internal class SoloState(directory: File) {
         selected = currentHint.getInt("index")
         apply("set", currentHint.getInt("value"))
     }
+    fun dismissNotices() { hint = null; hintMessage = null; inputError = null }
+    fun select(index: Int) { selected = index; dismissNotices() }
+    fun toggleNotes() { noteMode = !noteMode; cue(Cue.Toggle) }
     fun enter(value: Int) = apply(if (noteMode) "toggle_note" else "set", value)
     fun move(rowDelta: Int, columnDelta: Int) {
         val row = (selected / size + rowDelta).coerceIn(0, size - 1)
         val column = (selected % size + columnDelta).coerceIn(0, size - 1)
-        selected = row * size + column
+        select(row * size + column)
     }
+    fun close() = worker.shutdownNow()
 }

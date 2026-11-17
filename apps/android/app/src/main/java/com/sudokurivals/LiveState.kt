@@ -71,7 +71,7 @@ private class LiveStore(directory: File) {
 }
 
 /** HTTP/storage adapter only. The Rust object owns game, sequence, retry and clock state. */
-internal class LiveState(directory: File, defaultName: String) {
+internal class LiveState(directory: File, private val defaultName: String, private val preferences: AppPreferences, private val cue: (Cue) -> Unit = {}) {
     private val store = LiveStore(directory)
     // Presentation-only cache: no protocol or opaque Rust-save changes.
     private val scoreFile = AtomicFile(File(directory, "live-result-score.json"))
@@ -108,9 +108,16 @@ internal class LiveState(directory: File, defaultName: String) {
         private set
     var view by mutableStateOf(JSONObject())
         private set
-    var name by mutableStateOf(defaultName)
-    var mode by mutableStateOf("race")
-    var size by mutableStateOf(6)
+    /** The last display name, mode, size and level are remembered; 9×9, the classic race and Easy until then. */
+    var name by mutableStateOf(preferences.displayName.ifBlank { defaultName })
+    var mode by mutableStateOf(preferences.liveMode)
+        private set
+    var size by mutableStateOf(preferences.liveSize)
+        private set
+    var difficulty by mutableStateOf(preferences.liveDifficulty)
+        private set
+    /** create | join: an invite opens on Join; a fresh visit starts on Create. */
+    var tab by mutableStateOf("create")
     var invite by mutableStateOf("")
     var selected by mutableStateOf(0)
     var noteMode by mutableStateOf(false)
@@ -146,8 +153,26 @@ internal class LiveState(directory: File, defaultName: String) {
     }
 
     private fun now() = SystemClock.elapsedRealtime().toULong()
+    private var seen: Triple<String, Boolean, String>? = null
+    /** Match events the player did not tap for: start, a friend arriving, a wrong duel move, the result (web `liveCues`). */
+    private fun cues() {
+        val s = snapshot()
+        val receipt = view.optJSONObject("last_receipt")
+        val now = if (s != null && !view.optBoolean("voluntarily_left")) Triple(s.optString("phase"), s.optJSONObject("opponent") != null,
+            receipt?.let { "${it.optString("match_id")}:${it.optLong("sequence")}:${it.optString("code")}" }.orEmpty()) else null
+        val before = seen
+        seen = now
+        if (now == null || before == null) return // the first look at a session stays silent
+        if (now.first == "playing" && before.first != "playing") cue(Cue.Attention)
+        else if (now.first == "finished" && before.first != "finished") {
+            val result = s?.optJSONObject("result")
+            cue(if (result != null && !result.isNull("winner") && result.optInt("winner") == s.getJSONObject("own").optInt("seat")) Cue.Success else Cue.Close)
+        } else if (now.first == "lobby" && now.second && !before.second) cue(Cue.Ready)
+        if (now.third != before.third && receipt?.optString("code") == "wrong") cue(Cue.Error)
+    }
     private fun refresh() {
         view = JSONObject(client.view(now()))
+        cues()
         val s = snapshot() ?: return
         if (s.optString("phase") != "finished" || s.optString("mode") != "duel" || s.optJSONObject("result") == null) return
         val score = (s.optJSONObject("opponent")?.opt("score") as? Number)?.toLong() ?: return
@@ -173,11 +198,22 @@ internal class LiveState(directory: File, defaultName: String) {
     }
     fun snapshot(): JSONObject? = view.optJSONObject("snapshot")
     fun isConfigured() = runCatching { normalizeOrigin(origin) }.isSuccess
-    fun open() { visible = true; foreground = true; tick() }
+    fun open() {
+        // Opening from Home is a fresh visit: Create, and an invite received earlier no longer applies.
+        if (snapshot() == null || view.optBoolean("voluntarily_left")) { tab = "create"; inviteReceived = false; pendingInvite = null; invite = "" }
+        visible = true; foreground = true; tick()
+    }
+    fun chooseMode(value: String) { mode = value; preferences.liveMode = (value); cue(Cue.Select) }
+    fun chooseSize(value: Int) { size = value; preferences.liveSize = (value); cue(Cue.Select) }
+    fun chooseDifficulty(value: String) { if (value in LEVELS) { difficulty = value; preferences.liveDifficulty = (value); cue(Cue.Select) } }
+    fun toggleNotes() { noteMode = !noteMode; cue(Cue.Toggle) }
+    /** A typed name is remembered; the untouched default ("Guest") is not, so it keeps following the language. */
+    private fun rememberName() { preferences.displayName = if (name.trim() == defaultName) "" else name }
     fun openInvite(raw: String) {
         pendingInvite = raw
-        invite = ""
+        invite = inviteCode(raw)
         inviteReceived = true
+        tab = "join"
         visible = true
         foreground = true
         message = when {
@@ -272,6 +308,8 @@ internal class LiveState(directory: File, defaultName: String) {
             message = null
             pendingOrigin = null
             resetConfirmation = false
+            // A new session starts on Create, unless an invite is waiting to be joined with it.
+            tab = if (pendingInvite != null) "join" else "create"
             refresh()
             persist()
         } catch (_: Exception) {
@@ -280,12 +318,21 @@ internal class LiveState(directory: File, defaultName: String) {
     }
     fun create() {
         if (!isConfigured()) { message = UiText(R.string.live_not_configured); return }
-        if (dispatch(JSONObject().put("type", "create").put("guest", guest).put("name", name).put("mode", mode).put("size", size))) resumeRequired = false
+        rememberName()
+        cue(Cue.Tap)
+        if (dispatch(JSONObject().put("type", "create").put("guest", guest).put("name", name).put("mode", mode).put("size", size).put("difficulty", difficulty))) resumeRequired = false
     }
     fun join() {
         if (!isConfigured()) { message = UiText(R.string.live_not_configured); return }
-        val raw = if (invite.isNotBlank()) invite else pendingInvite.orEmpty()
-        if (dispatch(JSONObject().put("type", "join").put("guest", guest).put("invite", raw).put("name", name))) resumeRequired = false
+        // The received link itself goes to Rust (it judges the link) while the field still shows its code.
+        val typed = invite.trim()
+        val raw = pendingInvite?.takeIf { typed.isEmpty() || inviteCode(it).equals(typed, ignoreCase = true) } ?: typed
+        rememberName()
+        cue(Cue.Tap)
+        if (dispatch(JSONObject().put("type", "join").put("guest", guest).put("invite", raw).put("name", name))) {
+            resumeRequired = false
+            pendingInvite = null // used: the Rust client now owns this join (and its retries)
+        }
     }
     fun command(type: String, ready: Boolean? = null) {
         val command = JSONObject().put("type", type)
@@ -484,6 +531,11 @@ internal class LiveState(directory: File, defaultName: String) {
         if (view.optJSONObject("race")?.optBoolean("dirty") == true && snapshot()?.optString("phase") == "playing" && !view.optBoolean("pending_command") && !view.optBoolean("reconcile_required"))
             dispatch(JSONObject().put("type", "sync"), quiet = true)
         else if (view.optBoolean("poll_due")) dispatch(JSONObject().put("type", "poll"), quiet = true)
+    }
+    /** "/r/ABC234" or a full invite link → "ABC234"; anything else is kept as typed for the engine to judge. */
+    private fun inviteCode(raw: String): String {
+        val text = raw.trim()
+        return Regex("/r/([A-Za-z0-9]+)/?(?:[?#].*)?$").find(text)?.groupValues?.get(1)?.uppercase() ?: text
     }
     private fun normalizeOrigin(raw: String): String {
         val uri = URI(raw.trim())

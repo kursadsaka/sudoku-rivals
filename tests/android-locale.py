@@ -129,7 +129,7 @@ def run_language(tag, lang, label):
     for _ in range(20):
         if 'solo-start' in tags: break
         time.sleep(.5); tags, shown = visible()
-    expect(f'{label} home', shown, s['home_title'], s['home_subtitle'], s['home_solo_start'], s['home_friend_start'], s['home_settings'], s['board_size'])
+    expect(f'{label} home', shown, s['home_title'], s['home_subtitle'], s['home_solo_start'], s['home_friend_start'], s['home_settings'])
     shot(f'{label}-home')
     tap('settings-open'); _, shown = visible()
     expect(f'{label} settings', shown, s['home_settings'], s['settings_body_system'], s['settings_body_storage'], s['action_back'])
@@ -139,7 +139,9 @@ def run_language(tag, lang, label):
     tap('board-size-6'); tap('game-start'); tags = wait_for('game-board')
     time.sleep(1.2)
     tags, shown = visible()
-    expect(f'{label} solo game', shown, fmt(s['solo_mode_label'], 6), s['action_pause'], s['action_erase'], s['action_back'],
+    # The heading also names the level ("Solo · 6×6 · Easy"); the level is the remembered choice.
+    expect_prefix(f'{label} solo heading', shown, fmt(s['solo_mode_label'], 6))
+    expect(f'{label} solo game', shown, s['action_pause'], s['action_erase'], s['action_back'],
            s['cd_notes'], s['cd_undo'], s['cd_redo'], s['cd_hint'], s['status_in_progress'])
     expect_prefix(f'{label} elapsed time', shown, s['elapsed_description'].split('%')[0])
     expect_prefix(f'{label} cell label', shown, fmt(s['cell_label'].split(', %3$s')[0], 1, 1) + ', ')
@@ -148,16 +150,19 @@ def run_language(tag, lang, label):
     expect(f'{label} paused', shown, s['paused_title'], s['action_resume'], s['action_save_exit'])
     tap('save-exit'); wait_for('friend-start')
     tap('friend-start'); wait_for('room-create'); tags, shown = visible()
-    expect(f'{label} live setup', shown, s['home_friend_start'], s['live_name_label'], s['mode_race'], s['mode_duel_chip'], s['live_create'], s['live_join'],
-           s['live_invite_label'], s['guest_name'])
+    expect(f'{label} live setup', shown, s['home_friend_start'], s['live_setup_title'], s['live_name_label'], s['mode_race'], s['mode_duel_long'], s['live_create'], s['live_join'],
+           s['guest_name'], s['difficulty'])
     shot(f'{label}-live-setup')
+    # Rooms default to 9×9 race and remember the last mode and size; this check reads a 6×6 race lobby.
+    tap('mode-race'); tap('board-size-6')
     tap('room-create'); wait_for('ready-toggle', 60); time.sleep(1)
     tags, shown = visible()
-    expect(f'{label} lobby', shown, s['lobby_waiting'], fmt(s['lobby_mode_size'], s['mode_race'], 6), s['conn_connected'], s['invite_copy'], s['invite_share'],
-           s['lobby_friend_missing'], s['ready_action'], fmt(s['lobby_you'], s['guest_name'], s['player_not_ready']))
+    expect(f'{label} lobby', shown, s['lobby_waiting'], s['conn_connected'], s['invite_copy'], s['invite_share'],
+           s['lobby_friend_missing'], s['ready_action'], s['guest_name'], s['player_you'], s['player_not_ready'])
+    expect_prefix(f'{label} lobby mode', shown, fmt(s['lobby_mode_size'], s['mode_race'], 6))
     shot(f'{label}-lobby')
     tap('back'); wait_for('leave-confirm'); _, shown = visible()
-    expect(f'{label} leave dialog', shown, s['leave_title'], s['leave_body'], s['action_leave'], s['action_cancel'])
+    expect(f'{label} leave dialog', shown, s['leave_title'], s['leave_body'], s['action_leave'], s['action_stay'])
     shot(f'{label}-leave-dialog')
     tap('leave-confirm'); wait_for('solo-start', 60)
     print(f'ok   {label} ({"system" if tag is None else tag})', flush=True)

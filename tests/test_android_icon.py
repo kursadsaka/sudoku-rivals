@@ -14,13 +14,13 @@ CENTER, SAFE_RADIUS = 54.0, 36.0  # 108dp canvas; the launcher mask never cuts i
 
 
 def path_points(data):
-    """End points of an absolute M/H/V/A/Z path (the only commands the icon uses)."""
-    tokens = re.findall(r'[MHVAZ]|-?\d+(?:\.\d+)?', data)
+    """End points of an absolute M/L/H/V/A/Z path (the only commands the icon uses)."""
+    tokens = re.findall(r'[MLHVAZ]|-?\d+(?:\.\d+)?', data)
     x = y = 0.0
     points, i = [], 0
     while i < len(tokens):
         command = tokens[i]; i += 1
-        if command == 'M': x, y = float(tokens[i]), float(tokens[i + 1]); i += 2
+        if command in 'ML': x, y = float(tokens[i]), float(tokens[i + 1]); i += 2
         elif command == 'H': x = float(tokens[i]); i += 1
         elif command == 'V': y = float(tokens[i]); i += 1
         elif command == 'A': x, y = float(tokens[i + 5]), float(tokens[i + 6]); i += 7
@@ -64,14 +64,17 @@ class LauncherIconTests(unittest.TestCase):
                 half_stroke = float(path.attrib.get(NS + 'strokeWidth', 0)) / 2
                 for x, y in path_points(path.attrib[NS + 'pathData']):
                     self.assertLessEqual(math.hypot(x - CENTER, y - CENTER) + half_stroke, SAFE_RADIUS, f'{name} leaves the safe zone at {(x, y)}')
-                    xs.append(x); ys.append(y)
+                    # The front tile is centred, as on the web; the rival card behind it peeks out to the top right.
+                    if path.attrib.get(NS + 'name') == 'tile': xs.append(x); ys.append(y)
             self.assertAlmostEqual((min(xs) + max(xs)) / 2, CENTER, delta=.01)
             self.assertAlmostEqual((min(ys) + max(ys)) / 2, CENTER, delta=.01)
             self.assertGreaterEqual(max(xs) - min(xs), 44)  # not a tiny glyph
 
-    def test_foreground_is_white_and_monochrome_single_colour(self):
+    def test_foreground_uses_the_web_icon_colours_and_monochrome_single_colour(self):
         fg = (RES / 'drawable/ic_launcher_foreground.xml').read_text()
-        self.assertEqual(set(re.findall(r'(?:strokeColor|fillColor)="(#\w+)"', fg)), {'#FFFFFF'})
+        web = (ROOT / 'apps/web/icon.svg').read_text()
+        # White tile, blue box lines, amber rival card and centre: the web icon's own colours (blue is also the background).
+        self.assertEqual(set(re.findall(r'(?:strokeColor|fillColor)="(#\w+)"', fg)), {c.upper() for c in re.findall(r'fill="(#[0-9a-f]{6})"', web.replace('#fff"', '#ffffff"'))})
         mono = (RES / 'drawable/ic_launcher_monochrome.xml').read_text()
         self.assertEqual(len(set(re.findall(r'(?:strokeColor|fillColor)="(#\w+)"', mono))), 1)
 

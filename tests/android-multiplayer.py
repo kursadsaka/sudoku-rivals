@@ -187,8 +187,10 @@ def label_check(mode, size):
     shown = lambda tag, key: (tags[tag][4].get(key) or '') if tag in tags else None
     n = size
     race = mode == 'race'
+    # "Race · 9×9", plus " · Easy" when the room has a level (rooms the app creates always do).
+    heading = android_locale.fmt(STR['lobby_mode_size'], STR['mode_race_short'] if race else STR['mode_duel_short'], n)
     expected = [
-        ('mode-label', 'text', [android_locale.fmt(STR['lobby_mode_size'], STR['mode_race'] if race else STR['mode_duel_short'], n)]),
+        ('mode-label', 'text', [heading] + [heading + ' · ' + STR['level_' + level] for level in ('beginner', 'easy', 'medium', 'hard', 'expert')]),
         ('back', 'content-desc', [STR['action_back']]),
         ('connection-status', 'content-desc', [STR['conn_connected']]),
     ]
