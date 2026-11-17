@@ -9,6 +9,7 @@ struct SudokuRivalsApp: App {
     var body: some Scene {
         WindowGroup {
             RootView(app: app)
+                .preferredColorScheme(app.prefs.colorScheme)
         }
         .onChange(of: scenePhase) { _, phase in
             // Local solo time stops in the background; the game is saved there too.
@@ -31,16 +32,29 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 @MainActor
 @Observable
 final class AppModel {
-    enum Screen { case home, setup, game, live }
+    enum Screen { case home, setup, game, live, settings }
     var screen: Screen = .home
     var session: SoloSession?
     private(set) var slots: [Int: SlotStatus] = [:]
+    /// Rated level of each saved puzzle (derived from its givens by the engine; saves carry no extra field).
+    private(set) var levels: [Int: String] = [:]
     private(set) var store = SoloStore.standard
     var setupError: String?
+    /// True while a rated puzzle is being dug (off the main actor).
+    private(set) var preparing = false
     private var seedOverride: UInt32?
     let live: LiveSession
+    let prefs: AppPreferences
+    /// Where Settings returns to.
+    private var settingsReturn: Screen = .home
 
     init() {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["SOLO_TEST_RESET"] == "1" || ProcessInfo.processInfo.environment["LIVE_TEST_RESET"] == "1" {
+            AppPreferences.reset()
+        }
+        #endif
+        prefs = AppPreferences()
         var liveStore = LiveStore.standard
         var liveOrigin = LiveSession.releaseOrigin
         #if DEBUG && STAGING
@@ -57,6 +71,13 @@ final class AppModel {
         applyTestHooks(env)
         #endif
         refreshSlots()
+        // Friend setup opens on what the player chose last (9×9, classic race, Easy by default).
+        live.mode = prefs.liveMode
+        live.size = prefs.liveSize
+        live.difficulty = prefs.liveDifficulty
+        if !prefs.displayName.isEmpty { live.name = prefs.displayName }
+        Feedback.shared.haptics = prefs.haptics
+        Feedback.shared.sound = prefs.sound
         live.onHome = { [unowned self] in screen = .home }
         // A match that still holds our seat reopens after a cold start.
         if live.visible { screen = .live }
@@ -64,9 +85,27 @@ final class AppModel {
 
     func openLive() { screen = .live }
 
+    func openSettings() {
+        settingsReturn = screen == .game ? .game : .home
+        // Settings is not part of play time: a running solo game pauses (and saves) first.
+        if screen == .game { session?.pause() }
+        screen = .settings
+    }
+
+    func closeSettings() { screen = settingsReturn == .game && session != nil ? .game : .home }
+
+    func cue(_ cue: Feedback.Cue) { Feedback.shared.play(cue) }
+
     func refreshSlots() {
         slots = Dictionary(uniqueKeysWithValues: SoloStore.sizes.map { ($0, store.read($0)) })
+        var rated: [Int: String] = [:]
+        for (size, status) in slots {
+            if case .ready(let envelope, _) = status, let level = SoloSession.rate(envelope.game) { rated[size] = level }
+        }
+        levels = rated
     }
+
+    func level(_ size: Int) -> String? { levels[size] }
 
     func status(_ size: Int) -> SlotStatus { slots[size] ?? .missing }
 
@@ -79,8 +118,10 @@ final class AppModel {
         screen = .game
     }
 
-    /// Call only after the user confirmed replacing an existing slot.
-    func startNew(size: Int) {
+    /// Call only after the user confirmed replacing an existing slot. Digging a rated puzzle can take a
+    /// moment, so it runs off the main actor while the start button says "Preparing your puzzle…".
+    func startNew(size: Int, difficulty: String) {
+        guard !preparing else { return }
         setupError = nil
         let current = store.read(size)
         if current.exists && !current.isReadable {
@@ -90,13 +131,24 @@ final class AppModel {
                 return
             }
         }
-        do {
-            session = try SoloSession.start(size: size, seed: seedOverride ?? .random(in: .min ... .max), store: store)
-            screen = .game
-        } catch {
-            setupError = L10n.t("setup.failed")
+        preparing = true
+        let seed = seedOverride ?? .random(in: .min ... .max)
+        Task {
+            let result = await Task.detached(priority: .userInitiated) {
+                Result { try SoloSession.generate(size: size, seed: seed, difficulty: difficulty) }
+            }.value
+            preparing = false
+            // The player may have left setup while the puzzle was being dug.
+            guard screen == .setup else { return }
+            do {
+                session = try SoloSession.begin(game: try result.get(), store: store)
+                screen = .game
+                cue(.ready)
+            } catch {
+                setupError = L10n.t("setup.failed")
+            }
+            refreshSlots()
         }
-        refreshSlots()
     }
 
     /// Leaves the game only once it is safely on disk, unless the user chose to discard.
@@ -107,6 +159,7 @@ final class AppModel {
             guard session.saveState == .saved else { return }
         }
         self.session = nil
+        if next == .setup { setupError = nil }
         screen = next
         refreshSlots()
     }
@@ -130,48 +183,40 @@ final class AppModel {
 
 struct RootView: View {
     let app: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         NavigationStack {
             Group {
                 switch app.screen {
                 case .home: HomeView(app: app)
-                case .live: LiveScreen(live: app.live)
+                case .live: LiveScreen(live: app.live, prefs: app.prefs)
                 case .setup: SetupView(app: app)
+                case .settings: SettingsView(app: app)
                 case .game:
                     if let session = app.session { GameScreen(app: app, session: session) } else { HomeView(app: app) }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Theme.canvas.ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Theme.canvas, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Text(L10n.t("app.title"))
-                        .font(.headline)
-                        .accessibilityAddTraits(.isHeader)
-                        .accessibilityIdentifier("app-title")
+                    // Wordmark: the app mark and "Sudoku Rivals", as in the web header.
+                    HStack(spacing: 8) {
+                        AppMark(side: 26)
+                        Text("Sudoku \(Text("Rivals").fontWeight(.heavy))")
+                            .font(.system(.headline, design: .rounded))
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(L10n.t("app.title"))
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier("app-title")
                 }
             }
         }
         .tint(Theme.accent)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: app.screen)
     }
-}
-
-enum Theme {
-    static func dynamic(_ light: UInt32, _ dark: UInt32) -> Color {
-        func color(_ hex: UInt32) -> UIColor {
-            UIColor(red: CGFloat(hex >> 16 & 0xff) / 255, green: CGFloat(hex >> 8 & 0xff) / 255,
-                    blue: CGFloat(hex & 0xff) / 255, alpha: 1)
-        }
-        return Color(UIColor { $0.userInterfaceStyle == .dark ? color(dark) : color(light) })
-    }
-    // Starting values from docs/ui-contract.json tokens (contrast-checked there).
-    static let foreground = dynamic(0x111827, 0xf9fafb)
-    static let muted = dynamic(0x4b5563, 0xd1d5db)
-    static let accent = dynamic(0x1d4ed8, 0x93c5fd)
-    static let onAccent = dynamic(0xffffff, 0x111827)
-    static let selected = dynamic(0xdbeafe, 0x1e3a5f)
-    static let error = dynamic(0xb91c1c, 0xfca5a5)
-    /// Healthy-connection dot; 5.0:1 on white.
-    static let ok = dynamic(0x15803d, 0x86efac)
-    static let border = dynamic(0x6b7280, 0x9ca3af)
 }

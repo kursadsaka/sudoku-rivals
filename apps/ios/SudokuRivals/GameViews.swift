@@ -16,6 +16,11 @@ struct GameScreen: View {
     }
 }
 
+/// "9×9 · Easy": the size and, for rated puzzles, the level.
+func sizeAndLevel(_ size: Int, _ level: String?) -> String {
+    ["\(size)×\(size)", level.map { L10n.t("level.\($0)") }].compactMap { $0 }.joined(separator: " · ")
+}
+
 /// While the game is saved and the debug flag is off, "saved" is not drawn but stays reachable for screen
 /// readers (a 1 pt element with the same identifier), like the web's screen-reader-only text.
 struct QuietSaveMarker: View {
@@ -40,13 +45,18 @@ struct StorageStatus: View {
                 .font(.footnote).foregroundStyle(Theme.muted)
                 .accessibilityIdentifier("storage-status")
         } else {
-            VStack(alignment: .leading, spacing: 8) {
-                Label(L10n.t("error.save"), systemImage: "exclamationmark.triangle").foregroundStyle(Theme.error)
+            VStack(alignment: .leading, spacing: 6) {
+                Label(L10n.t("error.save"), systemImage: "exclamationmark.triangle")
                 Button(L10n.t("error.retry")) { session.save() }
-                    .buttonStyle(.bordered)
-                    .frame(minHeight: 48)
+                    .font(.subheadline.weight(.semibold)).underline()
+                    .frame(minHeight: 44)
                     .accessibilityIdentifier("retry")
             }
+            .font(.subheadline)
+            .foregroundStyle(Theme.error)
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .card(radius: 14, fill: Theme.errorBackground, stroke: Theme.error)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("storage-status")
         }
@@ -59,28 +69,40 @@ struct PlayingView: View {
     @State private var hint: LogicalHint?
     @State private var notice: String?
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GameScreenLayout {
-            VStack(spacing: 0) { navBar; statusRow }
+            VStack(spacing: 6) { navBar; Meter(value: progress); statusRow }
+                .overlay(alignment: .top) { toast }
         } board: {
-            BoardView(session: session)
+            BoardView(session: session, pattern: hint?.patternCells ?? [])
         } bottom: {
             VStack(spacing: 8) { controls }
         }
         .toolbar(UIDebug.enabled ? .visible : .hidden, for: .navigationBar)
-        .background { ArrowKeys { session.move(rowDelta: $0, columnDelta: $1) } }
+        .background { ArrowKeys { session.move(rowDelta: $0, columnDelta: $1); dismissLayers() } }
         .background { DeleteKeyCatcher { if session.canEdit { report(session.erase()) } }.accessibilityHidden(true) }
         .onChange(of: session.game) { hint = nil }
+        .onChange(of: session.selected) { if hint.map({ $0.index != session.selected }) ?? false { hint = nil } }
+    }
+
+    /// Share of the empty cells that now hold a number (the same measure shown for a rival).
+    private var progress: Double {
+        let board = session.board
+        let blanks = board.givens.indices.filter { board.givens[$0] == 0 }
+        guard !blanks.isEmpty else { return 0 }
+        return Double(blanks.filter { board.cells[$0].value != 0 }.count) / Double(blanks.count)
     }
 
     private var navBar: some View {
-        GameNavBar(mode: "\(L10n.t("mode.solo")) · \(session.size)×\(session.size)", back: { app.leaveGame() }) {
+        GameNavBar(mode: "\(L10n.t("mode.solo")) · \(sizeAndLevel(session.size, session.level))", back: { app.leaveGame() }) {
             timer
         } trailing: {
-            Button { session.pause() } label: {
-                Image(systemName: "pause.fill").font(.title3).frame(width: 48, height: 48)
+            Button { session.pause(); app.cue(.select) } label: {
+                Image(systemName: "pause.fill").font(.body).frame(width: 48, height: 48)
             }
+            .buttonStyle(PressStyle(fill: Theme.background, foreground: Theme.foreground, stroke: Theme.line, radius: 14))
             .accessibilityLabel(L10n.t("game.pause"))
             .accessibilityIdentifier("pause")
         }
@@ -89,8 +111,8 @@ struct PlayingView: View {
     private var timer: some View {
         TimelineView(.periodic(from: .now, by: 1)) { _ in
             let text = L10n.t("game.elapsed", ["time": L10n.time(session.elapsedMs)])
-            Text(L10n.time(session.elapsedMs)).font(.subheadline.monospacedDigit())
-                .foregroundStyle(Theme.muted)
+            Text(L10n.time(session.elapsedMs)).font(Theme.display(.title2).monospacedDigit())
+                .foregroundStyle(Theme.foreground)
                 .accessibilityLabel(text)
                 .accessibilityIdentifier("timer")
         }
@@ -102,6 +124,7 @@ struct PlayingView: View {
             if conflict {
                 Label { StatusMessage(text: L10n.t("game.conflict"), identifier: "game-status", alert: true) }
                     icon: { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.error) }
+                    .font(.subheadline.weight(.semibold))
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("game-status")
             } else {
@@ -110,14 +133,40 @@ struct PlayingView: View {
         }
     }
 
+    /// A passing message floats over the title and timer (between back and pause); nothing below moves.
+    @ViewBuilder private var toast: some View {
+        if let notice {
+            HStack(spacing: 2) {
+                Text(notice).font(.footnote).frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("game-notice")
+                Button { self.notice = nil } label: {
+                    Image(systemName: "xmark").font(.footnote.weight(.semibold)).frame(width: 40, height: 44)
+                }
+                .accessibilityLabel(L10n.t("hint.dismiss"))
+            }
+            .foregroundStyle(Theme.canvas)
+            .padding(.leading, 12)
+            .frame(minHeight: 48)
+            .background(Theme.foreground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .padding(.horizontal, 56)
+            .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+        }
+    }
+
     @ViewBuilder private var controls: some View {
         if UIDebug.enabled { selectionLine }
-        NumberPad(size: session.size, notesMode: session.notesMode, enabled: session.canEdit) { report(session.enter($0)) }
-        tools.overlay(alignment: .bottomLeading) { QuietSaveMarker(session: session) }
-        if let hint { hintCard(hint) }
-        if let notice {
-            Text(notice).foregroundStyle(Theme.foreground)
-                .accessibilityIdentifier("game-notice")
+        VStack(spacing: 8) {
+            NumberPad(size: session.size, values: session.board.cells.map(\.value), notesMode: session.notesMode,
+                      enabled: session.canEdit) { enter($0) }
+            tools.overlay(alignment: .bottomLeading) { QuietSaveMarker(session: session) }
+        }
+        // The hint is laid over the keys, so the board and the keys keep their place and size.
+        .overlay(alignment: .bottom) {
+            if let hint {
+                hintCard(hint)
+                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            }
         }
         if session.saveState == .failed || UIDebug.enabled { StorageStatus(session: session) }
         if UIDebug.enabled {
@@ -138,19 +187,16 @@ struct PlayingView: View {
         let layout = typeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 4))
         return layout {
-            Toggle(isOn: $session.notesMode) { ToolLabel(title: L10n.t("game.notes"), icon: "pencil") }
-                .toggleStyle(.button)
-                .keyboardShortcut("n", modifiers: [])
-                .accessibilityIdentifier("notes-toggle")
-            ToolButton(title: L10n.t("game.erase"), icon: "delete.left", id: "erase", enabled: session.canEdit) {
-                report(session.erase())
+            NotesToggle(isOn: $session.notesMode) { app.cue(.select) }
+            ToolButton(title: L10n.t("game.erase"), icon: "eraser", id: "erase", enabled: session.canEdit) {
+                report(session.erase(), cue: .tap)
             }
             ToolButton(title: L10n.t("game.undo"), icon: "arrow.uturn.backward", id: "undo", enabled: !session.board.undo.isEmpty) {
-                report(session.undo())
+                report(session.undo(), cue: .tap)
             }
             .keyboardShortcut("z", modifiers: .command)
             ToolButton(title: L10n.t("game.redo"), icon: "arrow.uturn.forward", id: "redo", enabled: !session.board.redo.isEmpty) {
-                report(session.redo())
+                report(session.redo(), cue: .tap)
             }
             .keyboardShortcut("z", modifiers: [.command, .shift])
             ToolButton(title: L10n.t("game.hint"), icon: "lightbulb", id: "hint", enabled: true) { showHint() }
@@ -158,49 +204,95 @@ struct PlayingView: View {
     }
 
     private func hintCard(_ hint: LogicalHint) -> some View {
-        let n = session.size
-        let row = hint.index / n + 1, column = hint.index % n + 1
-        let unit = hint.unit.map { L10n.t("hint.\($0.kind)", ["number": $0.index + 1]) } ?? ""
-        let text = L10n.t(hint.technique == "naked_single" ? "hint.naked" : "hint.hidden",
-                          ["row": row, "column": column, "value": hint.value, "unit": unit])
-        return GroupBox {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(text).accessibilityIdentifier("hint-explanation")
-                HStack {
-                    Button(L10n.t("hint.apply")) { report(session.applyHint(hint)) }
-                        .buttonStyle(.borderedProminent).foregroundStyle(Theme.onAccent)
-                        .frame(minHeight: 48)
-                        .accessibilityIdentifier("hint-apply")
-                    Button(L10n.t("hint.dismiss")) { self.hint = nil }
-                        .buttonStyle(.bordered).frame(minHeight: 48)
-                        .accessibilityIdentifier("hint-dismiss")
+        VStack(alignment: .leading, spacing: 10) {
+            ScrollView {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "lightbulb").foregroundStyle(Theme.accent).accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(Array(hintLines(hint).enumerated()), id: \.offset) { _, line in Text(line) }
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.foreground)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("hint-explanation")
                 }
             }
-        } label: {
-            Label(L10n.t("game.hint"), systemImage: "lightbulb")
+            .scrollBounceBehavior(.basedOnSize)
+            HStack(spacing: 8) {
+                Button { self.hint = nil } label: {
+                    Text(L10n.t("hint.dismiss")).font(.subheadline.weight(.semibold)).padding(.horizontal, 12).frame(minHeight: 44)
+                }
+                .buttonStyle(PressStyle(fill: Theme.background, foreground: Theme.foreground, stroke: Theme.border, radius: 12))
+                .accessibilityIdentifier("hint-dismiss")
+                Button { apply(hint) } label: {
+                    Text(L10n.t("hint.apply")).font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(PressStyle(fill: Theme.brand, foreground: Theme.onBrand, stroke: Theme.brand, radius: 12))
+                .accessibilityIdentifier("hint-apply")
+            }
         }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Theme.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.accent, lineWidth: 1.5) }
+        .shadow(color: .black.opacity(0.08), radius: 8, y: 3)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(L10n.t("game.hint"))
+        .accessibilityIdentifier("hint-card")
+    }
+
+    /// One sentence per elimination the placement depends on, then the placement itself (as on the web).
+    private func hintLines(_ hint: LogicalHint) -> [String] {
+        let n = session.size
+        func unit(_ value: LogicalHint.Unit) -> String { L10n.t("hint.\(value.kind)", ["number": value.index + 1]) }
+        let steps = (hint.eliminations ?? []).map { step -> String in
+            if step.technique == "locked_candidates" {
+                return L10n.t("hint.locked", ["unit": unit(step.unit), "target": step.target.map(unit) ?? "",
+                                              "value": step.digits.first ?? 0])
+            }
+            return L10n.t(step.technique == "naked_pair" ? "hint.nakedPair" : "hint.hiddenPair",
+                          ["unit": unit(step.unit), "a": step.digits.first ?? 0, "b": step.digits.dropFirst().first ?? 0])
+        }
+        let key = (hint.technique == "naked_single" ? "hint.naked" : "hint.hidden") + (steps.isEmpty ? "" : "Then")
+        let last = L10n.t(key, ["row": hint.index / n + 1, "column": hint.index % n + 1, "value": hint.value,
+                                "unit": hint.unit.map(unit) ?? ""])
+        return steps + [last]
     }
 
     private func showHint() {
-        notice = nil
+        dismissLayers()
         switch session.hint() {
         case .hint(let found):
-            hint = found
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { hint = found }
             session.selected = found.index
-            announce(L10n.t(found.technique == "naked_single" ? "hint.naked" : "hint.hidden", [
-                "row": found.index / session.size + 1, "column": found.index % session.size + 1, "value": found.value,
-                "unit": found.unit.map { L10n.t("hint.\($0.kind)", ["number": $0.index + 1]) } ?? "",
-            ]))
-        case .noneWithSingles: say(L10n.t("hint.none"))
-        case .conflicts: say(L10n.t("hint.conflicts"))
-        case .unsolvable: say(L10n.t("hint.unsolvable"))
-        case .searchLimit: say(L10n.t("hint.searchLimit"))
+            app.cue(.ready)
+            announce(hintLines(found).joined(separator: " "))
+        case .noneWithSingles: say(L10n.t("hint.none"), cue: nil)
+        case .conflicts: say(L10n.t("hint.conflicts"), cue: nil)
+        case .unsolvable: say(L10n.t("hint.unsolvable"), cue: nil)
+        case .searchLimit: say(L10n.t("hint.searchLimit"), cue: nil)
         }
     }
 
-    private func report(_ reason: String?) {
+    private func enter(_ digit: Int) { afterEntry(session.enter(digit), notes: session.notesMode) }
+
+    /// An applied hint is an ordinary, undoable set.
+    private func apply(_ hint: LogicalHint) { afterEntry(session.applyHint(hint), notes: false) }
+
+    private func afterEntry(_ reason: String?, notes: Bool) {
+        if reason == nil {
+            app.cue(session.complete ? .success
+                    : !notes && session.conflicts.contains(session.selected) ? .error : notes ? .note : .tap)
+        }
+        report(reason)
+    }
+
+    private func report(_ reason: String?, cue: Feedback.Cue? = nil) {
         switch reason {
-        case nil: notice = nil
+        case nil:
+            dismissLayers()
+            if let cue { app.cue(cue) }
         case "GivenCell": say(L10n.t("error.given"))
         case "FilledCell": say(L10n.t("error.filled"))
         case "NotPlaying": break
@@ -208,7 +300,16 @@ struct PlayingView: View {
         }
     }
 
-    private func say(_ text: String) { notice = text; announce(text) }
+    private func dismissLayers() {
+        notice = nil
+        hint = nil
+    }
+
+    private func say(_ text: String, cue: Feedback.Cue? = .error) {
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { notice = text }
+        if let cue { app.cue(cue) }
+        announce(text)
+    }
     private func announce(_ text: String) { AccessibilityNotification.Announcement(text).post() }
 }
 
@@ -234,9 +335,24 @@ struct ToolLabel: View {
     var body: some View {
         VStack(spacing: 2) {
             Image(systemName: icon).font(.title3).accessibilityHidden(true)
-            Text(title).font(.caption).lineLimit(2).multilineTextAlignment(.center)
+            Text(title).font(.caption2.weight(.medium)).lineLimit(1).minimumScaleFactor(0.8)
         }
-        .frame(maxWidth: .infinity, minHeight: 48)
+        .frame(maxWidth: .infinity, minHeight: 52)
+    }
+}
+
+/// Tools are quiet: icon over a small label on no background; the active notes switch is filled.
+struct ToolStyle: ButtonStyle {
+    var on = false
+    @Environment(\.isEnabled) private var enabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(on ? Theme.onBrand : Theme.foreground)
+            .background(on ? Theme.brand : configuration.isPressed ? Theme.selected : .clear,
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .opacity(enabled ? 1 : 0.4)
+            .contentShape(Rectangle())
     }
 }
 
@@ -249,32 +365,88 @@ struct ToolButton: View {
 
     var body: some View {
         Button(action: action) { ToolLabel(title: title, icon: icon) }
-            .buttonStyle(.bordered)
+            .buttonStyle(ToolStyle())
             .disabled(!enabled)
             .accessibilityIdentifier(id)
     }
 }
 
+/// The notes (pencil) switch: a toggle, so VoiceOver and tests read its state as a value.
+struct NotesToggle: View {
+    @Binding var isOn: Bool
+    var enabled = true
+    let changed: () -> Void
+
+    var body: some View {
+        Toggle(isOn: Binding(get: { isOn }, set: { isOn = $0; changed() })) {
+            ToolLabel(title: L10n.t("game.notes"), icon: "pencil")
+        }
+        .toggleStyle(.button)
+        .buttonStyle(ToolStyle(on: isOn))
+        .disabled(!enabled)
+        .keyboardShortcut("n", modifiers: [])
+        .accessibilityIdentifier("notes-toggle")
+    }
+}
+
+/// A key: paper with a thicker bottom edge; each key shows how many of its digit are still missing,
+/// and a finished digit steps back. In notes mode the keys turn to dashed pencil keys.
+struct KeyStyle: ButtonStyle {
+    var notes = false
+    var done = false
+    @Environment(\.isEnabled) private var enabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        return configuration.label
+            .foregroundStyle(notes || done ? Theme.muted : Theme.accent)
+            .background(done ? Color.clear : configuration.isPressed ? Theme.selected : Theme.background, in: shape)
+            .overlay {
+                shape.strokeBorder(Theme.line, style: StrokeStyle(lineWidth: 1, dash: notes ? [4, 3] : []))
+            }
+            .overlay(alignment: .bottom) {
+                if !notes && !done { Capsule().fill(Theme.line).frame(height: 2).padding(.horizontal, 6).accessibilityHidden(true) }
+            }
+            .opacity(enabled ? 1 : 0.45)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
+    }
+}
+
 struct NumberPad: View {
     let size: Int
+    /// Current cell values, for the "left" counts.
+    let values: [Int]
     let notesMode: Bool
     let enabled: Bool
     let enter: (Int) -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
+        let placed = values.reduce(into: Array(repeating: 0, count: size + 1)) { counts, value in
+            if (1...size).contains(value) { counts[value] += 1 }
+        }
         DigitPadLayout(count: size, rowHeight: typeSize.isAccessibilitySize ? 72 : 52) {
             ForEach(1...size, id: \.self) { digit in
+                let left = max(0, size - placed[digit])
                 Button { enter(digit) } label: {
                     Text("\(digit)")
-                        .font(.title.weight(notesMode ? .regular : .semibold))
+                        .font(Theme.display(notesMode ? .title2 : .title, weight: notesMode ? .medium : .semibold))
                         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .overlay(alignment: .topTrailing) {
+                            if left > 0 {
+                                Text("\(left)").font(.caption2.weight(.semibold)).foregroundStyle(Theme.muted)
+                                    .dynamicTypeSize(...DynamicTypeSize.xLarge)
+                                    .padding(.top, 4).padding(.trailing, 6)
+                            }
+                        }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(KeyStyle(notes: notesMode, done: left == 0))
                 .disabled(!enabled)
                 .keyboardShortcut(KeyEquivalent(Character("\(digit)")), modifiers: [])
                 .accessibilityLabel(L10n.t("digit.label", ["digit": digit]))
+                .accessibilityValue(left > 0 ? L10n.t("digit.left", ["count": left]) : "")
                 .accessibilityIdentifier("number-\(digit)")
             }
         }
@@ -293,6 +465,8 @@ struct BoardContent {
     let selected: Int
     /// Duel cells the server has locked after a correct entry.
     var locked: (Int) -> Bool = { _ in false }
+    /// Cells of an open hint's elimination pattern.
+    var pattern: Set<Int> = []
 
     /// 6×6 boxes are 2 rows × 3 columns; 9×9 boxes are 3 × 3.
     var boxRows: Int { size == 6 ? 2 : 3 }
@@ -307,10 +481,11 @@ struct BoardView: View {
         self.select = select
     }
 
-    init(session: SoloSession) {
+    init(session: SoloSession, pattern: Set<Int> = []) {
         let board = session.board
         self.init(content: BoardContent(size: board.size, values: board.cells.map(\.value), givens: board.givens,
-                                        notes: board.notes, conflicts: session.conflicts, selected: session.selected)) {
+                                        notes: board.notes, conflicts: session.conflicts, selected: session.selected,
+                                        pattern: pattern)) {
             session.selected = $0
         }
     }
@@ -334,12 +509,17 @@ struct BoardView: View {
                     .overlay { GridLines(n: n, boxRows: content.boxRows).allowsHitTesting(false).accessibilityHidden(true) }
                 }
             }
+            .background(Theme.background)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.grid, lineWidth: 2) }
+            .shadow(color: .black.opacity(0.06), radius: 8, y: 3)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("\(n)×\(n) Sudoku")
             .accessibilityIdentifier("game-board")
     }
 }
 
+/// Inner lines only (the outer edge is the board's rounded border): thin cell lines, 2 pt box lines.
 struct GridLines: View {
     let n: Int
     let boxRows: Int
@@ -347,14 +527,14 @@ struct GridLines: View {
     var body: some View {
         Canvas { context, size in
             let step = size.width / CGFloat(n)
-            for i in 0...n {
+            for i in 1..<n {
                 let offset = CGFloat(i) * step
                 let thickRow = i % boxRows == 0, thickColumn = i % 3 == 0
                 var horizontal = Path(), vertical = Path()
                 horizontal.move(to: CGPoint(x: 0, y: offset)); horizontal.addLine(to: CGPoint(x: size.width, y: offset))
                 vertical.move(to: CGPoint(x: offset, y: 0)); vertical.addLine(to: CGPoint(x: offset, y: size.height))
-                context.stroke(horizontal, with: .color(thickRow ? Theme.foreground : Theme.border.opacity(0.6)), lineWidth: thickRow ? 2 : 0.5)
-                context.stroke(vertical, with: .color(thickColumn ? Theme.foreground : Theme.border.opacity(0.6)), lineWidth: thickColumn ? 2 : 0.5)
+                context.stroke(horizontal, with: .color(thickRow ? Theme.grid : Theme.line), lineWidth: thickRow ? 2 : 1)
+                context.stroke(vertical, with: .color(thickColumn ? Theme.grid : Theme.line), lineWidth: thickColumn ? 2 : 1)
             }
         }
     }
@@ -374,23 +554,27 @@ struct CellView: View {
         let conflict = content.conflicts.contains(index)
         let selected = content.selected == index
         let notes = content.notes(index)
+        let style = appearance(selected: selected, row: row, column: column, value: value, conflict: conflict)
 
         Button { select(index) } label: {
             ZStack {
-                Rectangle().fill(background(selected: selected, row: row, column: column))
+                Rectangle().fill(style.fill)
+                if content.pattern.contains(index) && !selected {
+                    Rectangle().strokeBorder(Theme.accent, lineWidth: 2)
+                }
                 if value != 0 {
                     Text("\(value)")
-                        .font(.system(size: side * 0.58, weight: given ? .bold : .regular, design: .rounded))
-                        .foregroundStyle(conflict ? Theme.error : given ? Theme.foreground : Theme.accent)
+                        .font(.system(size: side * 0.56, weight: given ? .semibold : .medium, design: .rounded))
+                        .foregroundStyle(style.ink(given: given))
                 } else if !notes.isEmpty {
-                    NotesGrid(notes: Set(notes), size: n, side: side)
+                    NotesGrid(notes: Set(notes), size: n, side: side, ink: selected ? Theme.onBrand : Theme.muted)
                 }
                 if conflict {
                     Text("!")
-                        .font(.system(size: side * 0.28, weight: .heavy))
-                        .foregroundStyle(Theme.error)
+                        .font(.system(size: side * 0.24, weight: .heavy))
+                        .foregroundStyle(selected ? Theme.onBrand : Theme.error)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                        .padding(2)
+                        .padding(.top, 2).padding(.trailing, 4)
                 }
             }
             .frame(width: side, height: side)
@@ -402,11 +586,27 @@ struct CellView: View {
         .accessibilityIdentifier("cell-\(row + 1)-\(column + 1)")
     }
 
-    private func background(selected: Bool, row: Int, column: Int) -> Color {
-        if selected { return Theme.selected }
+    private struct Appearance {
+        let fill: Color
+        let selected: Bool
+        let conflict: Bool
+        func ink(given: Bool) -> Color {
+            selected ? Theme.onBrand : conflict ? Theme.error : given ? Theme.foreground : Theme.accent
+        }
+    }
+
+    /// Selected: brand fill. Then same digit, conflict, row/column/box peers, plain paper (as on the web).
+    private func appearance(selected: Bool, row: Int, column: Int, value: Int, conflict: Bool) -> Appearance {
         let n = content.size, boxRows = content.boxRows, s = content.selected
-        let peer = s / n == row || s % n == column || (s / n / boxRows == row / boxRows && s % n / 3 == column / 3)
-        return peer ? Theme.selected.opacity(0.35) : Color(uiColor: .systemBackground)
+        let selectedValue = content.values.indices.contains(s) ? content.values[s] : 0
+        let fill: Color
+        if selected { fill = Theme.brand }
+        else if conflict { fill = Theme.errorBackground }
+        else if content.pattern.contains(index) { fill = Theme.selected }
+        else if selectedValue != 0 && value == selectedValue { fill = Theme.same }
+        else if s / n == row || s % n == column || (s / n / boxRows == row / boxRows && s % n / 3 == column / 3) { fill = Theme.related }
+        else { fill = Theme.background }
+        return Appearance(fill: fill, selected: selected, conflict: conflict)
     }
 
     private func label(row: Int, column: Int, value: Int, given: Bool, notes: [Int], conflict: Bool) -> String {
@@ -424,6 +624,7 @@ struct NotesGrid: View {
     let notes: Set<Int>
     let size: Int
     let side: CGFloat
+    var ink: Color = Theme.muted
 
     var body: some View {
         let rows = size == 6 ? 2 : 3
@@ -433,8 +634,8 @@ struct NotesGrid: View {
                     ForEach(0..<3, id: \.self) { column in
                         let digit = row * 3 + column + 1
                         Text(notes.contains(digit) ? "\(digit)" : " ")
-                            .font(.system(size: side * 0.24, weight: .medium))
-                            .foregroundStyle(Theme.muted)
+                            .font(.system(size: max(7, side * 0.26), weight: .medium))
+                            .foregroundStyle(ink)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
@@ -444,28 +645,84 @@ struct NotesGrid: View {
     }
 }
 
+/// Pause and result share one centred layout: symbol tile, heading, line, a stat pill, then actions.
+struct CenteredPanel<Actions: View>: View {
+    let symbol: String
+    var symbolTint: Color = Theme.accent
+    var symbolFill: Color = Theme.selected
+    var eyebrow: String?
+    let title: String
+    var titleId: String?
+    var lede: String?
+    @ViewBuilder let actions: () -> Actions
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 14) {
+                Image(systemName: symbol).font(.system(size: 30, weight: .semibold))
+                    .foregroundStyle(symbolTint)
+                    .frame(width: 76, height: 76)
+                    .background(symbolFill, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .padding(.bottom, 6)
+                    .accessibilityHidden(true)
+                if let eyebrow {
+                    Text(eyebrow.uppercased(with: L10n.turkish ? Locale(identifier: "tr") : Locale(identifier: "en")))
+                        .font(.caption.weight(.bold)).tracking(1.4).foregroundStyle(Theme.accent)
+                }
+                Text(title).font(Theme.display(.title, weight: .bold)).multilineTextAlignment(.center)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier(titleId ?? "")
+                if let lede {
+                    Text(lede).foregroundStyle(Theme.muted).multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                actions()
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 24)
+            .frame(maxWidth: 440)
+            .frame(maxWidth: .infinity)
+        }
+    }
+}
+
+/// "9×9 · Easy" small over a large time, in a pill.
+struct StatPill: View {
+    let caption: String
+    let value: String
+    var label: String?
+    var id: String?
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(caption).font(.footnote.weight(.semibold)).foregroundStyle(Theme.muted)
+            Text(value).font(Theme.display(.title2).monospacedDigit()).foregroundStyle(Theme.foreground)
+        }
+        .padding(.horizontal, 18).padding(.vertical, 10)
+        .card(radius: 16)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label ?? "\(caption) · \(value)")
+        .accessibilityIdentifier(id ?? "")
+    }
+}
+
 struct PausedView: View {
     let app: AppModel
     let session: SoloSession
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Image(systemName: "pause.circle").font(.system(size: 48)).foregroundStyle(Theme.accent)
-                    .accessibilityHidden(true)
-                Text(L10n.t("paused.title")).font(.title.bold()).accessibilityAddTraits(.isHeader)
-                Text(L10n.t("paused.detail")).foregroundStyle(Theme.muted)
-                Text("\(session.size)×\(session.size) · \(L10n.t("game.elapsed", ["time": L10n.time(session.elapsedMs)]))")
-                    .font(.body.monospacedDigit())
-                    .accessibilityIdentifier("timer")
-                StorageStatus(session: session)
-                PrimaryButton(title: L10n.t("game.resume"), id: "resume") { session.resume() }
+        CenteredPanel(symbol: "pause.fill", title: L10n.t("paused.title"), lede: L10n.t("paused.detail")) {
+            StatPill(caption: sizeAndLevel(session.size, session.level), value: L10n.time(session.elapsedMs),
+                     label: "\(sizeAndLevel(session.size, session.level)) · \(L10n.t("game.elapsed", ["time": L10n.time(session.elapsedMs)]))",
+                     id: "timer")
+            if session.saveState == .failed || UIDebug.enabled { StorageStatus(session: session) }
+            VStack(spacing: 10) {
+                PrimaryButton(title: L10n.t("game.resume"), id: "resume") { session.resume(); app.cue(.select) }
                 SecondaryButton(title: L10n.t("game.exit"), id: "save-exit") { app.leaveGame() }
-                if session.saveState == .failed {
-                    DiscardButton(app: app)
-                }
+                if session.saveState == .failed { DiscardButton(app: app) }
             }
-            .padding()
+            .padding(.top, 12)
+            QuietSaveMarker(session: session)
         }
         .onAppear { AccessibilityNotification.Announcement(L10n.t("paused.title")).post() }
     }
@@ -478,6 +735,7 @@ struct DiscardButton: View {
 
     var body: some View {
         Button(L10n.t("game.discardExit"), role: .destructive) { confirming = true }
+            .underline()
             .frame(maxWidth: .infinity, minHeight: 48)
             .accessibilityIdentifier("discard-exit")
             .alert(L10n.t("game.confirmDiscard"), isPresented: $confirming) {
@@ -493,24 +751,19 @@ struct ResultView: View {
     let session: SoloSession
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Image(systemName: "checkmark.seal.fill").font(.system(size: 48)).foregroundStyle(Theme.accent)
-                    .accessibilityHidden(true)
-                Text(L10n.t("game.complete")).font(.subheadline.bold()).foregroundStyle(Theme.muted)
-                    .accessibilityIdentifier("game-status")
-                Text(L10n.t("result.title")).font(.title.bold()).accessibilityAddTraits(.isHeader)
-                    .accessibilityIdentifier("result-heading")
-                Text(L10n.t("result.detail")).foregroundStyle(Theme.muted)
-                Text("\(session.size)×\(session.size) · \(L10n.time(session.elapsedMs))")
-                    .font(.body.monospacedDigit())
-                    .accessibilityIdentifier("result-details")
-                StorageStatus(session: session)
+        CenteredPanel(symbol: "checkmark", eyebrow: L10n.t("home.completed"), title: L10n.t("result.title"),
+                      titleId: "result-heading", lede: L10n.t("result.detail")) {
+            // Screen readers hear "Sudoku complete" as the status, like the web's live region.
+            Text(L10n.t("game.complete")).font(.footnote).opacity(0).frame(height: 1)
+                .accessibilityIdentifier("game-status")
+            StatPill(caption: sizeAndLevel(session.size, session.level), value: L10n.time(session.elapsedMs), id: "result-details")
+            if session.saveState == .failed || UIDebug.enabled { StorageStatus(session: session) } else { QuietSaveMarker(session: session) }
+            VStack(spacing: 10) {
                 PrimaryButton(title: L10n.t("result.newGame"), id: "new-game") { app.leaveGame(to: .setup) }
                 SecondaryButton(title: L10n.t("nav.home"), id: "home") { app.leaveGame() }
                 if session.saveState == .failed { DiscardButton(app: app) }
             }
-            .padding()
+            .padding(.top, 12)
         }
         .onAppear { AccessibilityNotification.Announcement(L10n.t("game.complete")).post() }
     }

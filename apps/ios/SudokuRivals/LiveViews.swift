@@ -5,6 +5,7 @@ import UIKit
 /// Every rule and result comes from the server through the shared Rust client.
 struct LiveScreen: View {
     @Bindable var live: LiveSession
+    let prefs: AppPreferences
 
     /// The snapshot while a match is being played (not lobby, result, lost session or protected record).
     private var activeGame: LiveView.Snapshot? {
@@ -16,28 +17,49 @@ struct LiveScreen: View {
         return snapshot
     }
 
+    /// What the feedback cues listen to: match start, a friend arriving, a wrong duel move, the result.
+    private struct CueKey: Equatable {
+        var phase: String?
+        var opponent = false
+        var receipt = ""
+    }
+    private var cueKey: CueKey? {
+        let view = live.view
+        guard let s = view.snapshot, !view.voluntarilyLeft else { return nil }
+        let receipt = view.lastReceipt.map { "\($0.matchId):\($0.code):\(s.own.wrong)" } ?? ""
+        return CueKey(phase: s.phase, opponent: s.opponent != nil, receipt: receipt)
+    }
+
+    /// A finished match with its server result (shown full screen, like the solo result).
+    private var finished: LiveView.Snapshot? {
+        let view = live.view
+        guard !live.protectedSave, let snapshot = view.snapshot, !view.voluntarilyLeft,
+              snapshot.phase == "finished", snapshot.result != nil else { return nil }
+        return snapshot
+    }
+
     var body: some View {
         let game = activeGame
         Group {
             if let game {
                 LiveGameView(live: live, snapshot: game)
+            } else if let finished {
+                LiveResultView(live: live, snapshot: finished)
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 14) {
                         LiveNotices(live: live)
                         content
                     }
-                    .padding()
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: 560)
+                    .frame(maxWidth: .infinity)
                 }
             }
         }
         .toolbar(game != nil && !UIDebug.enabled ? .hidden : .visible, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button { live.goHome() } label: { Label(L10n.t("nav.home"), systemImage: "house") }
-                    .accessibilityIdentifier("back")
-            }
-        }
+        .toolbar { BackToolbar(title: L10n.t("nav.back")) { live.goHome() } }
         .onAppear { live.open() }
         .task {
             while !Task.isCancelled {
@@ -46,6 +68,7 @@ struct LiveScreen: View {
             }
         }
         .onChange(of: live.message) { _, message in if let message { announce(message) } }
+        .onChange(of: cueKey) { before, now in cues(before, now) }
         .alert(L10n.t("leave.title"), isPresented: $live.leaveConfirmation) {
             Button(L10n.t("leave.confirm"), role: .destructive) { live.confirmLeave() }
                 .accessibilityIdentifier("leave-confirm")
@@ -62,23 +85,33 @@ struct LiveScreen: View {
         }
     }
 
+    /// The first look at a session (app start, room just created) stays silent.
+    private func cues(_ before: CueKey?, _ now: CueKey?) {
+        guard let before, let now, let s = live.snapshot else { return }
+        let feedback = Feedback.shared
+        if now.phase == "playing" && before.phase != "playing" { feedback.play(.attention) }
+        else if now.phase == "finished" && before.phase != "finished" {
+            feedback.play(s.result?.winner == s.own.seat ? .success : .select)
+        } else if now.phase == "lobby" && now.opponent && !before.opponent { feedback.play(.ready) }
+        if now.receipt != before.receipt && live.view.lastReceipt?.code == "wrong" { feedback.play(.error) }
+    }
+
     @ViewBuilder private var content: some View {
         let view = live.view
         if live.protectedSave {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(L10n.t("protected.title")).font(.title2.bold()).accessibilityAddTraits(.isHeader)
-                Text(L10n.t("protected.info"))
+            VStack(alignment: .leading, spacing: 14) {
+                PageHeader(eyebrow: L10n.t("live.title"), title: L10n.t("protected.title"), lede: L10n.t("protected.info"))
                 PrimaryButton(title: L10n.t("protected.reset"), id: "live-recover") { live.requestReset() }
             }
         } else if let snapshot = view.snapshot, !view.voluntarilyLeft {
-            if snapshot.phase == "finished", snapshot.result != nil {
-                LiveResultView(live: live, snapshot: snapshot)
-            } else if view.connection == "session_lost" || snapshot.phase == "closed" {
-                VStack(alignment: .leading, spacing: 12) {
+            // A finished match with a result is drawn by `body` (its panel scrolls by itself).
+            if view.connection == "session_lost" || snapshot.phase == "closed" {
+                VStack(alignment: .leading, spacing: 14) {
                     ConnectionStatus(connection: view.connection)
-                    Text(L10n.t("lost.title")).font(.title2.bold()).accessibilityAddTraits(.isHeader)
+                    Text(L10n.t("lost.title")).font(Theme.display(.title)).accessibilityAddTraits(.isHeader)
                         .accessibilityIdentifier("result-heading")
-                    Text(L10n.t(snapshot.mode == "race" ? "lost.detailRace" : "lost.detail")).accessibilityIdentifier("result-details")
+                    Text(L10n.t(snapshot.mode == "race" ? "lost.detailRace" : "lost.detail")).foregroundStyle(Theme.muted)
+                        .accessibilityIdentifier("result-details")
                     PrimaryButton(title: L10n.t("lost.reset"), id: "live-recover") { live.requestReset() }
                     SecondaryButton(title: L10n.t("nav.home"), id: "home") { live.goHome() }
                 }
@@ -88,7 +121,7 @@ struct LiveScreen: View {
                 LiveGameView(live: live, snapshot: snapshot)
             }
         } else {
-            LiveSetupView(live: live)
+            LiveSetupView(live: live, prefs: prefs)
         }
     }
 }
@@ -99,18 +132,28 @@ struct LiveNotices: View {
 
     var body: some View {
         if live.storageError {
-            VStack(alignment: .leading, spacing: 8) {
-                Label(L10n.t("live.storageError"), systemImage: "exclamationmark.triangle").foregroundStyle(Theme.error)
+            VStack(alignment: .leading, spacing: 6) {
+                Label(L10n.t("live.storageError"), systemImage: "exclamationmark.triangle")
                 Button(L10n.t("live.storageRetry")) { live.retryStorage() }
-                    .buttonStyle(.bordered).frame(minHeight: 48)
+                    .font(.subheadline.weight(.semibold)).underline()
+                    .frame(minHeight: 44)
                     .accessibilityIdentifier("live-save-retry")
             }
+            .font(.subheadline)
+            .foregroundStyle(Theme.error)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .card(radius: 14, fill: Theme.errorBackground, stroke: Theme.error)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("live-storage-status")
         }
         if let message = live.message {
             Label(message, systemImage: "exclamationmark.circle")
+                .font(.subheadline)
                 .foregroundStyle(Theme.error)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .card(radius: 14, fill: Theme.errorBackground, stroke: Theme.error)
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("live-message")
         }
@@ -121,7 +164,14 @@ private func announce(_ text: String) { AccessibilityNotification.Announcement(t
 
 private func modeName(_ mode: String) -> String { L10n.t(mode == "race" ? "live.race" : "live.duel") }
 
-private func clock(_ ms: UInt64) -> String { String(format: "%02d:%02d", ms / 60_000, ms / 1000 % 60) }
+/// "Classic race · 9×9 · Easy"; rooms created without a level show none.
+private func roomLine(_ snapshot: LiveView.Snapshot, short: Bool = false) -> String {
+    let mode = short ? L10n.t(snapshot.mode == "race" ? "live.raceShort" : "live.duelShort") : modeName(snapshot.mode)
+    let level = snapshot.difficulty.flatMap { AppPreferences.levels.contains($0) ? $0 : nil }
+    return "\(mode) · \(sizeAndLevel(snapshot.size, level))"
+}
+
+private func clock(_ ms: UInt64) -> String { String(format: "%d:%02d", ms / 60_000, ms / 1000 % 60) }
 
 struct ConnectionStatus: View {
     let connection: String
@@ -131,16 +181,20 @@ struct ConnectionStatus: View {
     var body: some View {
         let key = ["connected", "reconnecting", "reconcile", "session_lost"].contains(connection) ? connection : "disconnected"
         let text = L10n.t("conn.\(key)")
-        if compact && connection == "connected" {
-            Circle().fill(Theme.ok).frame(width: 10, height: 10)
+        let healthy = connection == "connected"
+        if compact && healthy {
+            Circle().fill(Theme.ok).frame(width: 8, height: 8)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(text)
                 .accessibilityIdentifier("connection-status")
                 .onChange(of: connection) { announce(text) }
         } else {
-        Label(text, systemImage: connection == "connected" ? "wifi" : "wifi.exclamationmark")
-            .font(.subheadline)
-            .foregroundStyle(connection == "connected" ? Theme.muted : Theme.error)
+            HStack(spacing: 6) {
+                Image(systemName: healthy ? "circle.fill" : "circle").font(.system(size: 8)).accessibilityHidden(true)
+                Text(text)
+            }
+            .font(.footnote)
+            .foregroundStyle(healthy ? Theme.muted : Theme.error)
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("connection-status")
             .onChange(of: connection) { announce(text) }
@@ -150,52 +204,136 @@ struct ConnectionStatus: View {
 
 struct LiveSetupView: View {
     @Bindable var live: LiveSession
+    let prefs: AppPreferences
+    @State private var tab = "create"
 
     var body: some View {
         let busy = live.view.pendingHttp
-        VStack(alignment: .leading, spacing: 12) {
-            Text(L10n.t("home.friends")).font(.title2.bold()).accessibilityAddTraits(.isHeader)
+        let joining = tab == "join"
+        VStack(alignment: .leading, spacing: 16) {
+            PageHeader(eyebrow: L10n.t("live.title"), title: L10n.t(joining ? "live.joinTitle" : "live.setupTitle"),
+                       lede: L10n.t(joining ? "live.joinIntro" : "live.setupIntro"))
+            Picker(L10n.t("live.tabs"), selection: $tab) {
+                Text(L10n.t("live.create")).tag("create")
+                Text(L10n.t("live.join")).tag("join")
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("live-tabs")
+
             if !live.isConfigured { Text(L10n.t("live.notConfigured")).foregroundStyle(Theme.error) }
             else if LiveSession.pinsOrigin, let host = live.origin.flatMap({ URL(string: $0)?.host }) {
                 Text(L10n.t("live.stagingServer") + host).font(.footnote).foregroundStyle(Theme.muted)
                     .accessibilityIdentifier("live-server-fixed")
             }
-            Text(L10n.t("live.name")).font(.headline)
-            TextField(L10n.t("live.name"), text: $live.name)
-                .textFieldStyle(.roundedBorder)
-                .textContentType(.nickname)
-                .autocorrectionDisabled()
-                .frame(minHeight: 44)
-                .accessibilityIdentifier("guest-name")
-            Text(L10n.t("live.mode")).font(.headline)
-            Picker(L10n.t("live.mode"), selection: $live.mode) {
-                Text(L10n.t("live.race")).tag("race")
-                Text(L10n.t("live.duel")).tag("duel")
-            }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("game-mode")
-            Text(L10n.t(live.mode == "race" ? "live.raceDetail" : "live.duelDetail")).foregroundStyle(Theme.muted)
-            Text(L10n.t("setup.size")).font(.headline)
-            Picker(L10n.t("setup.size"), selection: $live.size) {
-                Text("6×6").tag(6)
-                Text("9×9").tag(9)
-            }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("board-size")
-            PrimaryButton(title: L10n.t(busy ? "live.waiting" : "live.create"), id: "room-create") { live.create() }
+
+            if joining {
+                field(L10n.t("live.invite")) {
+                    TextField("ABC234…", text: $live.invite)
+                        .font(Theme.display(.title2, weight: .bold))
+                        .multilineTextAlignment(.center)
+                        .textInputAutocapitalization(.never) // links are case-sensitive; the core uppercases codes
+                        .keyboardType(.asciiCapable)
+                        .autocorrectionDisabled()
+                        .submitLabel(.go)
+                        .onSubmit { submitJoin(busy: busy) }
+                        .inputBox(minHeight: 60)
+                        .accessibilityLabel(L10n.t("live.invite"))
+                        .accessibilityIdentifier("room-code")
+                }
+                nameField
+                PrimaryButton(title: L10n.t(busy ? "live.waiting" : "live.join"), id: "room-join") { submitJoin(busy: busy) }
+                    .disabled(busy || !live.isConfigured || live.invite.trimmingCharacters(in: .whitespaces).isEmpty)
+            } else {
+                nameField
+                VStack(alignment: .leading, spacing: 8) {
+                    SectionLabel(text: L10n.t("live.mode"))
+                    HStack(spacing: 12) {
+                        ForEach(["race", "duel"], id: \.self) { mode in
+                            ChoiceCard(title: modeName(mode), detail: L10n.t(mode == "race" ? "live.raceDetail" : "live.duelDetail"),
+                                       selected: live.mode == mode, id: "mode-\(mode)",
+                                       titleFont: Theme.display(.headline, weight: .bold)) {
+                                EmptyView()
+                            } action: {
+                                guard live.mode != mode else { return }
+                                live.mode = mode
+                                prefs.liveMode = mode
+                                Feedback.shared.play(.select)
+                            }
+                        }
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("game-mode")
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    SectionLabel(text: L10n.t("live.size"))
+                    Picker(L10n.t("live.size"), selection: $live.size) {
+                        Text("6×6").tag(6)
+                        Text("9×9").tag(9)
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("board-size")
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    SectionLabel(text: L10n.t("setup.difficulty"))
+                    LevelPicker(selection: Binding(get: { live.difficulty ?? "easy" }, set: { live.difficulty = $0 })) {
+                        prefs.liveDifficulty = live.difficulty ?? "easy"
+                        Feedback.shared.play(.select)
+                    }
+                    Text("\(L10n.t("level.\(live.difficulty ?? "easy")Help")) \(L10n.t("level.scope"))")
+                        .font(.footnote).foregroundStyle(Theme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("difficulty-help")
+                }
+                PrimaryButton(title: L10n.t(busy ? "live.waiting" : "live.create"), id: "room-create") {
+                    remember()
+                    live.create()
+                }
                 .disabled(busy || !live.isConfigured)
-            Text(L10n.t("live.or")).font(.headline).padding(.top, 8).accessibilityAddTraits(.isHeader)
-            TextField(L10n.t("live.invite"), text: $live.invite)
-                .textFieldStyle(.roundedBorder)
-                .textInputAutocapitalization(.never) // links are case-sensitive; the core uppercases codes
-                .keyboardType(.asciiCapable)
-                .autocorrectionDisabled()
-                .frame(minHeight: 44)
-                .accessibilityIdentifier("room-code")
-            SecondaryButton(title: L10n.t("live.join"), id: "room-join") { live.join() }
-                .disabled(busy || !live.isConfigured || live.invite.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
         }
         .disabled(busy)
+        .onChange(of: live.size) { _, size in prefs.liveSize = size }
+    }
+
+    private var nameField: some View {
+        field(L10n.t("live.name")) {
+            TextField(L10n.t("live.name"), text: $live.name)
+                .textContentType(.nickname)
+                .autocorrectionDisabled()
+                .submitLabel(.done)
+                .inputBox(minHeight: 52)
+                .onChange(of: live.name) { _, name in if name.count > 16 { live.name = String(name.prefix(16)) } }
+                .accessibilityIdentifier("guest-name")
+        }
+    }
+
+    private func field<Content: View>(_ label: String, @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(label).font(.subheadline.weight(.medium)).foregroundStyle(Theme.muted)
+            content()
+        }
+    }
+
+    private func remember() {
+        let name = live.name.trimmingCharacters(in: .whitespaces)
+        if !name.isEmpty { prefs.displayName = name }
+    }
+
+    private func submitJoin(busy: Bool) {
+        guard !busy, live.isConfigured, !live.invite.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        remember()
+        live.join()
+    }
+}
+
+extension View {
+    /// A text field drawn like the web's inputs: paper, a 1.5 pt edge, rounded corners.
+    func inputBox(minHeight: CGFloat) -> some View {
+        padding(.horizontal, 14)
+            .frame(minHeight: minHeight)
+            .background(Theme.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.border, lineWidth: 1.5) }
     }
 }
 
@@ -207,54 +345,111 @@ struct LiveLobbyView: View {
     var body: some View {
         let countdown = snapshot.phase == "countdown"
         let own = snapshot.own, view = live.view
-        VStack(alignment: .leading, spacing: 12) {
-            Text(L10n.t(countdown ? "lobby.countdown" : "lobby.waiting")).font(.title2.bold())
-                .accessibilityAddTraits(.isHeader)
-            Text("\(modeName(snapshot.mode)) · \(snapshot.size)×\(snapshot.size)").foregroundStyle(Theme.muted)
+        VStack(alignment: .leading, spacing: 14) {
+            PageHeader(eyebrow: roomLine(snapshot), title: L10n.t(countdown ? "lobby.countdown" : "lobby.waiting"))
             ConnectionStatus(connection: view.connection)
-            Text(snapshot.roomCode)
-                .font(.largeTitle.monospaced().bold())
-                .textSelection(.enabled)
+            if let level = snapshot.difficulty, AppPreferences.levels.contains(level) {
+                Text("\(Text(L10n.t("lobby.level", ["level": L10n.t("level.\(level)")])).bold().foregroundStyle(Theme.accent)) \(L10n.t("level.\(level)Help")) \(L10n.t("level.scope"))")
+                    .font(.footnote)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Theme.selected, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .accessibilityIdentifier("room-difficulty")
+            }
+
+            VStack(spacing: 14) {
+                SectionLabel(text: L10n.t("lobby.room"))
+                HStack(spacing: 6) {
+                    ForEach(Array(snapshot.roomCode.enumerated()), id: \.offset) { _, letter in
+                        Text(String(letter))
+                            .font(Theme.display(.title2, weight: .bold))
+                            .frame(width: 38, height: 46)
+                            .background(Theme.canvas, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .overlay { RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.line, lineWidth: 1) }
+                    }
+                }
+                .accessibilityElement(children: .ignore)
                 .accessibilityLabel(L10n.t("lobby.code", ["code": snapshot.roomCode.map(String.init).joined(separator: " ")]))
                 .accessibilityValue(snapshot.roomCode)
                 .accessibilityIdentifier("room-code")
-            HStack {
-                Button {
-                    UIPasteboard.general.string = snapshot.roomCode
-                    copied = true
-                    announce(L10n.t("lobby.copied"))
-                } label: {
-                    Label(L10n.t(copied ? "lobby.copied" : "lobby.copy"), systemImage: "doc.on.doc").frame(minHeight: 44)
-                }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("invite-copy")
-                if let url = live.inviteURL {
-                    ShareLink(item: url) {
-                        Label(L10n.t("lobby.share"), systemImage: "square.and.arrow.up").frame(minHeight: 44)
+                HStack(spacing: 10) {
+                    Button {
+                        UIPasteboard.general.string = snapshot.roomCode
+                        copied = true
+                        Feedback.shared.play(.select)
+                        announce(L10n.t("lobby.copied"))
+                    } label: {
+                        Label(L10n.t(copied ? "lobby.copied" : "lobby.copy"), systemImage: "doc.on.doc")
+                            .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 48)
                     }
-                    .buttonStyle(.bordered)
-                    .accessibilityIdentifier("invite-share")
+                    .buttonStyle(PressStyle(fill: Theme.background, foreground: Theme.accent, stroke: Theme.line, radius: 14))
+                    .accessibilityIdentifier("invite-copy")
+                    if let url = live.inviteURL {
+                        ShareLink(item: url) {
+                            Label(L10n.t("lobby.share"), systemImage: "square.and.arrow.up")
+                                .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 48)
+                        }
+                        .buttonStyle(PressStyle(fill: Theme.background, foreground: Theme.accent, stroke: Theme.line, radius: 14))
+                        .accessibilityIdentifier("invite-share")
+                    }
                 }
             }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(L10n.t("lobby.you", ["name": own.name, "state": L10n.t(own.ready ? "lobby.ready" : "lobby.notReady")]))
+            .padding(18)
+            .frame(maxWidth: .infinity)
+            .card()
+
+            VStack(spacing: 10) {
+                seat(name: own.name, you: true, ready: own.ready, connected: own.connected)
                 if let opponent = snapshot.opponent {
-                    Text(opponent.name + " · " + L10n.t(opponent.ready ? "lobby.ready" : "lobby.notReady")
-                         + (opponent.connected ? "" : L10n.t("lobby.opponentOffline")))
+                    seat(name: opponent.name, you: false, ready: opponent.ready, connected: opponent.connected)
                 } else {
-                    Text(L10n.t("lobby.noOpponent")).foregroundStyle(Theme.muted)
+                    seat(name: nil, you: false, ready: false, connected: true)
                 }
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("players")
+
             if countdown {
-                Text(countdownText(view)).font(.title2.monospacedDigit()).accessibilityIdentifier("timer")
+                Text(countdownText(view)).font(Theme.display(.title3).monospacedDigit()).foregroundStyle(Theme.accent)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityIdentifier("timer")
             }
             PrimaryButton(title: L10n.t(own.ready ? "lobby.unready" : "lobby.setReady"), id: "ready-toggle") {
+                Feedback.shared.play(.select)
                 live.command("ready", ready: !own.ready)
             }
             .disabled(snapshot.opponent == nil || view.connection != "connected" || view.pendingCommand)
         }
+    }
+
+    /// A player row: initial in a round avatar (you blue, rival amber, empty dashed) and a ready pill.
+    private func seat(name: String?, you: Bool, ready: Bool, connected: Bool) -> some View {
+        HStack(spacing: 12) {
+            Text(name.flatMap { $0.trimmingCharacters(in: .whitespaces).first.map { String($0).uppercased() } } ?? "+")
+                .font(Theme.display(.body, weight: .bold))
+                .foregroundStyle(name == nil ? Theme.muted : you ? Theme.accent : Theme.rival)
+                .frame(width: 44, height: 44)
+                .background(name == nil ? Color.clear : you ? Theme.selected : Theme.rivalSoft, in: Circle())
+                .overlay { if name == nil { Circle().strokeBorder(Theme.border, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])) } }
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(name ?? L10n.t("lobby.noOpponent")).font(.body.weight(name == nil ? .regular : .semibold))
+                    .foregroundStyle(name == nil ? Theme.muted : Theme.foreground)
+                if you { Text(L10n.t("lobby.youShort")).font(.footnote).foregroundStyle(Theme.muted) }
+                else if name != nil && !connected { Text(L10n.t("lobby.opponentOffline").trimmingCharacters(in: CharacterSet(charactersIn: " ·"))).font(.footnote).foregroundStyle(Theme.error) }
+            }
+            Spacer(minLength: 8)
+            if name != nil {
+                Text(L10n.t(ready ? "lobby.ready" : "lobby.notReady"))
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(ready ? Color.white : Theme.muted)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(ready ? Color(red: 0x15 / 255, green: 0x80 / 255, blue: 0x3d / 255) : Theme.track, in: Capsule())
+            }
+        }
+        .padding(10).padding(.trailing, 4)
+        .frame(maxWidth: .infinity, minHeight: 64)
+        .card(radius: 18)
     }
 
     private func countdownText(_ view: LiveView) -> String {
@@ -273,7 +468,11 @@ struct LiveGameView: View {
         let race = snapshot.mode == "race"
         let content = boardContent(race: race)
         GameScreenLayout {
-            VStack(spacing: 0) { navBar(view: view, race: race); statusRow(race: race, content: content) }
+            VStack(spacing: 6) {
+                navBar(view: view, race: race)
+                hud(race: race, content: content)
+                statusRow(race: race, content: content)
+            }
         } board: {
             if let content {
                 BoardView(content: content) { live.selected = $0 }
@@ -290,19 +489,72 @@ struct LiveGameView: View {
     }
 
     private func navBar(view: LiveView, race: Bool) -> some View {
-        GameNavBar(mode: "\(modeName(snapshot.mode)) · \(snapshot.size)×\(snapshot.size)", back: { live.goHome() }) {
-            Text(timerText(view, race: race)).font(.subheadline.monospacedDigit()).foregroundStyle(Theme.muted)
+        GameNavBar(mode: roomLine(snapshot, short: true), back: { live.goHome() }) {
+            Text(timerText(view, race: race)).font(Theme.display(.title2).monospacedDigit())
+                .foregroundStyle(!race && (view.remainingMs ?? 90_000) <= 10_000 ? Theme.error : Theme.foreground)
                 .accessibilityLabel(L10n.t(race ? "live.elapsed" : "live.remaining") + " " + timerText(view, race: race))
                 .accessibilityIdentifier("timer")
         } trailing: {
-            if let name = snapshot.opponent?.name {
-                Text(name).font(.subheadline).foregroundStyle(Theme.muted).lineLimit(1)
-                    .accessibilityIdentifier("opponent-name")
+            EmptyView()
+        }
+    }
+
+    /// You on the left in blue, the rival mirrored on the right in amber: filled share in a race, score in a duel.
+    @ViewBuilder private func hud(race: Bool, content: BoardContent?) -> some View {
+        let rivalName = snapshot.opponent?.name ?? L10n.t("hud.opponent")
+        if race {
+            let own = content.map(Self.progress) ?? 0
+            let rival = Double(min(100, snapshot.opponent?.progressPercent ?? 0)) / 100
+            VStack(spacing: 4) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(L10n.t("hud.you")).font(.footnote.weight(.semibold)).foregroundStyle(Theme.accent)
+                    Text("\(Int(own * 100))%").font(Theme.display(.subheadline).monospacedDigit())
+                    Spacer(minLength: 8)
+                    Text("\(snapshot.opponent?.progressPercent ?? 0)%").font(Theme.display(.subheadline).monospacedDigit())
+                        .accessibilityLabel(L10n.t("game.opponentProgress", ["percent": snapshot.opponent?.progressPercent ?? 0]))
+                        .accessibilityIdentifier("opponent-progress")
+                    Text(rivalName).font(.footnote.weight(.semibold)).foregroundStyle(Theme.rival).lineLimit(1)
+                        .accessibilityIdentifier("opponent-name")
+                }
+                HStack(spacing: 10) {
+                    Meter(value: own)
+                    Meter(value: rival, tint: Theme.rival, leading: false)
+                }
+            }
+        } else {
+            let remaining = Double(live.view.remainingMs ?? 90_000) / 90_000
+            VStack(spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(L10n.t("hud.you")).font(.footnote.weight(.semibold)).foregroundStyle(Theme.accent).accessibilityHidden(true)
+                    Text("\(snapshot.own.score)").font(Theme.display(.title3).monospacedDigit())
+                        .accessibilityLabel(L10n.t("game.you", ["score": snapshot.own.score]))
+                        .accessibilityIdentifier("own-score")
+                    Text("×\(snapshot.own.combo)").font(.caption.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(Theme.accent)
+                        .padding(.horizontal, 7).padding(.vertical, 1)
+                        .background(Theme.selected, in: Capsule())
+                        .opacity(snapshot.own.combo > 1 ? 1 : 0)
+                        .accessibilityLabel(L10n.t("game.combo", ["combo": snapshot.own.combo]))
+                        .accessibilityIdentifier("combo")
+                    Spacer(minLength: 8)
+                    Text("\(snapshot.opponent?.score ?? 0)").font(Theme.display(.title3).monospacedDigit())
+                        .accessibilityLabel(L10n.t("game.opponentScore", ["score": snapshot.opponent?.score ?? 0]))
+                        .accessibilityIdentifier("opponent-score")
+                    Text(rivalName).font(.footnote.weight(.semibold)).foregroundStyle(Theme.rival).lineLimit(1)
+                        .accessibilityIdentifier("opponent-name")
+                }
+                Meter(value: remaining, tint: remaining <= 10.0 / 90 ? Theme.error : Theme.accent)
             }
         }
     }
 
-    /// One status row: connection (a dot while healthy), the mode's value, and the message of the moment.
+    static func progress(_ content: BoardContent) -> Double {
+        let blanks = content.givens.indices.filter { content.givens[$0] == 0 }
+        guard !blanks.isEmpty else { return 0 }
+        return Double(blanks.filter { content.values[$0] != 0 }.count) / Double(blanks.count)
+    }
+
+    /// One status row: connection (a dot while healthy) and the message of the moment.
     @ViewBuilder private func statusRow(race: Bool, content: BoardContent?) -> some View {
         let view = live.view
         let status = content.map { statusText(race: race, conflicts: !$0.conflicts.isEmpty) }
@@ -310,38 +562,23 @@ struct LiveGameView: View {
         let locked = !race && (view.lockedRemainingMs ?? 0) > 0
         let alert = locked || !(content?.conflicts.isEmpty ?? true)
         GameStatusRow {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) { rowValues(race: race); message(status, neutral: neutral, alert: alert, locked: locked) }
-                VStack(spacing: 2) {
-                    HStack(spacing: 12) { rowValues(race: race) }
-                    message(status, neutral: neutral, alert: alert, locked: locked)
+            HStack(spacing: 8) {
+                ConnectionStatus(connection: view.connection, compact: true)
+                if let status, !neutral {
+                    StatusMessage(text: status, identifier: locked ? "input-lock" : "game-status", alert: alert)
+                        .lineLimit(1).minimumScaleFactor(0.8)
                 }
+                Spacer(minLength: 0)
             }
             .background { if neutral, let status { StatusMessage(text: status, identifier: "game-status", neutral: true) } }
         }
         .onChange(of: status) { _, text in if let text, text != L10n.t("game.incomplete") { announce(text) } }
     }
 
-    @ViewBuilder private func rowValues(race: Bool) -> some View {
-        ConnectionStatus(connection: live.view.connection, compact: true)
-        if race {
-            Text(L10n.t("game.opponentProgress", ["percent": snapshot.opponent?.progressPercent ?? 0]))
-                .accessibilityIdentifier("opponent-progress")
-        } else {
-            scores
-        }
-    }
-
-    @ViewBuilder private func message(_ status: String?, neutral: Bool, alert: Bool, locked: Bool) -> some View {
-        if let status, !neutral {
-            StatusMessage(text: status, identifier: locked ? "input-lock" : "game-status", alert: alert)
-        }
-    }
-
     @ViewBuilder private func bottom(view: LiveView, race: Bool, content: BoardContent?) -> some View {
         if view.reconcileRequired {
             VStack(alignment: .leading, spacing: 8) {
-                Text(L10n.t("reconcile.message")).accessibilityIdentifier("reconcile-message")
+                Text(L10n.t("reconcile.message")).font(.subheadline).accessibilityIdentifier("reconcile-message")
                 SecondaryButton(title: L10n.t("reconcile.local"), id: "reconcile-local") { live.reconcile(keepLocal: true) }
                 SecondaryButton(title: L10n.t("reconcile.server"), id: "reconcile-server") { live.reconcile(keepLocal: false) }
             }
@@ -364,12 +601,6 @@ struct LiveGameView: View {
                             conflicts: [], selected: live.selected, locked: { own.cells[$0] != 0 })
     }
 
-    @ViewBuilder private var scores: some View {
-        Text(L10n.t("game.you", ["score": snapshot.own.score])).bold().accessibilityIdentifier("own-score")
-        Text(L10n.t("game.opponentScore", ["score": snapshot.opponent?.score ?? 0])).accessibilityIdentifier("opponent-score")
-        Text(L10n.t("game.combo", ["combo": snapshot.own.combo])).accessibilityIdentifier("combo")
-    }
-
     @ViewBuilder private func controls(race: Bool, content: BoardContent) -> some View {
         let n = snapshot.size, index = live.selected
         let value = content.values[index]
@@ -380,20 +611,28 @@ struct LiveGameView: View {
                 .font(.subheadline).foregroundStyle(Theme.muted)
                 .accessibilityHidden(true)
         }
-        NumberPad(size: n, notesMode: race && live.notesMode, enabled: editable) { live.enter($0) }
-            .accessibilityHint(race ? "" : L10n.t("live.duelRules"))
+        NumberPad(size: n, values: content.values, notesMode: race && live.notesMode, enabled: editable) { digit in
+            let before = live.view.race?.conflicts ?? []
+            live.enter(digit)
+            if race {
+                let now = live.view.race?.conflicts ?? []
+                Feedback.shared.play(live.notesMode ? .note : now.contains(index) && !before.contains(index) ? .error : .tap)
+            } else {
+                Feedback.shared.play(.tap)
+            }
+        }
+        .accessibilityHint(race ? "" : L10n.t("live.duelRules"))
         if race, let draft = live.view.race {
             HStack(spacing: 4) {
-                Toggle(isOn: $live.notesMode) { ToolLabel(title: L10n.t("game.notes"), icon: "pencil") }
-                    .toggleStyle(.button)
-                    .keyboardShortcut("n", modifiers: [])
-                    .accessibilityIdentifier("notes-toggle")
-                ToolButton(title: L10n.t("game.erase"), icon: "delete.left", id: "erase", enabled: editable) { live.edit("erase") }
+                NotesToggle(isOn: $live.notesMode) { Feedback.shared.play(.select) }
+                ToolButton(title: L10n.t("game.erase"), icon: "eraser", id: "erase", enabled: editable) {
+                    live.edit("erase"); Feedback.shared.play(.tap)
+                }
                 ToolButton(title: L10n.t("game.undo"), icon: "arrow.uturn.backward", id: "undo",
-                           enabled: draft.canUndo && live.canInput()) { live.edit("undo") }
+                           enabled: draft.canUndo && live.canInput()) { live.edit("undo"); Feedback.shared.play(.tap) }
                     .keyboardShortcut("z", modifiers: .command)
                 ToolButton(title: L10n.t("game.redo"), icon: "arrow.uturn.forward", id: "redo",
-                           enabled: draft.canRedo && live.canInput()) { live.edit("redo") }
+                           enabled: draft.canRedo && live.canInput()) { live.edit("redo"); Feedback.shared.play(.tap) }
                     .keyboardShortcut("z", modifiers: [.command, .shift])
             }
         } else if UIDebug.enabled {
@@ -406,7 +645,7 @@ struct LiveGameView: View {
             guard let now = view.estimatedServerMs, let start = snapshot.startMs else { return L10n.t("game.syncing") }
             return clock(now > start ? now - start : 0)
         }
-        return view.remainingMs.map(clock) ?? L10n.t("game.syncing")
+        return view.remainingMs.map { clock(($0 + 999) / 1000 * 1000) } ?? L10n.t("game.syncing")
     }
 
     private func statusText(race: Bool, conflicts: Bool) -> String {
@@ -430,36 +669,68 @@ struct LiveResultView: View {
     var body: some View {
         let own = snapshot.own, opponent = snapshot.opponent, result = snapshot.result
         let reason = result?.reason
-        let title: String = {
-            guard let result, !["both_disconnected", "resource_limit"].contains(result.reason) else { return "result.noContest" }
-            guard let winner = result.winner else { return "result.draw" }
-            return winner == own.seat ? "result.win" : "result.lose"
+        let outcome: String = {
+            guard let result, !["both_disconnected", "resource_limit"].contains(result.reason) else { return "noContest" }
+            guard let winner = result.winner else { return "draw" }
+            return winner == own.seat ? "win" : "lose"
         }()
-        VStack(alignment: .leading, spacing: 12) {
-            Text("\(modeName(snapshot.mode)) · \(snapshot.size)×\(snapshot.size)").font(.subheadline).foregroundStyle(Theme.muted)
-            Text(L10n.t(title)).font(.title.bold()).accessibilityAddTraits(.isHeader)
-                .accessibilityIdentifier("result-heading")
+        let symbol = outcome == "win" ? "trophy.fill" : outcome == "lose" ? "flag.fill" : "equal"
+        let tint = outcome == "win" ? Theme.accent : outcome == "lose" ? Theme.rival : Theme.muted
+        let fill = outcome == "win" ? Theme.selected : outcome == "lose" ? Theme.rivalSoft : Theme.track
+        CenteredPanel(symbol: symbol, symbolTint: tint, symbolFill: fill, eyebrow: roomLine(snapshot),
+                      title: L10n.t("result.\(outcome)"), titleId: "result-heading") {
             ConnectionStatus(connection: live.view.connection)
+            LiveNotices(live: live)
             // An empty seat (friend left) has no score to show; never print a fake 0.
-            Text(snapshot.mode != "duel" ? L10n.t("result.raceDone")
-                 : opponent.map { L10n.t("result.duelScore", ["own": own.score, "opponent": $0.score ?? 0]) }
-                    ?? L10n.t("result.ownScore", ["own": own.score]))
-                .accessibilityIdentifier("result-details")
-            Text(L10n.t("reason.\(reason ?? "completed")"))
-            if opponent == nil {
-                Text(L10n.t("rematch.opponentLeft"))
-            } else if own.rematch {
-                Text(L10n.t("rematch.mine"))
-            } else if opponent?.rematch == true {
-                Text(L10n.t("rematch.theirs"))
+            Group {
+                if snapshot.mode == "duel" {
+                    HStack(spacing: 14) {
+                        score(name: own.name, value: own.score, rival: false)
+                        Text("—").foregroundStyle(Theme.muted).accessibilityHidden(true)
+                        if let opponent { score(name: opponent.name, value: opponent.score ?? 0, rival: true) }
+                    }
+                    .padding(14)
+                    .frame(maxWidth: .infinity)
+                    .card(radius: 18)
+                } else {
+                    Text(L10n.t("result.raceDone")).foregroundStyle(Theme.muted)
+                }
             }
-            PrimaryButton(title: L10n.t("rematch.ask"), id: "rematch") { live.command("rematch") }
-                .disabled(opponent == nil || own.rematch || live.view.pendingCommand || live.view.connection != "connected")
-            if live.view.connection == "session_lost" {
-                PrimaryButton(title: L10n.t("lost.reset"), id: "live-recover") { live.requestReset() }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(snapshot.mode != "duel" ? L10n.t("result.raceDone")
+                                : opponent.map { L10n.t("result.duelScore", ["own": own.score, "opponent": $0.score ?? 0]) }
+                                ?? L10n.t("result.ownScore", ["own": own.score]))
+            .accessibilityIdentifier("result-details")
+            Text(L10n.t("reason.\(reason ?? "completed")")).font(.subheadline).foregroundStyle(Theme.muted)
+                .multilineTextAlignment(.center)
+            Group {
+                if opponent == nil {
+                    Text(L10n.t("rematch.opponentLeft"))
+                } else if own.rematch {
+                    Text(L10n.t("rematch.mine"))
+                } else if opponent?.rematch == true {
+                    Text(L10n.t("rematch.theirs"))
+                }
             }
-            SecondaryButton(title: L10n.t("nav.home"), id: "home") { live.goHome() }
+            .font(.subheadline).foregroundStyle(Theme.muted).multilineTextAlignment(.center)
+            VStack(spacing: 10) {
+                PrimaryButton(title: L10n.t("rematch.ask"), id: "rematch") { Feedback.shared.play(.tap); live.command("rematch") }
+                    .disabled(opponent == nil || own.rematch || live.view.pendingCommand || live.view.connection != "connected")
+                if live.view.connection == "session_lost" {
+                    PrimaryButton(title: L10n.t("lost.reset"), id: "live-recover") { live.requestReset() }
+                }
+                SecondaryButton(title: L10n.t("nav.home"), id: "home") { live.goHome() }
+            }
+            .padding(.top, 8)
         }
-        .onAppear { announce(L10n.t(title)) }
+        .onAppear { announce(L10n.t("result.\(outcome)")) }
+    }
+
+    private func score(name: String, value: Int, rival: Bool) -> some View {
+        VStack(spacing: 2) {
+            Text(name).font(.footnote.weight(.semibold)).foregroundStyle(rival ? Theme.rival : Theme.accent).lineLimit(1)
+            Text("\(value)").font(Theme.display(.largeTitle).monospacedDigit())
+        }
+        .frame(maxWidth: .infinity)
     }
 }

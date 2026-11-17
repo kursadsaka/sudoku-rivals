@@ -36,6 +36,8 @@ struct LiveView: Decodable, Equatable {
         let generation: UInt64
         let mode: String
         let size: Int
+        /// Room level fixed at creation ("beginner"…"expert"); nil for rooms created without one.
+        let difficulty: String?
         let phase: String
         let startMs: UInt64?
         let endMs: UInt64?
@@ -176,6 +178,8 @@ final class LiveSession {
     var name = L10n.t("live.defaultName")
     var mode = "race"
     var size = 6
+    /// Sent with `create` only when set; nil keeps the v1 request shape (an unrated room).
+    var difficulty: String?
     var invite = ""
     var selected = 0
     var notesMode = false
@@ -318,7 +322,9 @@ final class LiveSession {
 
     func create() {
         guard isConfigured else { message = L10n.t("live.notConfigured"); return }
-        dispatch(["type": "create", "guest": guest, "name": name, "mode": mode, "size": size])
+        var action: [String: Any] = ["type": "create", "guest": guest, "name": name, "mode": mode, "size": size]
+        if let difficulty { action["difficulty"] = difficulty }
+        dispatch(action)
     }
 
     func join() {
@@ -427,7 +433,8 @@ final class LiveSession {
             let saved = effect.changed ? persist() : !storageError
             refresh()
             if let s = snapshot, old?.matchId != s.matchId || old?.own.boardId != s.own.boardId {
-                selected = 0
+                // Like the web: a new board opens on its first empty cell.
+                selected = s.own.givens.firstIndex(of: 0) ?? 0
                 notesMode = false
             }
             if let request = effect.request {

@@ -71,3 +71,6 @@ Oda kuran artık Kolay/Orta/Zor seçebiliyor. Protokole isteğe bağlı `difficu
 
 Kullanıcı isteğiyle üç kademe, her biri bir teknik fazlasını gerektiren beş gerçek kademeye genişletildi: Başlangıç (kutu teklileri), Kolay (satır/sütun teklileri), Orta (çıplak tekli), Zor (kilitli adaylar), Uzman (çiftler). İki boyutta da üretiliyor; tek kısıt 6×6 Uzman'da: çift gerektiren 6×6 bulmaca ~5.000 kazıda bir çıktığı için bu kademe, aramanın bulduğu 64 doğrulanmış bulmacadan simetriyle türetiliyor. Solo ve arkadaş kurulumu, lobi ve başlıklar beş kademeyi gösteriyor; protokol tanımadığı kademe adını "seviye yok" okuyacak biçimde toleranslı. Yerel uygulamalar derlenmedi. Ayrıntı ve ölçüm: [difficulty-levels](validation/difficulty-levels.md).
 
+## iOS web eşitlemesi (17 Kasım)
+
+Kullanıcı isteğiyle native SwiftUI korunarak iOS, web'in son görsel diline ve akışlarına uyarlandı: kâğıt/mürekkep teması, yeni ana sayfa, 9×9 varsayılanı, solo ve arkadaş kurulumunda beş gerçek zorluk seviyesi (oda `difficulty` gönderir), teknik ipuçları, kalan sayılı tuşlar, rakip göstergesi, Ayarlar (tema, ses, titreşim, iOS dil ayarı) ve platforma uygun ses/haptik. Rust, protokol ve sunucu değişmedi. Linux'ta Rust ve web testleri geçti; iOS derlemesi ve simülatör testleri Mac erişilemediği için yapılmadı. Ayrıntı: [g16-ios-web-parity](validation/g16-ios-web-parity.md).

@@ -96,7 +96,7 @@ final class LiveUITests: XCTestCase {
     func openLiveSetup(mode: String, size: Int) async throws {
         try await tap("friend-start")
         try await exists("game-mode")
-        app.segmentedControls["game-mode"].buttons[mode == "race" ? "Classic race" : "90 s duel"].tap()
+        try await tap("mode-\(mode)")
         app.segmentedControls["board-size"].buttons["\(size)×\(size)"].tap()
     }
 
@@ -188,6 +188,7 @@ final class LiveUITests: XCTestCase {
         try await until(15, "bot room") { self.bot.snapshot != nil }
         let code = try XCTUnwrap(bot.snapshot?.roomCode)
         try await tap("friend-start")
+        app.segmentedControls["live-tabs"].buttons["Join"].tap()
         try await tap("room-code")
         el("room-code").typeText("\(proxy)/r/\(code)")
         try await tap("room-join")

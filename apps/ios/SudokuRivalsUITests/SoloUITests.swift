@@ -38,9 +38,10 @@ final class SoloUITests: XCTestCase {
 
     func startGame(size: Int, confirm: Bool = false) {
         tap("solo-start")
-        XCTAssertTrue(el("difficulty-note").waitForExistence(timeout: 5))
+        XCTAssertTrue(el("difficulty").waitForExistence(timeout: 5))
+        XCTAssertTrue(el("difficulty-easy").isSelected) // five levels; Easy until the player picks another
         XCTAssertFalse(el("game-board").exists) // no board on setup
-        app.segmentedControls["board-size"].buttons["\(size)×\(size)"].tap()
+        tap("size-\(size)")
         tap("game-start")
         if confirm { tap("confirm-replace") }
         XCTAssertTrue(el("game-board").waitForExistence(timeout: 10))
@@ -95,15 +96,17 @@ final class SoloUITests: XCTestCase {
             startGame(size: size)
             XCTAssertTrue(el("number-\(size)").exists)
             XCTAssertFalse(el("number-\(size + 1)").exists)
+            // Rated puzzles: the blank count follows the level, so count this board's empty cells.
+            let blanks = cells(where: "label CONTAINS 'editable, empty'").count
             var moves = 0
             while !el("result-heading").exists {
                 tap("hint")
                 XCTAssertTrue(el("hint-explanation").waitForExistence(timeout: 5), "singles stalled")
                 tap("hint-apply")
                 moves += 1
-                XCTAssertLessThanOrEqual(moves, size == 6 ? 18 : 43)
+                XCTAssertLessThanOrEqual(moves, blanks)
             }
-            XCTAssertEqual(moves, size == 6 ? 18 : 43)
+            XCTAssertEqual(moves, blanks)
             XCTAssertEqual(el("game-status").label, "Sudoku complete")
             XCTAssertTrue(el("result-details").label.hasPrefix("\(size)×\(size)"))
             XCTAssertEqual(el("storage-status").label, "Saved on this device")
@@ -249,7 +252,7 @@ final class SoloUITests: XCTestCase {
         XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "storage-status").count, 2)
 
         tap("solo-start")
-        app.segmentedControls["board-size"].buttons["9×9"].tap()
+        tap("size-9")
         XCTAssertTrue(el("replace-note").exists)
         tap("game-start")
         let cancel = app.alerts.buttons["Cancel"]
@@ -314,7 +317,7 @@ final class SoloUITests: XCTestCase {
         tap("back")
         // Replacing an existing size asks first.
         tap("solo-start")
-        app.segmentedControls["board-size"].buttons["6×6"].tap()
+        tap("size-6")
         tap("game-start")
         XCTAssertTrue(el("confirm-replace").waitForExistence(timeout: 5))
     }
@@ -355,7 +358,7 @@ final class SoloUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["solo-start"].label.contains("Tek başına oyna"))
         tap("solo-start")
-        app.segmentedControls["board-size"].buttons["9×9"].tap()
+        tap("size-9")
         tap("game-start")
         XCTAssertTrue(el("game-board").waitForExistence(timeout: 10))
         XCTAssertTrue(cell(1, 1).label.hasPrefix("Satır 1, sütun 1, "))

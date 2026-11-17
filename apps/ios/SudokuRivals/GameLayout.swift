@@ -125,20 +125,46 @@ struct GameNavBar<Time: View, Trailing: View>: View {
     var body: some View {
         HStack(spacing: 8) {
             Button(action: back) {
-                Image(systemName: "chevron.backward").font(.title3.weight(.semibold)).frame(width: 48, height: 48)
+                Image(systemName: "chevron.backward").font(.body.weight(.semibold)).frame(width: 48, height: 48)
             }
+            .buttonStyle(PressStyle(fill: Theme.background, foreground: Theme.foreground, stroke: Theme.line, radius: 14))
             .accessibilityLabel(L10n.t("nav.back"))
             .accessibilityIdentifier("back")
             .frame(minWidth: 72, alignment: .leading)
             Spacer(minLength: 0)
+            // "SOLO · 9×9 · EASY" over a large timer, as on the web.
             VStack(spacing: 0) {
-                Text(mode).font(.headline).accessibilityAddTraits(.isHeader)
+                Text(mode.uppercased(with: L10n.turkish ? Locale(identifier: "tr") : Locale(identifier: "en")))
+                    .font(.caption.weight(.semibold)).tracking(0.9).foregroundStyle(Theme.muted)
+                    .lineLimit(1).minimumScaleFactor(0.8)
+                    .accessibilityLabel(mode)
+                    .accessibilityAddTraits(.isHeader)
                 time
             }
             Spacer(minLength: 0)
             trailing.frame(minWidth: 72, minHeight: 48, alignment: .trailing)
         }
         .frame(minHeight: 48)
+    }
+}
+
+/// A thin progress bar: filled share of a board, or the duel's remaining time.
+struct Meter: View {
+    let value: Double
+    var tint: Color = Theme.accent
+    var leading = true
+
+    var body: some View {
+        Capsule().fill(Theme.track)
+            .overlay(alignment: leading ? .leading : .trailing) {
+                GeometryReader { proxy in
+                    Capsule().fill(tint)
+                        .frame(width: proxy.size.width * min(max(value, 0), 1))
+                        .frame(maxWidth: .infinity, alignment: leading ? .leading : .trailing)
+                }
+            }
+            .frame(height: 6)
+            .accessibilityHidden(true)
     }
 }
 

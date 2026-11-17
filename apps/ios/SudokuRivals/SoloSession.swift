@@ -19,12 +19,26 @@ struct BoardState: Decodable, Equatable {
     var boxRows: Int { size == 6 ? 2 : 3 }
 }
 
+/// A placement the player can make now (`solo_technique_hint`): a single, preceded by the candidate
+/// eliminations (locked candidates, pairs) that justify it when singles alone do not.
 struct LogicalHint: Decodable, Equatable {
     struct Unit: Decodable, Equatable { let kind: String; let index: Int }
+    struct Elimination: Decodable, Equatable {
+        let technique: String
+        let digits: [Int]
+        let unit: Unit
+        let target: Unit?
+        let cells: [Int]
+    }
     let index: Int
     let value: Int
     let technique: String
     let unit: Unit?
+    /// Absent from the singles-only `solo_hint` answer.
+    var eliminations: [Elimination]? = nil
+
+    /// Cells that form the elimination patterns, highlighted on the board while the hint is open.
+    var patternCells: Set<Int> { Set((eliminations ?? []).flatMap(\.cells)) }
 }
 
 enum HintOutcome: Equatable {
@@ -50,6 +64,9 @@ final class SoloSession {
     private(set) var complete = false
     private(set) var paused: Bool
     private(set) var saveState: SaveState = .saved
+    /// The puzzle's level as rated by the engine from its givens ("beginner"…"expert"); nil for older,
+    /// unrated puzzles, which then simply show no level.
+    let level: String?
     var selected: Int
     var notesMode: Bool
 
@@ -64,6 +81,7 @@ final class SoloSession {
         self.store = store
         self.game = game
         self.board = try BoardState(json: game)
+        self.level = Self.rate(game)
         self.elapsedBase = elapsed
         self.paused = paused
         self.selected = selected
@@ -78,6 +96,38 @@ final class SoloSession {
     static func start(size: Int, seed: UInt32, store: SoloStore,
                       now: @escaping () -> ContinuousClock.Instant = { .now }) throws -> SoloSession {
         let game = try newGeneratedSolo(size: UInt8(size), seed: seed, blanks: blanks(for: size))
+        let first = try BoardState(json: game).givens.firstIndex(of: 0) ?? 0
+        let session = try SoloSession(store: store, game: game, elapsed: .zero, paused: false,
+                                      selected: first, notesMode: false, now: now)
+        session.save()
+        return session
+    }
+
+    /// The level of a saved game's puzzle, or nil when it is unrated or cannot be read.
+    static func rate(_ game: String) -> String? {
+        struct Rating: Decodable { let level: String? }
+        guard let json = try? soloDifficulty(saved: game) else { return nil }
+        return (try? JSONDecoder().decode(Rating.self, from: Data(json.utf8)))?.level
+    }
+
+    /// Digs a puzzle that needs exactly the techniques of `difficulty`. Synchronous and CPU-bound (it can
+    /// take a moment for the harder 9×9 levels), so callers run it off the main actor. A seed that cannot
+    /// reach the level is retried with the next seed, as on the web.
+    static func generate(size: Int, seed: UInt32, difficulty: String) throws -> String {
+        var lastError: Error = SoloError.InvalidInput(reason: "CannotReachDifficulty")
+        for attempt in 0..<3 {
+            do { return try newRatedSolo(size: UInt8(size), seed: seed &+ UInt32(attempt), difficulty: difficulty) }
+            catch let SoloError.InvalidInput(reason) where reason.contains("CannotReachDifficulty") {
+                lastError = SoloError.InvalidInput(reason: reason)
+            }
+        }
+        throw lastError
+    }
+
+    /// Opens a freshly generated game and saves it. The caller has already obtained confirmation and
+    /// archived any unreadable save for this size.
+    static func begin(game: String, store: SoloStore,
+                      now: @escaping () -> ContinuousClock.Instant = { .now }) throws -> SoloSession {
         let first = try BoardState(json: game).givens.firstIndex(of: 0) ?? 0
         let session = try SoloSession(store: store, game: game, elapsed: .zero, paused: false,
                                       selected: first, notesMode: false, now: now)
@@ -152,7 +202,7 @@ final class SoloSession {
     func hint() -> HintOutcome {
         if !conflicts.isEmpty { return .conflicts }
         do {
-            let json = try soloHint(saved: game)
+            let json = try soloTechniqueHint(saved: game)
             guard let hint = try JSONDecoder().decode(LogicalHint?.self, from: Data(json.utf8)) else {
                 return .noneWithSingles
             }
