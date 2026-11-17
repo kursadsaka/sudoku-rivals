@@ -7,6 +7,7 @@
   <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f1ea" data-color="#f4f1ea">
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121214" data-color="#121214">
   <meta name="color-scheme" content="light dark">
+  <link rel="preload" href="/pkg/sudoku_wasm_bg.wasm" as="fetch" type="application/wasm" crossorigin>
   <link rel="icon" href="/icon.svg" type="image/svg+xml" sizes="any">
   <link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -32,7 +33,7 @@
         <svg viewBox="0 0 192 192" width="34" height="34" aria-hidden="true"><rect width="192" height="192" fill="#1d4ed8"/><rect x="39" y="39" width="114" height="114" rx="25" fill="#f5b453" transform="rotate(12 96 96) translate(11 -13)"/><rect x="39" y="39" width="114" height="114" rx="25" fill="#fff"/><path d="M72.33 39h7v114h-7zM112.67 39h7v114h-7zM39 72.33h114v7h-114zM39 112.67h114v7h-114z" fill="#1d4ed8"/><path d="M79.33 79.33h33.33v33.33h-33.33z" fill="#f5b453"/></svg>
         <span data-testid="app-title" translate="no">Sudoku <strong>Rivals</strong></span>
       </a>
-      <button id="settings-button" class="icon-button" data-testid="settings-open" aria-label="Ayarlar" title="Ayarlar">
+      <button id="settings-button" disabled class="icon-button" data-testid="settings-open" aria-label="Ayarlar" title="Ayarlar">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="var(--background)"/><circle cx="15" cy="17" r="3" fill="var(--background)"/></svg>
       </button>
     </header>
