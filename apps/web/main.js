@@ -1,11 +1,12 @@
 import { LiveScreens, transientNotice } from '/live.js';
-import init, * as core from '/pkg/sudoku_wasm.js';
 import { SoloSession, readSavedGames, formatTime } from '/session.js';
 import { cue as soundCue, preloadSound, setSound } from '/sound.js';
 
+let core;
+
 const text = {
   tr: {
-    skip:'İçeriğe geç', home:'Ana sayfa', back:'Geri', settings:'Ayarlar', loading:'Oyun hazırlanıyor…',
+    skip:'İçeriğe geç', home:'Ana sayfa', back:'Geri', settings:'Ayarlar', loading:'Oyun ve kayıtların hazırlanıyor…', inviteLoading:'Davetin hazırlanıyor…',
     eyebrow:'SUDOKU, KENDİ HIZINDA', title:'Biraz odaklan.', intro:'Bir tahta seç. Notlarını al, hamleni yap. İstediğin zaman kaldığın yerden devam et.',
     solo:'Tek başına oyna', soloDescription:'6×6 veya 9×9. İnternetsiz de yanında.', friends:'Arkadaşınla yarış', friendsDescription:'Klasik yarış ve 90 saniyelik düello.',
     friendsPending:'Arkadaş maçları bu sürümde henüz hazır değil. Şimdilik tek başına oynayabilirsin.', continue:'Kaldığın yerden', resume:'Devam et', completed:'Tamamlandı', savedGame:'Kayıtlı oyun',
@@ -30,7 +31,7 @@ const text = {
     genericError:'Bu işlem tamamlanamadı. Açık oyunun korunuyor.', badCell:'Verilen hücreler değiştirilemez.', filledNotes:'Not eklemek için önce hücredeki sayıyı sil.',
   },
   en: {
-    skip:'Skip to content', home:'Home', back:'Back', settings:'Settings', loading:'Getting your game ready…',
+    skip:'Skip to content', home:'Home', back:'Back', settings:'Settings', loading:'Getting your game and saves ready…', inviteLoading:'Getting your invitation ready…',
     eyebrow:'SUDOKU, AT YOUR OWN PACE', title:'A moment to focus.', intro:'Choose a board. Make a note, make your move. Pick up where you left off whenever you like.',
     solo:'Play solo', soloDescription:'6×6 or 9×9. Yours to play offline, too.', friends:'Play with a friend', friendsDescription:'Classic races and 90-second duels.',
     friendsPending:'Friend matches are not ready in this version. You can play solo for now.', continue:'Pick up where you left off', resume:'Resume', completed:'Complete', savedGame:'Saved game',
@@ -163,12 +164,14 @@ const art = {
   friends:'<svg viewBox="0 0 40 40" aria-hidden="true"><circle class="rival" cx="27.5" cy="14" r="5.5"/><path class="rival" d="M17.5 34c0-6.5 4.2-10.5 10-10.5s10 4 10 10.5Z"/><circle class="you" cx="13.5" cy="13" r="6.5" stroke-width="2.5"/><path class="you" d="M1.5 35c0-7.6 5.2-12.5 12-12.5s12 4.9 12 12.5Z" stroke-width="2.5"/></svg>',
 };
 function renderHome() {
-  const saves = readSavedGames(storage, core);
+  // Loading is not an empty save list: validate and display records only after the engine is ready.
+  const saves = ready ? readSavedGames(storage, core) : [];
   const readySaves = saves.filter(slot => slot.status === 'ready');
   const problems = saves.filter(slot => ['corrupt','unavailable'].includes(slot.status));
-  const card = (extra,action,testid,art,title,description) => `<button class="mode-card ${extra}" data-action="${action}" data-testid="${testid}"><span class="mode-art" aria-hidden="true">${art}</span><span class="mode-text"><span class="mode-title">${t(title)}</span><span class="mode-description">${t(description)}</span></span><span class="mode-go" aria-hidden="true">${svg('arrow')}</span></button>`;
+  const card = (extra,action,testid,art,title,description) => `<button class="mode-card ${extra}" data-action="${action}" data-testid="${testid}" ${ready ? '' : 'disabled'}><span class="mode-art" aria-hidden="true">${art}</span><span class="mode-text"><span class="mode-title">${t(title)}</span><span class="mode-description">${t(description)}</span></span><span class="mode-go" aria-hidden="true">${svg('arrow')}</span></button>`;
   content.innerHTML = `<section class="home" data-screen="home">
     <div class="hero"><p class="eyebrow">${t('eyebrow')}</p><h1>${t('title')}</h1><p class="lede">${t('intro')}</p></div>
+    ${!ready ? `<p class="notice" role="status" data-testid="engine-status">${t(location.pathname.startsWith('/r/') ? 'inviteLoading' : 'loading')}</p>` : ''}
     ${homeNotice ? `<p class="notice" role="status">${escape(homeNotice)}</p>` : ''}
     <div class="mode-options">
       ${card('primary','setup','solo-start',art.solo,'solo','soloDescription')}
@@ -507,8 +510,9 @@ content.addEventListener('click',event => {
   if (screen==='live') live.handle(button.dataset.action,button);
   else handleAction(button);
 });
-content.addEventListener('input',event => { if(screen==='live' && event.target.dataset.liveField) live.input(event.target.dataset.liveField,event.target.value,event.target); });
+content.addEventListener('input',event => { if(ready && screen==='live' && event.target.dataset.liveField) live.input(event.target.dataset.liveField,event.target.value,event.target); });
 content.addEventListener('change',event => {
+  if (!ready) return;
   if(screen==='live' && event.target.dataset.liveField) {live.input(event.target.dataset.liveField,event.target.value,event.target,true);return;}
   if (event.target.name === 'size') { selectedSize = preferences.soloSize = Number(event.target.value); savePreferences(); cue('select'); }
   if (event.target.name === 'difficulty' && LEVELS.includes(event.target.value)) {
@@ -533,6 +537,7 @@ content.addEventListener('change',event => {
   }
 });
 content.addEventListener('keydown',event => {
+  if (!ready) return;
   if(screen==='live') {live.keydown(event);return;}
   if (screen === 'solo-game' && event.key === 'Escape' && (hint || gameNotice)) { event.preventDefault(); hint = null; gameNotice = ''; renderGame(true); return; }
   if (screen !== 'solo-game' || !event.target.closest('[role="grid"]')) return;
@@ -582,17 +587,30 @@ setInterval(() => {
 setInterval(() => { if (session?.running) session.save(); },10000);
 
 applyPreferences();
+settingsButton.disabled = true;
+render();
+performance.mark('sudoku-home-shell');
+requestAnimationFrame(() => requestAnimationFrame(() => performance.mark('sudoku-home-frame')));
 try {
-  await init();
+  performance.mark('sudoku-engine-start');
+  core = await import('/pkg/sudoku_wasm.js');
+  await core.default();
+  performance.mark('sudoku-engine-initialized');
   session = new SoloSession(core,storage);
   live = new LiveScreens({debug,engine:core,storage,content,renderBoard,numberPad,progress,cue,notify,confirm:confirmDialog,svg,escape,
     remembered:{name:preferences.displayName,mode:preferences.liveMode,size:preferences.liveSize,difficulty:preferences.liveDifficulty},
     remember:(field,value) => { preferences[{name:'displayName',mode:'liveMode',size:'liveSize',difficulty:'liveDifficulty'}[field]] = value; savePreferences(); },language:()=>preferences.language,announce,
     onUpdate:()=>{if(screen==='live')render();},onHome:()=>{if(screen==='live'){screen='home';history.replaceState({},'', '/');render();focusContent();}}});
   ready = true;
+  settingsButton.disabled = false;
   if(location.pathname.startsWith('/r/')) {screen='live';live.enter(location.pathname);}
   else render();
+  performance.mark('sudoku-engine-ready');
+  performance.measure('sudoku-engine', 'sudoku-engine-start', 'sudoku-engine-ready');
 } catch {
+  ready = false;
+  settingsButton.disabled = true;
+  performance.mark('sudoku-engine-failed');
   content.innerHTML = `<section class="panel"><h1>Sudoku Rivals</h1><p class="notice error" role="alert">${t('loadFailed')}</p><button class="primary-button" id="reload">${t('loadAgain')}</button></section>`;
   document.querySelector('#reload').addEventListener('click',() => location.reload());
 }
