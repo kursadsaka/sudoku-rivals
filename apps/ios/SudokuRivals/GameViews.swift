@@ -16,6 +16,21 @@ struct GameScreen: View {
     }
 }
 
+/// While the game is saved and the debug flag is off, "saved" is not drawn but stays reachable for screen
+/// readers (a 1 pt element with the same identifier), like the web's screen-reader-only text.
+struct QuietSaveMarker: View {
+    let session: SoloSession
+
+    var body: some View {
+        if session.saveState == .saved && !UIDebug.enabled {
+            Color.clear.frame(width: 1, height: 1)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(L10n.t("saved"))
+                .accessibilityIdentifier("storage-status")
+        }
+    }
+}
+
 struct StorageStatus: View {
     let session: SoloSession
 
@@ -43,77 +58,72 @@ struct PlayingView: View {
     @Bindable var session: SoloSession
     @State private var hint: LogicalHint?
     @State private var notice: String?
-    @Environment(\.horizontalSizeClass) private var widthClass
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                status
-                if widthClass == .regular {
-                    HStack(alignment: .top, spacing: 24) {
-                        BoardView(session: session).frame(maxWidth: 560)
-                        VStack(alignment: .leading, spacing: 12) { controls }.frame(maxWidth: 420)
-                    }
-                } else {
-                    BoardView(session: session)
-                    controls
-                }
-            }
-            .padding()
+        GameScreenLayout {
+            VStack(spacing: 0) { navBar; statusRow }
+        } board: {
+            BoardView(session: session)
+        } bottom: {
+            VStack(spacing: 8) { controls }
         }
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button { app.leaveGame() } label: { Label(L10n.t("nav.home"), systemImage: "house") }
-                    .accessibilityIdentifier("back")
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { session.pause() } label: { Label(L10n.t("game.pause"), systemImage: "pause.fill") }
-                    .accessibilityIdentifier("pause")
-            }
-        }
+        .toolbar(UIDebug.enabled ? .visible : .hidden, for: .navigationBar)
         .background { ArrowKeys { session.move(rowDelta: $0, columnDelta: $1) } }
         .background { DeleteKeyCatcher { if session.canEdit { report(session.erase()) } }.accessibilityHidden(true) }
         .onChange(of: session.game) { hint = nil }
     }
 
-    private var status: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack { timer; Spacer(); gameStatus }
-            VStack(alignment: .leading, spacing: 4) { timer; gameStatus }
+    private var navBar: some View {
+        GameNavBar(mode: "\(L10n.t("mode.solo")) · \(session.size)×\(session.size)", back: { app.leaveGame() }) {
+            timer
+        } trailing: {
+            Button { session.pause() } label: {
+                Image(systemName: "pause.fill").font(.title3).frame(width: 48, height: 48)
+            }
+            .accessibilityLabel(L10n.t("game.pause"))
+            .accessibilityIdentifier("pause")
         }
     }
 
     private var timer: some View {
         TimelineView(.periodic(from: .now, by: 1)) { _ in
             let text = L10n.t("game.elapsed", ["time": L10n.time(session.elapsedMs)])
-            Text(text).font(.body.monospacedDigit())
+            Text(L10n.time(session.elapsedMs)).font(.subheadline.monospacedDigit())
+                .foregroundStyle(Theme.muted)
                 .accessibilityLabel(text)
                 .accessibilityIdentifier("timer")
         }
     }
 
-    private var gameStatus: some View {
+    private var statusRow: some View {
         let conflict = !session.conflicts.isEmpty
-        return Label(L10n.t(conflict ? "game.conflict" : "game.incomplete"),
-                     systemImage: conflict ? "exclamationmark.triangle.fill" : "circle.dotted")
-            .foregroundStyle(conflict ? Theme.error : Theme.muted)
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("game-status")
+        return GameStatusRow {
+            if conflict {
+                Label { StatusMessage(text: L10n.t("game.conflict"), identifier: "game-status", alert: true) }
+                    icon: { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.error) }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("game-status")
+            } else {
+                StatusMessage(text: L10n.t("game.incomplete"), identifier: "game-status", neutral: true)
+            }
+        }
     }
 
     @ViewBuilder private var controls: some View {
-        selectionLine
+        if UIDebug.enabled { selectionLine }
         NumberPad(size: session.size, notesMode: session.notesMode, enabled: session.canEdit) { report(session.enter($0)) }
-        tools
+        tools.overlay(alignment: .bottomLeading) { QuietSaveMarker(session: session) }
         if let hint { hintCard(hint) }
         if let notice {
             Text(notice).foregroundStyle(Theme.foreground)
                 .accessibilityIdentifier("game-notice")
         }
-        StorageStatus(session: session)
-        Text(L10n.t("keyboard", ["size": session.size])).font(.footnote).foregroundStyle(Theme.muted)
-            .accessibilityHidden(true)
+        if session.saveState == .failed || UIDebug.enabled { StorageStatus(session: session) }
+        if UIDebug.enabled {
+            Text(L10n.t("keyboard", ["size": session.size])).font(.footnote).foregroundStyle(Theme.muted)
+                .accessibilityHidden(true)
+        }
     }
 
     private var selectionLine: some View {
@@ -250,16 +260,16 @@ struct NumberPad: View {
     let notesMode: Bool
     let enabled: Bool
     let enter: (Int) -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        let n = size
-        let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: n == 6 ? 6 : 5)
-        LazyVGrid(columns: columns, spacing: 8) {
-            ForEach(1...n, id: \.self) { digit in
+        DigitPadLayout(count: size, rowHeight: typeSize.isAccessibilitySize ? 72 : 52) {
+            ForEach(1...size, id: \.self) { digit in
                 Button { enter(digit) } label: {
                     Text("\(digit)")
                         .font(.title.weight(notesMode ? .regular : .semibold))
-                        .frame(maxWidth: .infinity, minHeight: 56)
+                        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .disabled(!enabled)

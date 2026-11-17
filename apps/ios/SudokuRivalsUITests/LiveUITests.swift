@@ -121,6 +121,11 @@ final class LiveUITests: XCTestCase {
         try await until(15, "bot playing") { self.bot.snapshot?.phase == "playing" }
         let givens = try XCTUnwrap(bot.snapshot?.own.givens)
         XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'cell-'")).count, size * size)
+        // Same one-screen order as solo/web/Android: race has four tools, duel none.
+        // (The mode comes from the bot's snapshot: tests that create the room in the app never set `bot.mode`.)
+        let race = (bot.snapshot?.mode ?? bot.mode) == "race"
+        if race { XCTAssertTrue(app.buttons["undo"].waitForExistence(timeout: 10), "race tools missing") }
+        assertOneScreenGameLayout(app, size: size, tools: race ? ["notes-toggle", "erase", "undo", "redo"] : [])
         return (givens, try XCTUnwrap(solve(givens, size: size)))
     }
 

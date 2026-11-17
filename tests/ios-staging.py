@@ -49,4 +49,6 @@ binary = b''.join(p.read_bytes() for p in [app / 'SudokuRivals', *app.glob('*.dy
 check('fixed https staging origin is compiled in', ORIGIN.encode() in binary)
 check('no cleartext loopback origin string in staging binary', b'http://127.0.0.1' not in binary and b'LIVE_TEST_ORIGIN' not in binary)
 check('no test hooks (DEBUG-only env keys) in staging binary', b'LIVE_TEST_RESET' not in binary and b'SOLO_TEST_RESET' not in binary)
+check('game-screen debug flag (-SudokuDebug) is compiled out of staging', b'SudokuDebug' not in binary)
+check('app icon is in the asset catalog and referenced', info.get('CFBundleIcons', {}).get('CFBundlePrimaryIcon', {}).get('CFBundleIconName') == 'AppIcon' and (app / 'Assets.car').exists())
 sys.exit(1 if failures else 0)
