@@ -270,7 +270,6 @@ internal class LiveState(directory: File, private val defaultName: String, priva
     fun confirmLeave() {
         leaveConfirmation = false
         leaving = true
-        message = UiText(R.string.msg_leave_pending)
         dispatch(JSONObject().put("type", "leave"))
     }
     fun configureServer(raw: String) {

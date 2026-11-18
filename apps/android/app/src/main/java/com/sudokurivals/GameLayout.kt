@@ -131,17 +131,9 @@ internal fun GameNavBar(modeLabel: String, timeText: String, timeDescription: St
             }
             Box(Modifier.widthIn(min = 48.dp), contentAlignment = Alignment.CenterEnd) { trailing() }
         }
-        if (notice != null) Row(
-            Modifier.align(Alignment.Center).padding(horizontal = 56.dp).fillMaxWidth().heightIn(min = 48.dp)
-                .clip(RoundedCornerShape(14.dp)).background(p.foreground)
-                .semantics { liveRegion = LiveRegionMode.Polite },
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(notice, Modifier.weight(1f).padding(start = 12.dp, top = 6.dp, bottom = 6.dp).testTag(noticeTag), color = p.canvas, fontSize = 13.sp, lineHeight = 17.sp)
-            val close = res(R.string.action_dismiss)
-            Box(Modifier.size(44.dp).clickable(role = Role.Button, onClick = onDismissNotice).semantics { contentDescription = close }, contentAlignment = Alignment.Center) {
-                Icon(Glyph.close, null, Modifier.size(20.dp), tint = p.canvas)
-            }
+        if (notice != null) Box(Modifier.matchParentSize(), contentAlignment = Alignment.TopCenter) {
+            TransientNotice(notice, onDismissNotice, noticeTag,
+                Modifier.wrapContentHeight(Alignment.Top, unbounded = true).padding(horizontal = 56.dp))
         }
     }
 }

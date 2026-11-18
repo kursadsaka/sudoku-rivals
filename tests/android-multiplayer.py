@@ -609,7 +609,9 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
                     server = server_start()
                     until(lambda: NEEDLE['lost_session'] in node('connection-status', True).attrib.get('text', ''), 20)
                     assert NEEDLE['won'] in node('result-heading', True).attrib.get('text', '')
-                    assert NEEDLE['declared'] not in node('live-message', True).attrib.get('text', ''), 'Room-loss banner contradicts verified result'
+                    notice = nodes_by_tag(hierarchy()).get('live-message')
+                    if notice is not None:
+                        assert NEEDLE['declared'] not in notice[4].get('text', ''), 'Room-loss notice contradicts verified result'
                     assert node('rematch', True).attrib.get('enabled') == 'false'
                     tap('home', True)
                     node('friend-start', True)
@@ -651,8 +653,8 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
             bot.call({'type':'join','invite':app_snapshot()['room_code'],'name':'WebBot'})
             ready_match(bot)
             proxy.offline = True
-            until(lambda: NEEDLE['unreachable'] in node('live-message', True).attrib.get('text', ''), 20)
             message = node('live-message', True).attrib.get('text', '')
+            assert NEEDLE['unreachable'] in message, 'Missing disconnect notice'
             assert (NEEDLE['local_race'] in message) == (mode == 'race'), 'Disconnect copy claims a race draft in duel'
             server_stop(server)
             server = server_start()

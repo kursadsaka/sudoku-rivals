@@ -41,49 +41,46 @@ internal fun LiveScreens(live: LiveState) {
     val view = live.view
     val snapshot = live.snapshot()
     val lost = view.optString("connection") == "session_lost" && !view.optBoolean("voluntarily_left")
-    val gameScreen = !live.protectedSave && snapshot != null && !view.optBoolean("voluntarily_left") && !lost &&
+    if (snapshot != null && !live.protectedSave && !view.optBoolean("voluntarily_left") && !lost &&
         snapshot.optString("phase") !in listOf("finished", "closed", "lobby", "countdown")
-    if (gameScreen && snapshot != null) {
-        Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) { LiveGame(live, snapshot) }
-    } else Column(
-        Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 28.dp),
     ) {
-        Spacer(Modifier.height(10.dp))
-        val inMatch = snapshot != null && !view.optBoolean("voluntarily_left") && !lost && snapshot.optString("phase") != "finished"
-        BackLink(res(if (inMatch) R.string.action_leave else R.string.action_back), live::goHome)
-        val messages: @Composable () -> Unit = {
-            if (live.storageError) {
-                Notice(res(R.string.live_storage_error), Modifier.padding(bottom = 12.dp), error = true, tag = "live-storage-status") {
-                    TextButton(onClick = live::retryStorage, modifier = Modifier.testTag("live-save-retry"), contentPadding = PaddingValues(0.dp)) { Text(res(R.string.action_retry_save), color = ink.error, fontWeight = FontWeight.SemiBold) }
+        Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) { LiveGame(live, snapshot) }
+    } else Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 28.dp),
+        ) {
+            Spacer(Modifier.height(10.dp))
+            val inMatch = snapshot != null && !view.optBoolean("voluntarily_left") && !lost && snapshot.optString("phase") != "finished"
+            BackLink(res(if (inMatch) R.string.action_leave else R.string.action_back), live::goHome)
+            when {
+                live.protectedSave -> {
+                    Eyebrow(res(R.string.home_friend_start)); Spacer(Modifier.height(10.dp))
+                    PageTitle(res(R.string.live_protected_title)); Spacer(Modifier.height(10.dp))
+                    Lede(res(R.string.live_protected_body)); Spacer(Modifier.height(16.dp))
+                    LiveOperationNotices(live, Modifier.padding(bottom = 12.dp))
+                    PrimaryButton(res(R.string.live_protected_action), live::requestReset, Modifier.fillMaxWidth().testTag("live-recover"))
                 }
+                snapshot == null || view.optBoolean("voluntarily_left") -> LiveSetup(live)
+                snapshot.optString("phase") == "finished" && snapshot.optJSONObject("result") != null -> LiveResult(live, snapshot)
+                lost || snapshot.optString("phase") == "closed" -> {
+                    Eyebrow(matchLabel(snapshot)); Spacer(Modifier.height(10.dp))
+                    PageTitle(res(R.string.live_lost_title), Modifier.testTag("result-heading")); Spacer(Modifier.height(10.dp))
+                    Connection(live); Spacer(Modifier.height(12.dp))
+                    LiveOperationNotices(live, Modifier.padding(bottom = 12.dp))
+                    Text(res(if (snapshot.optString("mode") == "race") R.string.live_lost_race else R.string.live_lost_duel), Modifier.testTag("result-details"), style = Type.body, color = ink.muted)
+                    Spacer(Modifier.height(26.dp))
+                    PrimaryButton(res(R.string.live_recover), live::requestReset, Modifier.fillMaxWidth().testTag("live-recover"))
+                    Spacer(Modifier.height(10.dp))
+                    SecondaryButton(res(R.string.action_home), live::goHome, Modifier.fillMaxWidth().testTag("home"))
+                }
+                snapshot.optString("phase") == "finished" -> LiveResult(live, snapshot)
+                snapshot.optString("phase") in listOf("lobby", "countdown") -> LiveLobby(live, snapshot)
+                else -> Unit
             }
-            live.message?.let { Notice(it.asString(), Modifier.padding(bottom = 12.dp), error = true, tag = "live-message") }
         }
-        when {
-            live.protectedSave -> {
-                Eyebrow(res(R.string.home_friend_start)); Spacer(Modifier.height(10.dp))
-                PageTitle(res(R.string.live_protected_title)); Spacer(Modifier.height(10.dp))
-                Lede(res(R.string.live_protected_body)); Spacer(Modifier.height(16.dp))
-                messages()
-                PrimaryButton(res(R.string.live_protected_action), live::requestReset, Modifier.fillMaxWidth().testTag("live-recover"))
-            }
-            snapshot == null || view.optBoolean("voluntarily_left") -> LiveSetup(live, messages)
-            snapshot.optString("phase") == "finished" && snapshot.optJSONObject("result") != null -> LiveResult(live, snapshot, messages)
-            lost || snapshot.optString("phase") == "closed" -> {
-                Eyebrow(matchLabel(snapshot)); Spacer(Modifier.height(10.dp))
-                PageTitle(res(R.string.live_lost_title), Modifier.testTag("result-heading")); Spacer(Modifier.height(10.dp))
-                Connection(live); Spacer(Modifier.height(12.dp))
-                messages()
-                Text(res(if (snapshot.optString("mode") == "race") R.string.live_lost_race else R.string.live_lost_duel), Modifier.testTag("result-details"), style = Type.body, color = ink.muted)
-                Spacer(Modifier.height(26.dp))
-                PrimaryButton(res(R.string.live_recover), live::requestReset, Modifier.fillMaxWidth().testTag("live-recover"))
-                Spacer(Modifier.height(10.dp))
-                SecondaryButton(res(R.string.action_home), live::goHome, Modifier.fillMaxWidth().testTag("home"))
-            }
-            snapshot.optString("phase") == "finished" -> LiveResult(live, snapshot, messages)
-            snapshot.optString("phase") in listOf("lobby", "countdown") -> LiveLobby(live, snapshot, messages)
-            else -> Unit
-        }
+        val (toast, dismissToast) = rememberLiveToast(live.transientMessage()?.asString())
+        if (toast != null) TransientNotice(toast, dismissToast, "live-message",
+            Modifier.align(Alignment.TopCenter).padding(start = 20.dp, end = 20.dp, top = 80.dp))
     }
     if (live.leaveConfirmation) AlertDialog(
         onDismissRequest = { live.leaveConfirmation = false }, title = { Text(res(R.string.leave_title)) },
@@ -99,6 +96,30 @@ internal fun LiveScreens(live: LiveState) {
         dismissButton = { TextButton(onClick = { live.resetConfirmation = false }) { Text(res(R.string.action_cancel)) } },
         containerColor = ink.background, shape = RoundedCornerShape(24.dp),
     )
+}
+
+private fun UiText.isRecoveryMessage() = when (id) {
+    R.string.msg_save_unreadable, R.string.msg_reset_failed,
+    R.string.msg_join_session_lost, R.string.msg_join_leave_first -> true
+    else -> false
+}
+
+private fun LiveState.transientMessage() = message?.takeUnless(UiText::isRecoveryMessage)
+
+@Composable
+private fun LiveOperationNotices(live: LiveState, modifier: Modifier = Modifier) {
+    val recovery = live.message?.takeIf(UiText::isRecoveryMessage)
+    if (recovery != null) Notice(recovery.asString(), modifier, error = true, tag = "live-recovery-message")
+    if (live.view.optBoolean("pending_leave"))
+        Notice(res(R.string.msg_leave_pending), modifier, tag = "live-leave-pending")
+    if (live.storageError) {
+        Notice(res(R.string.live_storage_error), modifier, error = true, tag = "live-storage-status") {
+            TextButton(onClick = live::retryStorage, modifier = Modifier.heightIn(min = 48.dp).testTag("live-save-retry"),
+                contentPadding = PaddingValues(0.dp)) {
+                Text(res(R.string.action_retry_save), color = ink.error, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
 }
 
 /** `Classic race · 9×9 · Easy`; rooms without a level (older clients) show none. */
@@ -120,7 +141,7 @@ private fun paperFieldColors() = OutlinedTextFieldDefaults.colors(
 )
 
 @Composable
-private fun LiveSetup(live: LiveState, messages: @Composable () -> Unit) {
+private fun LiveSetup(live: LiveState) {
     val p = ink
     val busy = live.view.optBoolean("pending_http")
     val join = live.tab == "join"
@@ -133,7 +154,7 @@ private fun LiveSetup(live: LiveState, messages: @Composable () -> Unit) {
     Spacer(Modifier.height(16.dp))
     Segmented(listOf("create" to res(R.string.live_create), "join" to res(R.string.live_join)), live.tab, { live.tab = it }, Modifier.fillMaxWidth(), tagPrefix = "tab-", enabled = !busy)
     Spacer(Modifier.height(18.dp))
-    messages()
+    LiveOperationNotices(live, Modifier.padding(bottom = 12.dp))
     val nameField: @Composable () -> Unit = {
         FieldLabel(res(R.string.live_name_label))
         OutlinedTextField(live.name, { live.name = it.take(32) }, modifier = Modifier.fillMaxWidth().testTag("guest-name"), singleLine = true, enabled = !busy,
@@ -216,7 +237,7 @@ private fun Connection(live: LiveState) {
 }
 
 @Composable
-private fun LiveLobby(live: LiveState, snapshot: JSONObject, messages: @Composable () -> Unit) {
+private fun LiveLobby(live: LiveState, snapshot: JSONObject) {
     val p = ink
     val context = LocalContext.current
     val countdown = snapshot.getString("phase") == "countdown"
@@ -230,7 +251,7 @@ private fun LiveLobby(live: LiveState, snapshot: JSONObject, messages: @Composab
     Spacer(Modifier.height(10.dp))
     Connection(live)
     Spacer(Modifier.height(16.dp))
-    messages()
+    LiveOperationNotices(live, Modifier.padding(bottom = 12.dp))
     snapshot.optString("difficulty").takeIf { it in LEVELS }?.let { level ->
         Text(res(R.string.room_level, levelName(level)) + " " + res(levelHelp(level)) + " " + res(R.string.level_scope),
             Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(p.selected).padding(horizontal = 12.dp, vertical = 10.dp).testTag("room-difficulty"),
@@ -300,7 +321,7 @@ private fun PlayerRow(name: String?, note: String?, ready: Boolean, rival: Boole
 }
 
 @Composable
-private fun LiveResult(live: LiveState, snapshot: JSONObject, messages: @Composable () -> Unit) {
+private fun LiveResult(live: LiveState, snapshot: JSONObject) {
     val p = ink
     val own = snapshot.getJSONObject("own")
     val opponent = snapshot.optJSONObject("opponent")
@@ -327,7 +348,7 @@ private fun LiveResult(live: LiveState, snapshot: JSONObject, messages: @Composa
         Spacer(Modifier.height(10.dp))
         Connection(live)
         Spacer(Modifier.height(14.dp))
-        messages()
+        LiveOperationNotices(live, Modifier.padding(bottom = 12.dp))
         if (snapshot.getString("mode") == "duel") {
             val rivalScore = live.opponentScore()
             val details = res(R.string.result_duel_details, own.getInt("score"), rivalScore?.toString() ?: res(R.string.score_unavailable))
@@ -410,7 +431,7 @@ private fun LiveGame(live: LiveState, snapshot: JSONObject) {
             Column(verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp)) {
                 if (UiDebug.enabled) Text(res(R.string.app_title), Modifier.testTag("app-title"), style = MaterialTheme.typography.labelMedium)
                 // Passing messages float over the title and timer (between Leave and the empty right slot); the board never moves.
-                val (toast, dismissToast) = rememberLiveToast(live.message?.asString())
+                val (toast, dismissToast) = rememberLiveToast(live.transientMessage()?.asString())
                 GameNavBar(
                     modeLabel = matchLabel(snapshot, short = true), timeText = timeText,
                     timeDescription = res(R.string.live_time_desc, timeText), backDescription = res(R.string.action_back), onBack = live::goHome,
@@ -541,11 +562,7 @@ private fun LiveGame(live: LiveState, snapshot: JSONObject) {
                     }
                 }, overlay = null)
                 // Messages that need an answer stay in the flow; they only appear when something is wrong.
-                if (live.storageError) {
-                    Notice(res(R.string.live_storage_error), Modifier, error = true, tag = "live-storage-status") {
-                        TextButton(onClick = live::retryStorage, modifier = Modifier.heightIn(min = 48.dp).testTag("live-save-retry"), contentPadding = PaddingValues(0.dp)) { Text(res(R.string.action_retry_save), color = p.error, fontWeight = FontWeight.SemiBold) }
-                    }
-                }
+                LiveOperationNotices(live)
                 if (live.view.optBoolean("reconcile_required")) {
                     Notice(res(R.string.reconcile_message), Modifier, error = true, tag = "reconcile-message") {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

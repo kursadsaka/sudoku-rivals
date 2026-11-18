@@ -8,26 +8,40 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
 /** Connection states as the core reports them, folded to what the dot shows. */
@@ -92,19 +106,34 @@ internal fun PendingIndicator(description: String, modifier: Modifier = Modifier
     }
 }
 
-/**
- * A passing match message (server unreachable, an action that failed) for the overlay over the title. Each
- * distinct message shows once for six seconds or until dismissed: a retry loop failing the same way does not
- * flash it again, and it returns only after the message cleared and came back. Returns the text to show (or
- * null) and the dismiss action.
- */
+@Composable
+internal fun TransientNotice(text: String, onDismiss: () -> Unit, tag: String, modifier: Modifier = Modifier) {
+    val p = ink
+    Row(
+        modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(14.dp)).background(p.foreground)
+            .pointerInput(Unit) { detectTapGestures { } },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text, Modifier.weight(1f).padding(start = 12.dp, top = 6.dp, bottom = 6.dp).testTag(tag)
+            .semantics { liveRegion = LiveRegionMode.Polite }, color = p.canvas, fontSize = 13.sp, lineHeight = 17.sp)
+        val close = res(R.string.action_dismiss)
+        Box(Modifier.size(48.dp).clickable(role = Role.Button, onClick = onDismiss)
+            .semantics { contentDescription = close }, contentAlignment = Alignment.Center) {
+            Icon(Glyph.close, null, Modifier.size(20.dp), tint = p.canvas)
+        }
+    }
+}
+
+/** Repeated failures with identical text during automatic retries keep the same timeout. */
 @Composable
 internal fun rememberLiveToast(message: String?): Pair<String?, () -> Unit> {
-    var shown by remember { mutableStateOf<String?>(null) }
-    // Keyed on the text: the same failure repeating keeps the key, so it neither restarts nor reappears.
+    var shown by remember(message) { mutableStateOf(message != null) }
+    val accessibility = LocalAccessibilityManager.current
     LaunchedEffect(message) {
-        shown = message
-        if (message != null) { delay(6_000); shown = null }
+        if (message != null) {
+            delay(accessibility?.calculateRecommendedTimeoutMillis(6_000, containsText = true, containsControls = true) ?: 6_000)
+            shown = false
+        }
     }
-    return shown to { shown = null }
+    return message.takeIf { shown } to { shown = false }
 }
