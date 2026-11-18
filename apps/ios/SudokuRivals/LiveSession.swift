@@ -403,7 +403,15 @@ final class LiveSession {
     }
 
     private func refresh() {
-        if let next = try? LiveView(json: client.view(nowMs: now())), next != view { view = next }
+        guard let next = try? LiveView(json: client.view(nowMs: now())), next != view else { return }
+        let old = snapshot
+        if let board = next.snapshot, !board.own.givens.isEmpty,
+           old?.matchId != board.matchId || old?.own.boardId != board.own.boardId || old?.own.givens.isEmpty == true {
+            // Lobby and countdown snapshots hide the board, even when its ID is already assigned.
+            selected = board.own.givens.firstIndex(of: 0) ?? 0
+            notesMode = false
+        }
+        view = next
     }
 
     @discardableResult
@@ -425,18 +433,12 @@ final class LiveSession {
         guard !protectedSave else { return false }
         struct Effect: Decodable { let request: LiveRequest?; let changed: Bool }
         do {
-            let old = snapshot
             let json = String(decoding: try JSONSerialization.data(withJSONObject: action), as: UTF8.self)
             let effect = try JSONDecoder().decode(Effect.self, from: Data(try client.dispatch(action: json, nowMs: now()).utf8))
             if !quiet { message = nil }
             // Credential-bearing requests go out only once the state that issued them is durable.
             let saved = effect.changed ? persist() : !storageError
             refresh()
-            if let s = snapshot, old?.matchId != s.matchId || old?.own.boardId != s.own.boardId {
-                // Like the web: a new board opens on its first empty cell.
-                selected = s.own.givens.firstIndex(of: 0) ?? 0
-                notesMode = false
-            }
             if let request = effect.request {
                 if saved { send(request) } else { deferred = request }
             }

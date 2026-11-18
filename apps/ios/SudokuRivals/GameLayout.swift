@@ -13,18 +13,48 @@ enum UIDebug {
     }()
 }
 
+/// Use the available safe-area height so navigation and system bars count toward the layout.
+enum GameDensity: Equatable {
+    case compact, standard, tallPhone
+
+    var gap: CGFloat { self == .compact ? 6 : 8 }
+    var padding: CGFloat { self == .compact ? 4 : 8 }
+    var minimumBoard: CGFloat { self == .compact ? 240 : 280 }
+
+    func keyHeight(size: Int) -> CGFloat {
+        switch self {
+        case .compact: 48
+        case .standard: 52
+        case .tallPhone: size == 6 ? 76 : 60
+        }
+    }
+}
+
+private struct GameDensityKey: EnvironmentKey {
+    static let defaultValue = GameDensity.standard
+}
+
+extension EnvironmentValues {
+    var gameDensity: GameDensity {
+        get { self[GameDensityKey.self] }
+        set { self[GameDensityKey.self] = newValue }
+    }
+}
+
 /// One-screen game layout shared by solo, race and duel (6×6 and 9×9), same order as web and Android:
 /// `top` (navigation row + one status row), the board (largest square the remaining height allows),
 /// then `bottom` (digits, tools, transient notices). Landscape puts top+bottom in a side panel. When even
 /// the minimum board cannot fit (very small screens, accessibility text sizes) the page scrolls
 /// instead of clipping a control.
 struct GameScreenLayout<Top: View, Board: View, Bottom: View>: View {
-    let top: Top
+    let top: (GameDensity) -> Top
     let board: Board
     let bottom: Bottom
+    @Environment(\.dynamicTypeSize) private var typeSize
 
-    init(@ViewBuilder top: () -> Top, @ViewBuilder board: () -> Board, @ViewBuilder bottom: () -> Bottom) {
-        self.top = top()
+    init(@ViewBuilder top: @escaping (GameDensity) -> Top,
+         @ViewBuilder board: () -> Board, @ViewBuilder bottom: () -> Bottom) {
+        self.top = top
         self.board = board()
         self.bottom = bottom()
     }
@@ -32,12 +62,19 @@ struct GameScreenLayout<Top: View, Board: View, Bottom: View>: View {
     var body: some View {
         GeometryReader { proxy in
             let landscape = proxy.size.width >= 560 && proxy.size.width > proxy.size.height * 1.2
+            let tallPhone = !landscape && proxy.size.width < 560 && proxy.size.height >= 740 && !typeSize.isAccessibilitySize
+            let density: GameDensity = tallPhone ? .tallPhone : proxy.size.height <= 600 ? .compact : .standard
             ViewThatFits(in: .vertical) {
-                GameLayout(landscape: landscape, scrolls: false) { top; board; bottom }
-                ScrollView { GameLayout(landscape: landscape, scrolls: true) { top; board; bottom } }
+                layout(landscape: landscape, density: density)
+                ScrollView { layout(landscape: landscape, density: density, scrolls: true) }
             }
             .padding(.horizontal, 12)
         }
+    }
+
+    private func layout(landscape: Bool, density: GameDensity, scrolls: Bool = false) -> some View {
+        GameLayout(landscape: landscape, density: density, scrolls: scrolls) { top(density); board; bottom }
+            .environment(\.gameDensity, density)
     }
 }
 
@@ -45,14 +82,19 @@ struct GameScreenLayout<Top: View, Board: View, Bottom: View>: View {
 /// height; `scrolls == true` is the content height for a `ScrollView` fallback.
 struct GameLayout: Layout {
     let landscape: Bool
+    let density: GameDensity
     let scrolls: Bool
 
-    static let minBoard: CGFloat = 280
-    static let minBoardLandscape: CGFloat = 240
-    static let maxBoard: CGFloat = 560
-    static let gap: CGFloat = 8
-    static let pad: CGFloat = 8
-    static let panel: CGFloat = 300
+    private let maxBoard: CGFloat = 560
+    private let panel: CGFloat = 300
+    private var gap: CGFloat { density.gap }
+    private var pad: CGFloat { density.padding }
+
+    private func boardRange(width: CGFloat) -> ClosedRange<CGFloat> {
+        let maximum = min(maxBoard, landscape ? width - panel - gap : width)
+        let minimum = landscape ? 240 : density.minimumBoard
+        return min(minimum, maximum)...maximum
+    }
 
     private func measure(_ subviews: Subviews, width: CGFloat) -> (top: CGFloat, bottom: CGFloat) {
         (subviews[0].sizeThatFits(.init(width: width, height: nil)).height,
@@ -61,59 +103,50 @@ struct GameLayout: Layout {
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? 390
-        if let height = proposal.height, !scrolls { return CGSize(width: width, height: height) }
-        if landscape {
-            let panelHeights = measure(subviews, width: Self.panel)
-            let board = scrolls ? min(width - Self.panel - Self.gap, Self.maxBoard) : Self.minBoardLandscape
-            return CGSize(width: width, height: max(board, panelHeights.top + Self.gap + panelHeights.bottom) + 2 * Self.pad)
-        }
-        let heights = measure(subviews, width: width)
-        let board = min(width, scrolls ? Self.maxBoard : Self.minBoard)
-        return CGSize(width: width, height: 2 * Self.pad + heights.top + Self.gap + board + Self.gap + heights.bottom)
+        let range = boardRange(width: width)
+        let board = scrolls ? range.upperBound : range.lowerBound
+        let heights = measure(subviews, width: landscape ? panel : width)
+        let controls = heights.top + gap + heights.bottom
+        let minimumHeight = 2 * pad + (landscape ? max(board, controls) : board + gap + controls)
+        return CGSize(width: width, height: scrolls ? minimumHeight : max(proposal.height ?? 0, minimumHeight))
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         let width = bounds.width
+        let range = boardRange(width: width)
+        let heights = measure(subviews, width: landscape ? panel : width)
+        let panelHeight = heights.top + gap + heights.bottom
+        let free = bounds.height - 2 * pad - (landscape ? 0 : panelHeight + gap)
+        let board = scrolls ? range.upperBound : min(max(free, range.lowerBound), range.upperBound)
+        let boardSize = ProposedViewSize(width: board, height: board)
         if landscape {
-            let heights = measure(subviews, width: Self.panel)
-            let side = min(bounds.height - 2 * Self.pad, width - Self.panel - Self.gap, Self.maxBoard)
-            let board = max(side, Self.minBoardLandscape)
-            let used = board + Self.gap + Self.panel
-            let left = bounds.minX + max(0, (width - used) / 2)
-            subviews[1].place(at: CGPoint(x: left, y: bounds.minY + max(Self.pad, (bounds.height - board) / 2)),
-                              anchor: .topLeading, proposal: .init(width: board, height: board))
-            let panelHeight = heights.top + Self.gap + heights.bottom
-            var y = bounds.minY + max(Self.pad, (bounds.height - panelHeight) / 2)
-            let x = left + board + Self.gap
-            subviews[0].place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: .init(width: Self.panel, height: nil))
-            y += heights.top + Self.gap
-            subviews[2].place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: .init(width: Self.panel, height: nil))
+            let left = bounds.midX - (board + gap + panel) / 2
+            let x = left + board + gap
+            let y = bounds.midY - panelHeight / 2
+            let panelSize = ProposedViewSize(width: panel, height: nil)
+            subviews[0].place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: panelSize)
+            subviews[1].place(at: CGPoint(x: left, y: bounds.midY - board / 2), anchor: .topLeading, proposal: boardSize)
+            subviews[2].place(at: CGPoint(x: x, y: y + heights.top + gap), anchor: .topLeading, proposal: panelSize)
             return
         }
-        let heights = measure(subviews, width: width)
-        let free = bounds.height - 2 * Self.pad - heights.top - heights.bottom - 2 * Self.gap
-        let fits = !scrolls && free >= Self.minBoard
-        let board = min(width, Self.maxBoard, scrolls ? Self.maxBoard : max(free, Self.minBoard))
-        let content = Self.pad + heights.top + Self.gap + board + Self.gap + heights.bottom + Self.pad
-        // Navigation stays at the top; spare height (a board capped by width) is split above the board and
-        // below it, so the controls stay next to the board.
-        let spare = fits ? max(0, bounds.height - content) : 0
-        var y = bounds.minY + Self.pad
-        subviews[0].place(at: CGPoint(x: bounds.minX, y: y), anchor: .topLeading, proposal: .init(width: width, height: nil))
-        y += heights.top + Self.gap + spare / 2
-        subviews[1].place(at: CGPoint(x: bounds.minX + (width - board) / 2, y: y), anchor: .topLeading,
-                          proposal: .init(width: board, height: board))
-        y += board + Self.gap
-        subviews[2].place(at: CGPoint(x: bounds.minX, y: y), anchor: .topLeading, proposal: .init(width: width, height: nil))
+        let columnSize = ProposedViewSize(width: width, height: nil)
+        // Keep the controls next to the board and share any spare height above and below them.
+        let spare = max(0, free - board)
+        let topY = bounds.minY + pad
+        let boardY = topY + heights.top + gap + spare / 2
+        subviews[0].place(at: CGPoint(x: bounds.minX, y: topY), anchor: .topLeading, proposal: columnSize)
+        subviews[1].place(at: CGPoint(x: bounds.midX - board / 2, y: boardY), anchor: .topLeading, proposal: boardSize)
+        subviews[2].place(at: CGPoint(x: bounds.minX, y: boardY + board + gap), anchor: .topLeading, proposal: columnSize)
     }
 }
 
-/// Navigation row: back · `Mode · N×N` + time · trailing slot (solo: pause; live: rival name).
+/// Navigation row: back · `Mode · N×N` + time · trailing slot (solo: pause).
 struct GameNavBar<Time: View, Trailing: View>: View {
     let mode: String
     let back: () -> Void
     let time: Time
     let trailing: Trailing
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     init(mode: String, back: @escaping () -> Void, @ViewBuilder time: () -> Time, @ViewBuilder trailing: () -> Trailing) {
         self.mode = mode
@@ -130,19 +163,20 @@ struct GameNavBar<Time: View, Trailing: View>: View {
             .buttonStyle(PressStyle(fill: Theme.background, foreground: Theme.foreground, stroke: Theme.line, radius: 14))
             .accessibilityLabel(L10n.t("nav.back"))
             .accessibilityIdentifier("back")
-            .frame(minWidth: 72, alignment: .leading)
+            .frame(width: 48, alignment: .leading)
             Spacer(minLength: 0)
             // "SOLO · 9×9 · EASY" over a large timer, as on the web.
             VStack(spacing: 0) {
                 Text(mode.uppercased(with: L10n.turkish ? Locale(identifier: "tr") : Locale(identifier: "en")))
                     .font(.caption.weight(.semibold)).tracking(0.9).foregroundStyle(Theme.muted)
-                    .lineLimit(1).minimumScaleFactor(0.8)
+                    .lineLimit(typeSize.isAccessibilitySize ? nil : 1).minimumScaleFactor(0.8)
+                    .multilineTextAlignment(.center)
                     .accessibilityLabel(mode)
                     .accessibilityAddTraits(.isHeader)
                 time
             }
             Spacer(minLength: 0)
-            trailing.frame(minWidth: 72, minHeight: 48, alignment: .trailing)
+            trailing.frame(width: 48, height: 48, alignment: .trailing)
         }
         .frame(minHeight: 48)
     }
@@ -171,12 +205,13 @@ struct Meter: View {
 /// The one status row: fixed minimum height so a message appearing never moves the board.
 struct GameStatusRow<Content: View>: View {
     let content: Content
+    @Environment(\.gameDensity) private var density
     init(@ViewBuilder content: () -> Content) { self.content = content() }
 
     var body: some View {
         content
             .font(.subheadline)
-            .frame(maxWidth: .infinity, minHeight: 24)
+            .frame(maxWidth: .infinity, minHeight: density == .compact ? 18 : 24)
     }
 }
 
@@ -189,40 +224,48 @@ struct StatusMessage: View {
     var alert = false
 
     var body: some View {
-        Text(text)
-            .foregroundStyle(alert ? Theme.error : Theme.foreground)
-            .opacity(neutral && !UIDebug.enabled ? 0 : 1)
-            .accessibilityIdentifier(identifier)
+        if neutral && !UIDebug.enabled {
+            Color.clear.frame(width: 1, height: 1)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(text)
+                .accessibilityIdentifier(identifier)
+        } else {
+            Text(text)
+                .foregroundStyle(alert ? Theme.error : Theme.foreground)
+                .accessibilityIdentifier(identifier)
+        }
     }
 }
 
-/// Digits: 6×6 one row (3×2 when narrower than 328 pt), 9×9 as 5+4 with the second row centred.
+/// Six digits use two rows. Nine use three rows on tall phones and two where height is limited.
 struct DigitPadLayout: Layout {
     let count: Int
     let rowHeight: CGFloat
-    static let spacing: CGFloat = 8
-    static let minCell: CGFloat = 48
+    let density: GameDensity
+
+    private var spacing: CGFloat { density.gap }
 
     private func columns(_ width: CGFloat) -> Int {
-        if count > 6 { return 5 }
-        return width >= CGFloat(count) * Self.minCell + CGFloat(count - 1) * Self.spacing ? count : 3
+        if count == 6 || density == .tallPhone || width < 5 * 48 + 4 * spacing { return 3 }
+        return 5
     }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? 320
-        let rows = (count + columns(width) - 1) / columns(width)
-        return CGSize(width: width, height: CGFloat(rows) * rowHeight + CGFloat(rows - 1) * Self.spacing)
+        let cols = columns(width)
+        let rows = (count + cols - 1) / cols
+        return CGSize(width: width, height: CGFloat(rows) * rowHeight + CGFloat(rows - 1) * spacing)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         let cols = columns(bounds.width)
-        let cell = (bounds.width - CGFloat(cols - 1) * Self.spacing) / CGFloat(cols)
+        let cell = (bounds.width - CGFloat(cols - 1) * spacing) / CGFloat(cols)
         for (index, subview) in subviews.enumerated() {
             let row = index / cols, column = index % cols
             let items = min(cols, count - row * cols)
-            let rowWidth = CGFloat(items) * cell + CGFloat(items - 1) * Self.spacing
-            let x = bounds.minX + (bounds.width - rowWidth) / 2 + CGFloat(column) * (cell + Self.spacing)
-            let y = bounds.minY + CGFloat(row) * (rowHeight + Self.spacing)
+            let rowWidth = CGFloat(items) * cell + CGFloat(items - 1) * spacing
+            let x = bounds.minX + (bounds.width - rowWidth) / 2 + CGFloat(column) * (cell + spacing)
+            let y = bounds.minY + CGFloat(row) * (rowHeight + spacing)
             subview.place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: .init(width: cell, height: rowHeight))
         }
     }

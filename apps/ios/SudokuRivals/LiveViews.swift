@@ -462,15 +462,16 @@ struct LiveLobbyView: View {
 struct LiveGameView: View {
     @Bindable var live: LiveSession
     let snapshot: LiveView.Snapshot
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         let view = live.view
         let race = snapshot.mode == "race"
         let content = boardContent(race: race)
-        GameScreenLayout {
-            VStack(spacing: 6) {
+        GameScreenLayout { density in
+            VStack(spacing: density == .compact ? 4 : 6) {
                 navBar(view: view, race: race)
-                hud(race: race, content: content)
+                hud(race: race, content: content, compact: density == .compact)
                 statusRow(race: race, content: content)
             }
         } board: {
@@ -500,7 +501,7 @@ struct LiveGameView: View {
     }
 
     /// You on the left in blue, the rival mirrored on the right in amber: filled share in a race, score in a duel.
-    @ViewBuilder private func hud(race: Bool, content: BoardContent?) -> some View {
+    @ViewBuilder private func hud(race: Bool, content: BoardContent?, compact: Bool) -> some View {
         let rivalName = snapshot.opponent?.name ?? L10n.t("hud.opponent")
         if race {
             let own = content.map(Self.progress) ?? 0
@@ -516,9 +517,11 @@ struct LiveGameView: View {
                     Text(rivalName).font(.footnote.weight(.semibold)).foregroundStyle(Theme.rival).lineLimit(1)
                         .accessibilityIdentifier("opponent-name")
                 }
-                HStack(spacing: 10) {
-                    Meter(value: own)
-                    Meter(value: rival, tint: Theme.rival, leading: false)
+                if !compact {
+                    HStack(spacing: 10) {
+                        Meter(value: own)
+                        Meter(value: rival, tint: Theme.rival, leading: false)
+                    }
                 }
             }
         } else {
@@ -566,7 +569,7 @@ struct LiveGameView: View {
                 ConnectionStatus(connection: view.connection, compact: true)
                 if let status, !neutral {
                     StatusMessage(text: status, identifier: locked ? "input-lock" : "game-status", alert: alert)
-                        .lineLimit(1).minimumScaleFactor(0.8)
+                        .lineLimit(typeSize.isAccessibilitySize ? nil : 1).minimumScaleFactor(0.8)
                 }
                 Spacer(minLength: 0)
             }
@@ -623,8 +626,9 @@ struct LiveGameView: View {
         }
         .accessibilityHint(race ? "" : L10n.t("live.duelRules"))
         if race, let draft = live.view.race {
-            HStack(spacing: 4) {
-                NotesToggle(isOn: $live.notesMode) { Feedback.shared.play(.select) }
+            let tools = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(HStackLayout(spacing: 4))
+            tools {
+                NotesToggle(isOn: $live.notesMode, enabled: live.canInput()) { Feedback.shared.play(.select) }
                 ToolButton(title: L10n.t("game.erase"), icon: "eraser", id: "erase", enabled: editable) {
                     live.edit("erase"); Feedback.shared.play(.tap)
                 }

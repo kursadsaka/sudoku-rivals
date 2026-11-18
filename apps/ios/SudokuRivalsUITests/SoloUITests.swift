@@ -184,6 +184,8 @@ final class SoloUITests: XCTestCase {
         startGame(size: 9)
         tap("hint")
         XCTAssertTrue(el("hint-explanation").waitForExistence(timeout: 5))
+        XCTAssertFalse(el("number-1").exists, "The hint covers the keypad and owns its accessibility space")
+        XCTAssertFalse(el("notes-toggle").exists)
         let selected = cells(where: "selected == true").firstMatch
         let id = selected.identifier
         XCTAssertEqual(state(selected).value, "empty") // advice did not write anything
@@ -191,6 +193,7 @@ final class SoloUITests: XCTestCase {
         tap("hint-apply")
         XCTAssertNotEqual(state(app.buttons[id]).value, "empty")
         XCTAssertFalse(el("hint-apply").exists)
+        XCTAssertTrue(el("number-1").exists)
         tap("undo")
         XCTAssertEqual(state(app.buttons[id]).value, "empty")
     }

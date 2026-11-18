@@ -72,8 +72,8 @@ struct PlayingView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        GameScreenLayout {
-            VStack(spacing: 6) { navBar; Meter(value: progress); statusRow }
+        GameScreenLayout { density in
+            VStack(spacing: density == .compact ? 4 : 6) { navBar; Meter(value: progress); statusRow }
                 .overlay(alignment: .top) { toast }
         } board: {
             BoardView(session: session, pattern: hint?.patternCells ?? [])
@@ -82,8 +82,11 @@ struct PlayingView: View {
         }
         .toolbar(UIDebug.enabled ? .visible : .hidden, for: .navigationBar)
         .background { ArrowKeys { session.move(rowDelta: $0, columnDelta: $1); dismissLayers() } }
-        .background { DeleteKeyCatcher { if session.canEdit { report(session.erase()) } }.accessibilityHidden(true) }
+        .background { DeleteKeyCatcher { if hint == nil, session.canEdit { report(session.erase()) } }.accessibilityHidden(true) }
         .onChange(of: session.game) { hint = nil }
+        .onChange(of: session.conflicts.isEmpty) { _, clear in
+            if !clear { announce(L10n.t("game.conflict")) }
+        }
         .onChange(of: session.selected) { if hint.map({ $0.index != session.selected }) ?? false { hint = nil } }
     }
 
@@ -122,10 +125,10 @@ struct PlayingView: View {
         let conflict = !session.conflicts.isEmpty
         return GameStatusRow {
             if conflict {
-                Label { StatusMessage(text: L10n.t("game.conflict"), identifier: "game-status", alert: true) }
-                    icon: { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.error) }
+                Label(L10n.t("game.conflict"), systemImage: "exclamationmark.triangle.fill")
                     .font(.subheadline.weight(.semibold))
-                    .accessibilityElement(children: .combine)
+                    .foregroundStyle(Theme.error)
+                    .accessibilityLabel(L10n.t("game.conflict"))
                     .accessibilityIdentifier("game-status")
             } else {
                 StatusMessage(text: L10n.t("game.incomplete"), identifier: "game-status", neutral: true)
@@ -141,7 +144,7 @@ struct PlayingView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("game-notice")
                 Button { self.notice = nil } label: {
-                    Image(systemName: "xmark").font(.footnote.weight(.semibold)).frame(width: 40, height: 44)
+                    Image(systemName: "xmark").font(.footnote.weight(.semibold)).frame(width: 44, height: 44)
                 }
                 .accessibilityLabel(L10n.t("hint.dismiss"))
             }
@@ -159,8 +162,11 @@ struct PlayingView: View {
         VStack(spacing: 8) {
             NumberPad(size: session.size, values: session.board.cells.map(\.value), notesMode: session.notesMode,
                       enabled: session.canEdit) { enter($0) }
-            tools.overlay(alignment: .bottomLeading) { QuietSaveMarker(session: session) }
+            tools
         }
+        .disabled(hint != nil)
+        .accessibilityHidden(hint != nil)
+        .overlay(alignment: .bottomLeading) { QuietSaveMarker(session: session) }
         // The hint is laid over the keys, so the board and the keys keep their place and size.
         .overlay(alignment: .bottom) {
             if let hint {
@@ -332,12 +338,16 @@ struct ArrowKeys: View {
 struct ToolLabel: View {
     let title: String
     let icon: String
+    @Environment(\.gameDensity) private var density
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
         VStack(spacing: 2) {
             Image(systemName: icon).font(.title3).accessibilityHidden(true)
-            Text(title).font(.caption2.weight(.medium)).lineLimit(1).minimumScaleFactor(0.8)
+            Text(title).font(.caption2.weight(.medium))
+                .lineLimit(typeSize.isAccessibilitySize ? nil : 1).minimumScaleFactor(0.8)
         }
-        .frame(maxWidth: .infinity, minHeight: 52)
+        .frame(maxWidth: .infinity, minHeight: density == .compact ? 48 : 52)
     }
 }
 
@@ -421,12 +431,14 @@ struct NumberPad: View {
     let enabled: Bool
     let enter: (Int) -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.gameDensity) private var density
 
     var body: some View {
         let placed = values.reduce(into: Array(repeating: 0, count: size + 1)) { counts, value in
             if (1...size).contains(value) { counts[value] += 1 }
         }
-        DigitPadLayout(count: size, rowHeight: typeSize.isAccessibilitySize ? 72 : 52) {
+        DigitPadLayout(count: size, rowHeight: typeSize.isAccessibilitySize ? 72 : density.keyHeight(size: size),
+                       density: density) {
             ForEach(1...size, id: \.self) { digit in
                 let left = max(0, size - placed[digit])
                 Button { enter(digit) } label: {
@@ -434,6 +446,7 @@ struct NumberPad: View {
                         .font(Theme.display(notesMode ? .title2 : .title, weight: notesMode ? .medium : .semibold))
                         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .contentShape(Rectangle())
                         .overlay(alignment: .topTrailing) {
                             if left > 0 {
                                 Text("\(left)").font(.caption2.weight(.semibold)).foregroundStyle(Theme.muted)

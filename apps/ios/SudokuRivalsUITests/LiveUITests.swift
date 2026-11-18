@@ -109,6 +109,7 @@ final class LiveUITests: XCTestCase {
         bot.invite = try XCTUnwrap(code.value as? String)
         bot.join()
         try await until(15, "bot joined") { self.bot.snapshot != nil }
+        XCTAssertEqual(bot.snapshot?.difficulty, "easy")
         try await label("players") { $0.contains("Bot") }
     }
 
@@ -121,6 +122,8 @@ final class LiveUITests: XCTestCase {
         try await until(15, "bot playing") { self.bot.snapshot?.phase == "playing" }
         let givens = try XCTUnwrap(bot.snapshot?.own.givens)
         XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'cell-'")).count, size * size)
+        let first = try XCTUnwrap(givens.firstIndex(of: 0))
+        XCTAssertTrue(app.buttons["cell-\(first / size + 1)-\(first % size + 1)"].isSelected)
         // Same one-screen order as solo/web/Android: race has four tools, duel none.
         // (The mode comes from the bot's snapshot: tests that create the room in the app never set `bot.mode`.)
         let race = (bot.snapshot?.mode ?? bot.mode) == "race"

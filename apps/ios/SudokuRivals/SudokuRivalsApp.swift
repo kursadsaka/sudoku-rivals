@@ -41,7 +41,8 @@ final class AppModel {
     private(set) var store = SoloStore.standard
     var setupError: String?
     /// True while a rated puzzle is being dug (off the main actor).
-    private(set) var preparing = false
+    var preparing: Bool { preparation != nil }
+    private var preparation: Task<Void, Never>?
     private var seedOverride: UInt32?
     let live: LiveSession
     let prefs: AppPreferences
@@ -118,30 +119,38 @@ final class AppModel {
         screen = .game
     }
 
+    func cancelSetup() {
+        preparation?.cancel()
+        preparation = nil
+        setupError = nil
+        screen = .home
+    }
+
     /// Call only after the user confirmed replacing an existing slot. Digging a rated puzzle can take a
     /// moment, so it runs off the main actor while the start button says "Preparing your puzzle…".
     func startNew(size: Int, difficulty: String) {
         guard !preparing else { return }
         setupError = nil
-        let current = store.read(size)
-        if current.exists && !current.isReadable {
-            do { try store.archiveUnreadable(size) } catch {
-                setupError = L10n.t("setup.archiveFailed")
-                refreshSlots()
-                return
-            }
-        }
-        preparing = true
         let seed = seedOverride ?? .random(in: .min ... .max)
-        Task {
+        preparation = Task {
             let result = await Task.detached(priority: .userInitiated) {
                 Result { try SoloSession.generate(size: size, seed: seed, difficulty: difficulty) }
             }.value
-            preparing = false
-            // The player may have left setup while the puzzle was being dug.
+            // Returning to setup does not give an earlier, cancelled request permission to save.
+            guard !Task.isCancelled else { return }
+            preparation = nil
             guard screen == .setup else { return }
             do {
-                session = try SoloSession.begin(game: try result.get(), store: store)
+                let game = try result.get()
+                let current = store.read(size)
+                if current.exists && !current.isReadable {
+                    do { try store.archiveUnreadable(size) } catch {
+                        setupError = L10n.t("setup.archiveFailed")
+                        refreshSlots()
+                        return
+                    }
+                }
+                session = try SoloSession.begin(game: game, store: store)
                 screen = .game
                 cue(.ready)
             } catch {

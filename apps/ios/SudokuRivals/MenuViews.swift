@@ -107,11 +107,18 @@ struct LevelPicker: View {
     @Binding var selection: String
     var disabled = false
     let changed: () -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 4) { options }
-            VStack(spacing: 4) { options }
+        Group {
+            if typeSize.isAccessibilitySize {
+                VStack(spacing: 4) { options }
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 4) { options }
+                    VStack(spacing: 4) { options }
+                }
+            }
         }
         .padding(4)
         .background(Theme.track, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -130,7 +137,7 @@ struct LevelPicker: View {
             } label: {
                 Text(L10n.t("level.\(level)"))
                     .font(.subheadline.weight(.semibold))
-                    .lineLimit(1).minimumScaleFactor(0.75)
+                    .lineLimit(typeSize.isAccessibilitySize ? nil : 1).minimumScaleFactor(0.75)
                     .foregroundStyle(on ? Theme.foreground : Theme.muted)
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .padding(.horizontal, 4)
@@ -447,7 +454,7 @@ struct SetupView: View {
             .frame(maxWidth: 520)
             .frame(maxWidth: .infinity)
         }
-        .toolbar { BackToolbar { app.screen = .home } }
+        .toolbar { BackToolbar { app.cancelSetup() } }
         .alert(L10n.t(app.status(size).isReadable ? "confirm.replace" : "confirm.replaceUnreadable"),
                isPresented: $confirming) {
             Button(L10n.t("confirm.continue"), role: .destructive) { app.startNew(size: size, difficulty: prefs.soloDifficulty) }

@@ -199,10 +199,12 @@ final class Feedback {
     private func configureAudio() {
         let session = AVAudioSession.sharedInstance()
         if sound {
-            try? session.setCategory(.ambient, options: [.mixWithOthers])
+            try? session.setCategory(.ambient)
             try? session.setActive(true)
         } else {
+            for player in players.values { player.stop() }
             players.removeAll()
+            try? session.setActive(false)
         }
     }
 

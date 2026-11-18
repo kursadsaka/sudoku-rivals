@@ -59,3 +59,9 @@
 - Sesler insan kulağıyla, haptikler cihazda denenmedi. Web'in uzun telefonlardaki 3×3 hesap makinesi tuş düzeni iOS'a
   alınmadı (iOS'ta 5+4 / 6 veya 3×2 kaldı).
 - Davet bağlantısıyla uygulama açılışı (universal link) hâlâ yok; kod veya bağlantı Katıl sekmesine yapıştırılır.
+
+## 18 Kasım takibi
+
+- Uzun iPhone ekranlarında 9×9 için üç sütunlu tuş takımı, kısa ekranlarda 48 pt tuşlar ve daha dar aralıklar kullanılır. 6×6'da tuşlar iki sıradır. Büyük erişilebilirlik yazılarında seviye seçimi ve oyun araçları dikey dizilir. Tahta ile kontroller birlikte sığmazsa ekran kaydırılabilir.
+- İpucu açıkken sayı tuşları ve araçlar VoiceOver odağından çıkar ve klavye kısayolları devre dışı kalır. Canlı oyun, tahta gerçekten göründüğünde ilk boş hücreyi seçer. Solo kurulumdan geri dönülürse bekleyen üretim kayıt yazmaz.
+- ASUS'ta WASM derlemesi, Rust çalışma alanı testleri, WASM/solo/UI sözleşmesi ve yerel HTTP üzerinden yarış/düello × 6×6/9×9 geçti. UniFFI Swift bağları Linux'ta üretildi ve Swift kaynakları sözdizimi ayrıştırıcısından geçti. Xcode derlemesi, yeni UI testleri, simülatör ve fiziksel cihaz doğrulaması bekliyor.
