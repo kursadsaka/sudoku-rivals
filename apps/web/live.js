@@ -227,25 +227,26 @@ export class LiveScreens {
   pendingIcon() {
     return `<span class="pending-icon" role="img" aria-label="${this.t('pending')}" data-testid="pending-indicator"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" opacity=".25"/><path d="M12 3a9 9 0 0 1 9 9"/></svg></span>`;
   }
-  // Passing errors in a match float over the title and timer (between Leave and the right edge), so the board,
-  // keys and tools never move. One appearance per distinct message: a retry loop that fails the same way does not
-  // flash it again, and it comes back only after the error cleared and recurred.
-  toastHTML() {
+  // Passing messages are never laid into the page. In a match they float over the title and timer (between Leave
+  // and the right edge), so the board, keys and tools never move; on setup, lobby, result and lost pages (page=true)
+  // they float at the top of the viewport. One appearance per distinct message: a retry loop that fails the same
+  // way does not flash it again, and it comes back only after the message cleared and recurred. Messages that need
+  // an action (storage retry, a stuck setup's new session) stay in the flow instead; see storageNotice/setupRecovery.
+  toastHTML(page = false) {
     const failed = this.transport?.transportError;
     const text = failed ? this.t(failed):this.notice;
     if (!text) { this.toastText='';this.toastUntil=0;return ''; }
     if (text!==this.toastText) { this.toastText=text;this.toastUntil=Date.now()+6000;this.announce?.(text); }
     if (Date.now()>=this.toastUntil) return '';
-    return `<div class="game-toast ${failed || this.noticeTone==='error' ? 'is-error':''}" data-testid="game-notice"><p>${this.escape(text)}</p><button class="toast-close" data-action="live-notice-dismiss" aria-label="${this.t('dismiss')}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>`;
+    return `<div class="${['game-toast',page && 'page-toast',(failed || this.noticeTone==='error') && 'is-error'].filter(Boolean).join(' ')}" data-testid="${page ? 'live-notice':'game-notice'}"><p>${this.escape(text)}</p><button class="toast-close" data-action="live-notice-dismiss" aria-label="${this.t('dismiss')}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>`;
   }
   storageNotice() {
     if (!this.transport?.storageError) return '';
     return `<p class="notice error" data-testid="storage-status" role="alert">${this.t('saveError')} <button data-action="live-save">${this.t('retry')}</button></p>`;
   }
-  noticeHTML() {
-    const failed = this.transport?.transportError;
-    const notice = failed ? this.t(failed):this.notice;
-    return notice ? `<p class="notice ${failed || this.noticeTone==='error' ? 'error':''}" role="status">${this.escape(notice)}</p>`:'';
+  // A room setup or join whose request keeps failing locks the form: the reason stays in view with its way out.
+  setupRecovery() {
+    return `<div class="notice error" role="alert" data-testid="setup-recovery"><p>${this.escape(this.t(this.transport.transportError))}</p><button data-action="live-recover" data-testid="live-recover">${this.t('recover')}</button></div>`;
   }
   render() {
     const active = document.activeElement;
@@ -290,7 +291,7 @@ export class LiveScreens {
           <p class="note level-help" id="live-difficulty-help">${this.t(this.form.difficulty+'Help')} ${this.t('levelScope')}</p></fieldset>
         <button class="primary-button full" data-action="live-create" data-testid="room-create" ${busy?'disabled':''}>${busy?this.pendingIcon():this.t('create')}</button>`;
     this.content.innerHTML = `<section class="panel friend-setup" data-screen="friend-setup" data-tab="${this.tab}"><button class="back-button" data-action="live-home" data-testid="back">${this.svg('back')}${this.t('back')}</button><p class="eyebrow">${this.t('title')}</p><h1>${this.t(invited?'invited':join?'joinTitle':'setup')}</h1>${invited?'':`<p class="lede">${this.t(join?'joinIntro':'intro')}</p>`}
-      ${tabs}${this.noticeHTML()}${this.storageNotice()}${this.transport.transportError&&busy?`<button class="text-button" data-action="live-recover">${this.t('recover')}</button>`:''}
+      ${tabs}${this.storageNotice()}${this.transport.transportError&&busy?this.setupRecovery():this.toastHTML(true)}
       <div class="setup-form">${form}</div>
     </section>`;
   }
@@ -301,7 +302,7 @@ export class LiveScreens {
     const snapshot = view.snapshot;
     const countdown = snapshot.phase === 'countdown';
     const seat=(kind,player,sub='')=>`<li class="${kind}${player?'':' empty'}"><span class="player"><span class="avatar" aria-hidden="true">${player?this.escape([...player.name.trim()][0]||'·'):'+'}</span><span class="player-name">${player?this.escape(player.name):this.t('noOpponent')}${sub?` <small>${sub}</small>`:''}</span></span><span class="seat-state ${player?.ready?'is-ready':''}">${player?this.t(player.ready?'readyLabel':'notReady'):'—'}</span></li>`;
-    this.content.innerHTML = `<section class="panel" data-screen="lobby">${this.leaveButton(view)}<p class="eyebrow">${this.t(snapshot.mode)} · ${snapshot.size}×${snapshot.size}${this.level(snapshot)}</p><h1>${this.t(countdown?'starting':'waiting')}</h1>${this.connection(view)}${this.noticeHTML()}${this.storageNotice()}
+    this.content.innerHTML = `<section class="panel" data-screen="lobby">${this.leaveButton(view)}<p class="eyebrow">${this.t(snapshot.mode)} · ${snapshot.size}×${snapshot.size}${this.level(snapshot)}</p><h1>${this.t(countdown?'starting':'waiting')}</h1>${this.connection(view)}${this.toastHTML(true)}${this.storageNotice()}
       ${LEVELS.includes(snapshot.difficulty)?`<p class="note room-level" data-testid="room-difficulty"><strong>${this.t('difficulty')}: ${this.t(snapshot.difficulty)}.</strong> ${this.t(snapshot.difficulty+'Help')} ${this.t('levelScope')}</p>`:''}
       <div class="invite-card"><span class="section-label">${this.t('room')}</span><strong class="room-code" data-testid="room-code" translate="no">${[...snapshot.room_code].map(letter=>`<span>${this.escape(letter)}</span>`).join('')}</strong><button class="secondary-button" data-action="live-share" data-testid="invite-share">${this.t('share')}</button>${this.shareLink?`<input class="text-input" value="${this.escape(this.shareLink)}" readonly aria-label="${this.t('invite')}">`:''}</div>
       <ul class="players" data-testid="players">${seat('you',snapshot.own,this.t('you'))}${seat('rival',snapshot.opponent)}</ul>
@@ -376,12 +377,12 @@ export class LiveScreens {
       ?`<p class="scoreline" data-testid="result-details"><span class="score-side"><span class="score-name">${this.escape(s.own.name)}</span> <strong>${s.own.score}</strong></span>${s.opponent?` <span class="score-sep" aria-hidden="true">—</span><span class="sr-only">—</span> <span class="score-side rival"><strong>${s.opponent.score}</strong> <span class="score-name">${this.escape(s.opponent.name)}</span></span>`:''}</p>`
       :`<p class="result-note" data-testid="result-details">${this.escape(s.opponent?.name||'')}</p>`;
     const note=text=>`<p class="result-note" role="status">${text}</p>`;
-    this.content.innerHTML=`<section class="result" data-screen="match-result" data-outcome="${key}"><div class="pause-symbol">${this.svg(key==='win'?'trophy':key==='loss'?'flag':'equal')}</div><p class="eyebrow">${this.t(s.mode)} · ${s.size}×${s.size}${this.level(s)}</p><h1 data-testid="result-heading">${this.t(key)}</h1>${view.connection==='session_lost'?note(this.t('room_closed')):this.connection(view)}${this.noticeHTML()}${this.storageNotice()}${details}${result?`<p class="result-note" data-testid="result-reason">${this.t('reason_'+result.reason)}</p>`:''}
+    this.content.innerHTML=`<section class="result" data-screen="match-result" data-outcome="${key}"><div class="pause-symbol">${this.svg(key==='win'?'trophy':key==='loss'?'flag':'equal')}</div><p class="eyebrow">${this.t(s.mode)} · ${s.size}×${s.size}${this.level(s)}</p><h1 data-testid="result-heading">${this.t(key)}</h1>${view.connection==='session_lost'?note(this.t('room_closed')):this.connection(view)}${this.toastHTML(true)}${this.storageNotice()}${details}${result?`<p class="result-note" data-testid="result-reason">${this.t('reason_'+result.reason)}</p>`:''}
       ${!s.opponent?note(this.t('opponentLeft')):s.own.rematch?note(this.t('rematchWaiting')):s.opponent?.rematch?note(this.t('rematchOpponent')):''}
       <div class="action-stack"><button class="primary-button" data-action="live-rematch" data-testid="rematch" ${!s.opponent||s.own.rematch||view.pending_command||view.connection!=='connected'?'disabled':''}>${this.t('rematch')}</button><button class="secondary-button" data-action="live-leave" data-testid="home">${this.t('home')}</button></div></section>`;
   }
   renderLost(view) {
-    this.content.innerHTML=`<section class="panel" data-screen="live-error"><h1>${this.t('title')}</h1>${this.connection(view)}${this.noticeHTML()}<p>${this.t('savedLocal')}</p><div class="action-stack"><button class="secondary-button" data-action="live-leave">${this.t('home')}</button><button class="text-button" data-action="live-recover">${this.t('recover')}</button></div></section>`;
+    this.content.innerHTML=`<section class="panel" data-screen="live-error"><h1>${this.t('title')}</h1>${this.connection(view)}${this.toastHTML(true)}<p>${this.t('savedLocal')}</p><div class="action-stack"><button class="secondary-button" data-action="live-leave">${this.t('home')}</button><button class="text-button" data-action="live-recover">${this.t('recover')}</button></div></section>`;
   }
   updateClock() {
     if (!this.entered || !this.transport) return;
@@ -430,7 +431,11 @@ export class LiveScreens {
     if (action==='live-recover') {
       if (await this.confirm(this.t('confirmRecover'),{ok:this.t('recover')})) { this.transport.replaceSession();this.notice='';this.onUpdate(); }return;
     }
-    if (action==='live-notice-dismiss') { this.toastUntil=0;this.content.querySelector('.game-toast')?.remove();this.focusCell();return; }
+    if (action==='live-notice-dismiss') {
+      this.toastUntil=0;this.content.querySelector('.game-toast')?.remove();
+      if (this.content.querySelector('[data-index]')) this.focusCell(); else this.content.focus({preventScroll:true});
+      return;
+    }
     if (action==='live-save') { this.transport.persist();this.onUpdate();return; }
     if (!this.transport || this.transport.protectedSave) return;
     if (['live-create','live-join','live-rematch','live-keep'].includes(action)) this.cue('tap');

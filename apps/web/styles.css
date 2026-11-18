@@ -280,8 +280,12 @@ legend { font-size:.85rem; color:var(--muted); margin-bottom:8px; padding:0; fon
 .hint-actions .secondary-button { flex:0 1 auto; border-color:var(--border); color:var(--foreground); }
 /* Passing notices float over the title and timer, between the back and pause buttons; they never push the board. */
 .game-toast { position:absolute; top:0; left:56px; right:56px; z-index:4; min-height:48px; display:flex; align-items:center; gap:2px; padding:2px 2px 2px 12px; border-radius:14px; background:var(--foreground); color:var(--canvas); box-shadow:var(--shadow); font-size:.8125rem; line-height:1.3; }
-.game-toast p { flex:1; min-width:0; margin:6px 0; overflow-wrap:anywhere; text-wrap:pretty; }
+.game-toast p { flex:1; min-width:0; margin:6px 0; overflow-wrap:anywhere; text-wrap:pretty; text-align:start; }
 .game-toast.is-error { background:var(--error-bg); color:var(--error); border:1px solid var(--error); }
+/* On the live pages (setup, lobby, result) the same passing message floats at the top of the viewport, inside the safe
+   area; the page under it keeps its layout. Only the card itself takes taps. */
+.game-toast.page-toast { position:fixed; z-index:20; top:calc(12px + env(safe-area-inset-top)); left:max(16px,env(safe-area-inset-left)); right:max(16px,env(safe-area-inset-right)); width:auto; max-width:460px; margin-inline:auto; }
+.notice[data-testid="setup-recovery"] p { margin:0 0 4px; }
 .toast-close { flex:none; width:40px; height:44px; display:grid; place-items:center; border:0; border-radius:12px; background:transparent; color:inherit; }
 .toast-close:focus-visible { outline-color:currentColor; outline-offset:-3px; }
 .toast-close svg { width:20px; height:20px; }

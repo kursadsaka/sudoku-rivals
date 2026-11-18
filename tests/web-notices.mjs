@@ -24,14 +24,23 @@ try {
 
   const live = Object.create(LiveScreens.prototype);
   Object.assign(live,{transport:{},escape:text=>text,t:key=>key});
+  // Passing page messages float (page-toast) with a close button; the info tone is not drawn as an error.
   for (const [message,tone] of [['save failed','error'],['leaving','info'],['reconcile','error']]) {
     live.say(message,tone);
-    assert.ok(live.noticeHTML().includes(message),'persistent messages remain in the flow');
+    const html = live.toastHTML(true);
+    assert.ok(html.includes(message) && html.includes('page-toast') && html.includes('data-action="live-notice-dismiss"'),message);
+    assert.equal(html.includes('is-error'),tone==='error');
   }
+  live.notice='';
   live.transport.transportError='disconnected';
-  assert.ok(live.noticeHTML().includes('disconnected'));
+  assert.ok(live.toastHTML(true).includes('disconnected'));
+  // Actionable warnings stay in the flow: storage retry and a stuck setup's new session.
   live.transport.storageError=true;
-  assert.ok(live.storageNotice().includes('role="alert"'));
+  assert.ok(live.storageNotice().includes('role="alert"') && live.storageNotice().includes('data-action="live-save"'));
+  const recovery = live.setupRecovery();
+  assert.ok(recovery.includes('role="alert"') && recovery.includes('disconnected') && recovery.includes('data-action="live-recover"'));
+  live.transport.storageError=false;
+  live.transport.transportError=null;
 
   // Connection dot: every state has its own data-state; text appears for anything but a healthy compact dot.
   const states = {connected:'connected',reconnecting:'reconnecting',disconnected:'disconnected',session_lost:'lost'};
