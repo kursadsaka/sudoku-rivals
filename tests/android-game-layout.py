@@ -144,11 +144,11 @@ try:
     shell('wm', 'size', f'{VIEWPORTS[0][1]}x{VIEWPORTS[0][2]}'); shell('wm', 'density', str(VIEWPORTS[0][3]))
     start(9)
     shell('am', 'force-stop', PKG); launch(True)
-    wait_for('board-size-9'); tap('board-size-9'); wait_for('solo-resume'); tap('solo-resume'); wait_for('resume'); tap('resume'); wait_for('game-board')
+    wait_for('solo-resume-9'); tap('solo-resume-9'); wait_for('game-board')
     failures += [f'debug_ui on: {p}' for p in measure('411x914dp', 9, True, False)]
     # A default launch must not inherit the flag.
     shell('am', 'force-stop', PKG); launch(False)
-    wait_for('board-size-9'); tap('board-size-9'); wait_for('solo-resume'); tap('solo-resume'); wait_for('resume'); tap('resume'); wait_for('game-board')
+    wait_for('solo-resume-9'); tap('solo-resume-9'); wait_for('game-board')
     failures += [f'debug_ui reset: {p}' for p in measure('411x914dp-relaunch', 9, False, True)]
 finally:
     shell('am', 'force-stop', PKG)

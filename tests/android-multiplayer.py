@@ -187,8 +187,10 @@ def label_check(mode, size):
     shown = lambda tag, key: (tags[tag][4].get(key) or '') if tag in tags else None
     n = size
     race = mode == 'race'
+    # "Race · 9×9", plus " · Easy" when the room has a level (rooms the app creates always do).
+    heading = android_locale.fmt(STR['lobby_mode_size'], STR['mode_race_short'] if race else STR['mode_duel_short'], n)
     expected = [
-        ('mode-label', 'text', [android_locale.fmt(STR['lobby_mode_size'], STR['mode_race'] if race else STR['mode_duel_short'], n)]),
+        ('mode-label', 'text', [heading] + [heading + ' · ' + STR['level_' + level] for level in ('beginner', 'easy', 'medium', 'hard', 'expert')]),
         ('back', 'content-desc', [STR['action_back']]),
         ('connection-status', 'content-desc', [STR['conn_connected']]),
     ]
@@ -607,7 +609,9 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
                     server = server_start()
                     until(lambda: NEEDLE['lost_session'] in node('connection-status', True).attrib.get('text', ''), 20)
                     assert NEEDLE['won'] in node('result-heading', True).attrib.get('text', '')
-                    assert NEEDLE['declared'] not in node('live-message', True).attrib.get('text', ''), 'Room-loss banner contradicts verified result'
+                    notice = nodes_by_tag(hierarchy()).get('live-message')
+                    if notice is not None:
+                        assert NEEDLE['declared'] not in notice[4].get('text', ''), 'Room-loss notice contradicts verified result'
                     assert node('rematch', True).attrib.get('enabled') == 'false'
                     tap('home', True)
                     node('friend-start', True)
@@ -649,8 +653,8 @@ with tempfile.TemporaryDirectory(prefix='android-live-bot-') as temporary:
             bot.call({'type':'join','invite':app_snapshot()['room_code'],'name':'WebBot'})
             ready_match(bot)
             proxy.offline = True
-            until(lambda: NEEDLE['unreachable'] in node('live-message', True).attrib.get('text', ''), 20)
             message = node('live-message', True).attrib.get('text', '')
+            assert NEEDLE['unreachable'] in message, 'Missing disconnect notice'
             assert (NEEDLE['local_race'] in message) == (mode == 'race'), 'Disconnect copy claims a race draft in duel'
             server_stop(server)
             server = server_start()

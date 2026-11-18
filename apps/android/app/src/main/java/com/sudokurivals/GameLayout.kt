@@ -1,23 +1,35 @@
 package com.sudokurivals
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -46,14 +58,16 @@ private val PANEL = 300.dp
  */
 @Composable
 internal fun GameScreenLayout(top: @Composable () -> Unit, bottom: @Composable () -> Unit, board: @Composable (Dp) -> Unit) {
+    val compact = compactHeight()
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val viewportW = constraints.maxWidth
         val viewportH = constraints.maxHeight
         Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             SubcomposeLayout(Modifier.fillMaxWidth()) { _ ->
-                val gap = GAP.roundToPx()
+                // Short screens (web max-height:600px) trim the chrome before the board has to give way.
+                val gap = (if (compact) 4.dp else GAP).roundToPx()
                 val side = SIDE.roundToPx()
-                val vPad = GAP.roundToPx()
+                val vPad = (if (compact) 4.dp else GAP).roundToPx()
                 val minBoard = MIN_BOARD.roundToPx()
                 val maxBoard = MAX_BOARD.roundToPx()
                 val landscape = viewportW >= 560.dp.roundToPx() && viewportW > viewportH * 6 / 5
@@ -100,34 +114,47 @@ internal fun GameScreenLayout(top: @Composable () -> Unit, bottom: @Composable (
     }
 }
 
-/** Navigation row: back · `Mode · N×N` + time · right slot. */
+/**
+ * Navigation row (web `.game-top`): a square back button · `Mode · N×N · Level` over a large time · the
+ * right slot (pause in solo, empty in a match). A passing notice floats over the heading, between the two
+ * buttons, so it never moves the board.
+ */
 @Composable
-internal fun GameNavBar(modeLabel: String, timeText: String, timeDescription: String, backDescription: String, onBack: () -> Unit, trailing: @Composable () -> Unit) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.widthIn(min = 72.dp), contentAlignment = Alignment.CenterStart) {
-            TextButton(onClick = onBack, modifier = Modifier.width(48.dp).heightIn(min = 48.dp).testTag("back").semantics { contentDescription = backDescription }, contentPadding = PaddingValues(4.dp)) {
-                Text("‹", Modifier.clearAndSetSemantics { }, fontSize = 24.sp)
+internal fun GameNavBar(modeLabel: String, timeText: String, timeDescription: String, backDescription: String, onBack: () -> Unit, notice: String? = null, onDismissNotice: () -> Unit = {}, noticeTag: String = "game-notice", trailing: @Composable () -> Unit) {
+    val p = ink
+    Box(Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+            SquareIconButton(Glyph.back, backDescription, onBack, Modifier.testTag("back"))
+            Column(Modifier.weight(1f).padding(horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(modeLabel, Modifier.testTag("mode-label").semantics { heading() }, style = Type.label, color = p.muted, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(timeText, Modifier.testTag("timer").semantics { contentDescription = timeDescription }, fontSize = 22.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold, color = p.foreground)
             }
+            Box(Modifier.widthIn(min = 48.dp), contentAlignment = Alignment.CenterEnd) { trailing() }
         }
-        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(modeLabel, Modifier.testTag("mode-label").semantics { heading() }, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
-            Text(timeText, Modifier.testTag("timer").semantics { contentDescription = timeDescription }, style = MaterialTheme.typography.bodyMedium)
+        if (notice != null) Box(Modifier.matchParentSize(), contentAlignment = Alignment.TopCenter) {
+            TransientNotice(notice, onDismissNotice, noticeTag,
+                Modifier.wrapContentHeight(Alignment.Top, unbounded = true).padding(horizontal = 56.dp))
         }
-        Box(Modifier.widthIn(min = 72.dp), contentAlignment = Alignment.CenterEnd) { trailing() }
     }
 }
 
-/** Small filled dot for a healthy connection; the dot carries the state for screen readers. */
+/** Short screen (web `max-height:600px`): tighter gaps, no race meters, 48dp tools. */
 @Composable
-internal fun StatusDot(color: Color, description: String, tag: String) {
-    Box(Modifier.size(24.dp).testTag(tag).semantics { contentDescription = description; liveRegion = LiveRegionMode.Polite }, contentAlignment = Alignment.Center) {
-        Box(Modifier.size(10.dp).background(color, androidx.compose.foundation.shape.CircleShape))
-    }
-}
+internal fun compactHeight(): Boolean = LocalConfiguration.current.screenHeightDp < 600
 
-/** Digit pad: one row on 6×6 (3×2 when narrower than six 48dp targets), 5+4 centred on 9×9. */
+/** Key height: taller on tall phones (the thumb zone), never under the 48dp target. */
 @Composable
-internal fun DigitPad(n: Int, enabled: Boolean, onDigit: (Int) -> Unit) {
+internal fun keyHeight(): Dp = if (LocalConfiguration.current.screenHeightDp >= 760) 56.dp else 48.dp
+
+/**
+ * Digit pad: one row on 6×6 (3×2 when narrower than six 48dp targets), 5+4 centred on 9×9. Each key shows
+ * how many of that digit are still missing; a finished digit steps back. In notes mode the keys turn to
+ * pencil (dashed, grey).
+ */
+@Composable
+internal fun DigitPad(n: Int, enabled: Boolean, notes: Boolean = false, remaining: (Int) -> Int = { 1 }, label: (Int) -> String = { it.toString() }, onDigit: (Int) -> Unit) {
+    val p = ink
+    val height = keyHeight()
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val gap = 6.dp
         val columns = if (n == 6) (if (maxWidth >= 48.dp * 6 + gap * 5) 6 else 3) else 5
@@ -135,10 +162,63 @@ internal fun DigitPad(n: Int, enabled: Boolean, onDigit: (Int) -> Unit) {
             for (digits in (1..n).chunked(columns)) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
                 val spare = columns - digits.size
                 if (spare > 0) Spacer(Modifier.weight(spare / 2f))
-                for (digit in digits) OutlinedButton(onClick = { onDigit(digit) }, enabled = enabled, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("number-$digit"), contentPadding = PaddingValues(4.dp)) { Text(digit.toString()) }
+                for (digit in digits) {
+                    val left = remaining(digit)
+                    val shape = RoundedCornerShape(14.dp)
+                    val description = label(digit)
+                    Box(
+                        Modifier.weight(1f).height(height).clip(shape)
+                            .background(if (left == 0) Color.Transparent else p.background)
+                            .then(if (notes) Modifier.drawBehind {
+                                drawRoundRect(p.border, cornerRadius = androidx.compose.ui.geometry.CornerRadius(14.dp.toPx()),
+                                    style = Stroke(1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx()))))
+                            } else Modifier.border(1.dp, p.line, shape))
+                            .clickable(enabled = enabled, role = Role.Button) { onDigit(digit) }
+                            .testTag("number-$digit")
+                            .clearAndSetSemantics { contentDescription = description; if (!enabled) disabled() ; onClick { onDigit(digit); true } },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        val color = when { !enabled -> p.muted.copy(alpha = .45f); notes || left == 0 -> p.muted; else -> p.accent }
+                        Text(digit.toString(), color = color, fontSize = if (notes) 20.sp else 24.sp, fontWeight = FontWeight.SemiBold)
+                        if (left > 0) Text(left.toString(), Modifier.align(Alignment.TopEnd).padding(top = 3.dp, end = 6.dp), color = p.muted.copy(alpha = if (enabled) 1f else .45f), fontSize = 10.sp, lineHeight = 10.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
                 if (spare > 0) Spacer(Modifier.weight(spare / 2f))
             }
         }
+    }
+}
+
+/** One tool under the digits: icon over a short label; the notes switch fills when on. */
+@Composable
+internal fun RowScope.Tool(icon: ImageVector, label: String, tag: String, enabled: Boolean = true, checked: Boolean? = null, description: String = label, onClick: () -> Unit) {
+    val p = ink
+    val on = checked == true
+    Column(
+        Modifier.weight(1f).heightIn(min = if (compactHeight()) 48.dp else 52.dp).clip(RoundedCornerShape(14.dp)).background(if (on) p.brand else Color.Transparent)
+            .then(if (checked != null) Modifier.toggleable(on, enabled = enabled, role = Role.Switch) { onClick() } else Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick))
+            .testTag(tag).semantics { contentDescription = description }.padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
+    ) {
+        val alpha = if (enabled) 1f else .45f
+        Icon(icon, null, Modifier.size(22.dp), tint = (if (on) p.onBrand else p.foreground).copy(alpha = alpha))
+        Text(label, color = (if (on) p.onBrand else p.muted).copy(alpha = alpha), fontSize = 11.sp, lineHeight = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, modifier = Modifier.clearAndSetSemantics { })
+    }
+}
+
+/**
+ * The keys (digits + tools) with an optional card laid over them (the hint). The card takes exactly the
+ * keys' area, so the board and the keys keep their place and size while it is read.
+ */
+@Composable
+internal fun KeysWithOverlay(keys: @Composable () -> Unit, overlay: (@Composable () -> Unit)?) {
+    Box(Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(if (compactHeight()) 6.dp else 8.dp)) { keys() }
+        // A pointer handler makes the card the hit target, so a tap on it never reaches a key underneath
+        // (it consumes nothing, so the card's own buttons still work).
+        if (overlay != null) Box(Modifier.matchParentSize().pointerInput(Unit) {
+            awaitPointerEventScope { while (true) awaitPointerEvent(PointerEventPass.Final) }
+        }) { overlay() }
     }
 }
 
@@ -146,14 +226,20 @@ internal fun DigitPad(n: Int, enabled: Boolean, onDigit: (Int) -> Unit) {
 @Composable
 internal fun SudokuBoard(
     n: Int, side: Dp, selected: Int, conflicts: Collection<Int>,
-    value: (Int) -> Int, given: (Int) -> Boolean, notes: (Int) -> List<Int>, label: (Int) -> String, onSelect: (Int) -> Unit
+    value: (Int) -> Int, given: (Int) -> Boolean, notes: (Int) -> List<Int>, label: (Int) -> String, onSelect: (Int) -> Unit,
+    marked: Set<Int> = emptySet(),
 ) {
+    val p = ink
     val fontScale = LocalDensity.current.fontScale
     val selectAction = res(R.string.cell_select_action)
     val boxRows = if (n == 6) 2 else 3
-    val symbolSize = (minOf(24f, side.value / n * 0.55f) / fontScale).sp
+    val symbolSize = (side.value / n * 0.56f / fontScale).sp
     val noteSize = (maxOf(7f, side.value / n * 0.27f) / fontScale).sp
-    Column(Modifier.size(side).testTag("game-board").semantics { collectionInfo = CollectionInfo(n, n) }) {
+    val selectedRow = selected / n
+    val selectedColumn = selected % n
+    val selectedValue = value(selected)
+    val shape = RoundedCornerShape(12.dp)
+    Column(Modifier.size(side).clip(shape).background(p.background).border(2.dp, p.grid, shape).padding(2.dp).testTag("game-board").semantics { collectionInfo = CollectionInfo(n, n) }) {
         for (row in 0 until n) Row(Modifier.weight(1f)) {
             for (column in 0 until n) {
                 val index = row * n + column
@@ -162,15 +248,24 @@ internal fun SudokuBoard(
                 val isGiven = given(index)
                 val isSelected = selected == index
                 val conflict = index in conflicts
-                val line = MaterialTheme.colorScheme.onSurface
+                val related = row == selectedRow || column == selectedColumn || (row / boxRows == selectedRow / boxRows && column / 3 == selectedColumn / 3)
+                val fill = when {
+                    isSelected -> p.brand
+                    conflict -> p.errorBackground
+                    index in marked -> p.selected
+                    selectedValue != 0 && v == selectedValue -> p.same
+                    related -> p.related
+                    else -> Color.Transparent
+                }
+                val text = when { isSelected -> p.onBrand; conflict -> p.error; isGiven -> p.foreground; else -> p.accent }
                 Box(
-                    Modifier.weight(1f).fillMaxHeight()
-                        .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                    Modifier.weight(1f).fillMaxHeight().background(fill)
                         .drawBehind {
-                            drawLine(line, Offset.Zero, Offset(size.width, 0f), if (row % boxRows == 0) 2.dp.toPx() else 0.5.dp.toPx())
-                            drawLine(line, Offset.Zero, Offset(0f, size.height), if (column % 3 == 0) 2.dp.toPx() else 0.5.dp.toPx())
-                            if (row == n - 1) drawLine(line, Offset(0f, size.height), Offset(size.width, size.height), 2.dp.toPx())
-                            if (column == n - 1) drawLine(line, Offset(size.width, 0f), Offset(size.width, size.height), 2.dp.toPx())
+                            val thin = 1.dp.toPx()
+                            val thick = 2.dp.toPx()
+                            if (column < n - 1) { val w = if (column % 3 == 2) thick else thin; drawLine(if (column % 3 == 2) p.grid else p.line, Offset(size.width - w / 2, 0f), Offset(size.width - w / 2, size.height), w) }
+                            if (row < n - 1) { val w = if (row % boxRows == boxRows - 1) thick else thin; drawLine(if (row % boxRows == boxRows - 1) p.grid else p.line, Offset(0f, size.height - w / 2), Offset(size.width, size.height - w / 2), w) }
+                            if (index in marked && !isSelected) drawRect(p.accent, style = Stroke(2.dp.toPx()))
                         }
                         .clickable { onSelect(index) }
                         .testTag("cell-${row + 1}-${column + 1}")
@@ -182,11 +277,31 @@ internal fun SudokuBoard(
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    if (v != 0) Text(v.toString() + if (conflict) "!" else "", fontSize = symbolSize, fontWeight = if (isGiven) FontWeight.Bold else FontWeight.Normal, color = if (conflict) MaterialTheme.colorScheme.error else if (isGiven) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary)
-                    // Notes are drawn as small digits (3 per line), so the selected-cell text line is not needed.
-                    else if (noteList.isNotEmpty()) Text(noteList.chunked(3).joinToString("\n") { it.joinToString(" ") }, fontSize = noteSize, lineHeight = noteSize * 1.1f, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.primary)
+                    if (v != 0) Text(v.toString(), fontSize = symbolSize, lineHeight = symbolSize, fontWeight = if (isGiven) FontWeight.SemiBold else FontWeight.Medium, color = text)
+                    else if (noteList.isNotEmpty()) Column(Modifier.fillMaxSize().padding(2.dp), verticalArrangement = Arrangement.Center) {
+                        // Pencil notes on a 3-column grid, each digit in its own place.
+                        for (line in (1..n).chunked(3)) Row(Modifier.fillMaxWidth()) {
+                            for (digit in line) Text(if (digit in noteList) digit.toString() else "", Modifier.weight(1f), fontSize = noteSize, lineHeight = noteSize * 1.25f,
+                                textAlign = TextAlign.Center, color = if (isSelected) p.onBrand else p.muted, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                    if (conflict) Text("!", Modifier.align(Alignment.TopEnd).padding(top = 1.dp, end = 3.dp), fontSize = 9.sp, lineHeight = 9.sp, fontWeight = FontWeight.ExtraBold, color = text)
                 }
             }
         }
     }
+}
+
+/** How many of each digit are still missing on the board (index = digit). */
+internal fun remainingCounts(n: Int, value: (Int) -> Int): IntArray {
+    val left = IntArray(n + 1) { n }
+    for (i in 0 until n * n) { val v = value(i); if (v in 1..n) left[v] = (left[v] - 1).coerceAtLeast(0) }
+    return left
+}
+
+/** Share of the empty cells that now hold a number (the same measure the server reports for a rival). */
+internal fun filledShare(n: Int, value: (Int) -> Int, given: (Int) -> Boolean): Float {
+    var blanks = 0; var filled = 0
+    for (i in 0 until n * n) if (!given(i)) { blanks++; if (value(i) != 0) filled++ }
+    return if (blanks == 0) 0f else filled.toFloat() / blanks
 }

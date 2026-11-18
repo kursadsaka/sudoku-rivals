@@ -74,3 +74,8 @@ Kullanıcı isteğiyle üç kademe, her biri bir teknik fazlasını gerektiren b
 ## iOS web eşitlemesi (17 Kasım)
 
 Kullanıcı isteğiyle native SwiftUI korunarak iOS, web'in son görsel diline ve akışlarına uyarlandı: kâğıt/mürekkep teması, yeni ana sayfa, 9×9 varsayılanı, solo ve arkadaş kurulumunda beş gerçek zorluk seviyesi (oda `difficulty` gönderir), teknik ipuçları, kalan sayılı tuşlar, rakip göstergesi, Ayarlar (tema, ses, titreşim, iOS dil ayarı) ve platforma uygun ses/haptik. Rust, protokol ve sunucu değişmedi. Linux'ta Rust ve web testleri geçti; iOS derlemesi ve simülatör testleri Mac erişilemediği için yapılmadı. Ayrıntı: [g16-ios-web-parity](validation/g16-ios-web-parity.md).
+
+
+## Android web eşitlemesi (17 Kasım)
+
+Native Kotlin/Compose korunarak Android, web'in kâğıt/mürekkep görsel diline ve akışlarına eşitlendi: yeni ana sayfa, 9×9 varsayılan ve hatırlanan seçimler, solo ve arkadaş modunda beş seviye (oda kurulurken `difficulty` gönderilir), teknik ipucu kartı, kalan rakam sayaçlı tuşlar, aynalı rakip göstergesi, tema/ses/titreşim ayarları ve web'in yeni uygulama simgesi. Rust, protokol ve sunucu değişmedi. API 36 emülatöründe solo, tek ekran yerleşimi, dil, çok oyunculu ve G14 yaşam döngüsü düzenekleri koşuldu. Gerçek cihaz ve mağaza görseli yok. Ayrıntı: [g16-android-web-parity](validation/g16-android-web-parity.md).
