@@ -189,8 +189,10 @@ def emulator_checks():
     # A debug-only intent extra must not reconfigure the staging origin.
     launch('--es', 'dev_server_url', 'http://10.0.2.2:3000')
     tap('friend-start', True)
-    fixed = find('live-server-fixed', True)
-    check(fixed is not None and HOST in fixed.attrib.get('text', ''), 'setup shows the fixed staging host')
+    # The fixed staging server is configuration only: no "Test server: <host>" line is shown to players.
+    check(find('live-server-fixed', False, 1) is None, 'setup does not show the staging server')
+    check(not any(HOST in node.attrib.get('text', '') + node.attrib.get('content-desc', '') for node in hierarchy().iter('node')),
+          'staging host text is not visible on the setup screen')
     check(find('live-server', False, 1) is None and find('live-server-apply', False, 1) is None,
           'no editable server field in staging')
     foreign_origin_record()

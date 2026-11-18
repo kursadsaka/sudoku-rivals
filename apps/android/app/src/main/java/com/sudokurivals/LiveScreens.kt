@@ -148,7 +148,7 @@ private fun LiveSetup(live: LiveState, messages: @Composable () -> Unit) {
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, autoCorrectEnabled = false))
         Spacer(Modifier.height(16.dp))
         nameField()
-        PrimaryButton(res(if (busy) R.string.live_waiting else R.string.live_join), live::join, Modifier.fillMaxWidth().testTag("room-join"), enabled = !busy && live.isConfigured())
+        PrimaryButton(res(R.string.live_join), live::join, Modifier.fillMaxWidth().testTag("room-join"), enabled = !busy && live.isConfigured(), pending = if (busy) res(R.string.status_pending_desc) else null)
     } else {
         nameField()
         FieldLabel(res(R.string.live_mode_label))
@@ -180,22 +180,22 @@ private fun LiveSetup(live: LiveState, messages: @Composable () -> Unit) {
         Spacer(Modifier.height(10.dp))
         Text(res(levelHelp(live.difficulty)) + " " + res(R.string.level_scope), style = Type.small, color = p.muted)
         Spacer(Modifier.height(20.dp))
-        PrimaryButton(res(if (busy) R.string.live_waiting else R.string.live_create), live::create, Modifier.fillMaxWidth().testTag("room-create"), enabled = !busy && live.isConfigured())
+        PrimaryButton(res(R.string.live_create), live::create, Modifier.fillMaxWidth().testTag("room-create"), enabled = !busy && live.isConfigured(), pending = if (busy) res(R.string.status_pending_desc) else null)
     }
     Spacer(Modifier.height(16.dp))
     if (BuildConfig.DEBUG) {
         var server by remember(live.origin) { mutableStateOf(live.origin) }
         OutlinedTextField(server, { server = it }, label = { Text(res(R.string.live_server_debug_label)) }, modifier = Modifier.fillMaxWidth().testTag("live-server"), singleLine = true, enabled = !busy, shape = RoundedCornerShape(14.dp), colors = paperFieldColors())
         QuietButton(res(R.string.live_server_apply), { live.configureServer(server) }, Modifier.testTag("live-server-apply"))
-    } else if (BuildConfig.STAGING) Text(res(R.string.live_server_fixed, BuildConfig.MATCH_SERVER_URL.removePrefix("https://")), Modifier.testTag("live-server-fixed"), style = Type.small, color = p.muted)
-    else if (!live.isConfigured()) Notice(res(R.string.live_not_configured))
+    } else if (!live.isConfigured()) Notice(res(R.string.live_not_configured))
+    // Staging keeps its fixed server (BuildConfig.MATCH_SERVER_URL) but no longer prints it: players need not read it.
 }
 
 private fun levelHelp(level: String) = when (level) {
     "beginner" -> R.string.level_beginner_help; "easy" -> R.string.level_easy_help; "medium" -> R.string.level_medium_help; "hard" -> R.string.level_hard_help; else -> R.string.level_expert_help
 }
 
-/** Connection line (web `.connection-strip`): a green dot when connected, the state in words otherwise. */
+/** Connection line (web `.connection-strip`): the state's dot (green when connected) and the state in words. */
 @Composable
 private fun Connection(live: LiveState) {
     val p = ink
@@ -209,9 +209,9 @@ private fun Connection(live: LiveState) {
     })
     val healthy = connection == "connected"
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(8.dp).clip(CircleShape).background(if (healthy) p.ok else p.error))
+        ConnectionDot(connection)
         Spacer(Modifier.width(8.dp))
-        Text(text, Modifier.testTag("connection-status").semantics { liveRegion = LiveRegionMode.Polite }, color = if (healthy) p.muted else p.error, fontSize = 13.sp)
+        Text(text, Modifier.testTag("connection-status").semantics { liveRegion = LiveRegionMode.Polite }, color = if (healthy) p.muted else if (connection == "reconnecting") p.warn else p.error, fontSize = 13.sp)
     }
 }
 
@@ -409,16 +409,19 @@ private fun LiveGame(live: LiveState, snapshot: JSONObject) {
             val oneLine = LocalConfiguration.current.screenHeightDp < 700
             Column(verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp)) {
                 if (UiDebug.enabled) Text(res(R.string.app_title), Modifier.testTag("app-title"), style = MaterialTheme.typography.labelMedium)
+                // Passing messages float over the title and timer (between Leave and the empty right slot); the board never moves.
+                val (toast, dismissToast) = rememberLiveToast(live.message?.asString())
                 GameNavBar(
                     modeLabel = matchLabel(snapshot, short = true), timeText = timeText,
-                    timeDescription = res(R.string.live_time_desc, timeText), backDescription = res(R.string.action_back), onBack = live::goHome
+                    timeDescription = res(R.string.live_time_desc, timeText), backDescription = res(R.string.action_back), onBack = live::goHome,
+                    notice = toast, onDismissNotice = dismissToast, noticeTag = "live-message",
                 ) { Spacer(Modifier.size(48.dp)) }
                 // Connection dot (text only when unhealthy) and the transient state; on short screens they share the score row.
                 val lockSeconds = ((lock + 999) / 1000).toInt()
                 val (short, long) = when {
                     !raceMode && lock > 0 -> res(R.string.status_lock, lockSeconds) to plural(R.plurals.lock_seconds_desc, lockSeconds, lockSeconds)
                     !raceMode && time == 0L -> res(R.string.status_time_up) to res(R.string.status_time_up_desc)
-                    live.view.optBoolean("pending_command") -> res(R.string.status_pending) to res(R.string.status_pending_desc)
+                    live.view.optBoolean("pending_command") -> "" to res(R.string.status_pending_desc) // drawn as a spinner
                     conflicts.isNotEmpty() -> res(R.string.status_conflict) to res(R.string.status_conflict_desc)
                     UiDebug.enabled -> res(R.string.status_in_progress) to res(R.string.status_in_progress)
                     else -> null to null
@@ -432,10 +435,15 @@ private fun LiveGame(live: LiveState, snapshot: JSONObject) {
                         "session_lost" -> R.string.conn_lost
                         else -> R.string.conn_disconnected_short
                     })
-                    if (healthy) StatusDot(p.ok, connectionText, "connection-status")
-                    else Text(connectionText, Modifier.testTag("connection-status").semantics { liveRegion = LiveRegionMode.Polite }, color = p.error, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    if (healthy) Box(Modifier.size(22.dp).testTag("connection-status").semantics { contentDescription = connectionText; liveRegion = LiveRegionMode.Polite }, contentAlignment = Alignment.Center) { ConnectionDot(connection) }
+                    else Row(verticalAlignment = Alignment.CenterVertically) {
+                        ConnectionDot(connection)
+                        Spacer(Modifier.width(6.dp))
+                        Text(connectionText, Modifier.testTag("connection-status").semantics { liveRegion = LiveRegionMode.Polite }, color = if (connection == "reconnecting") p.warn else p.error, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
                     val alarm = (lock > 0 && !raceMode) || conflicts.isNotEmpty()
-                    if (short != null) Row(Modifier.padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (short == "") PendingIndicator(long!!, Modifier.padding(start = 8.dp), tag = "game-status")
+                    else if (short != null) Row(Modifier.padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (conflicts.isNotEmpty() && raceMode) { Icon(Glyph.warning, null, Modifier.size(18.dp), tint = p.error); Spacer(Modifier.width(6.dp)) }
                         Text(short, Modifier.testTag(if (lock > 0 && !raceMode) "input-lock" else "game-status").semantics { contentDescription = long!!; liveRegion = LiveRegionMode.Polite },
                             color = if (alarm) p.error else p.foreground, fontSize = 13.sp, fontWeight = if (alarm) FontWeight.SemiBold else FontWeight.Normal)
@@ -538,7 +546,6 @@ private fun LiveGame(live: LiveState, snapshot: JSONObject) {
                         TextButton(onClick = live::retryStorage, modifier = Modifier.heightIn(min = 48.dp).testTag("live-save-retry"), contentPadding = PaddingValues(0.dp)) { Text(res(R.string.action_retry_save), color = p.error, fontWeight = FontWeight.SemiBold) }
                     }
                 }
-                live.message?.let { Notice(it.asString(), Modifier, error = true, tag = "live-message") }
                 if (live.view.optBoolean("reconcile_required")) {
                     Notice(res(R.string.reconcile_message), Modifier, error = true, tag = "reconcile-message") {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

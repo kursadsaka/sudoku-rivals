@@ -120,7 +120,7 @@ internal fun GameScreenLayout(top: @Composable () -> Unit, bottom: @Composable (
  * buttons, so it never moves the board.
  */
 @Composable
-internal fun GameNavBar(modeLabel: String, timeText: String, timeDescription: String, backDescription: String, onBack: () -> Unit, notice: String? = null, onDismissNotice: () -> Unit = {}, trailing: @Composable () -> Unit) {
+internal fun GameNavBar(modeLabel: String, timeText: String, timeDescription: String, backDescription: String, onBack: () -> Unit, notice: String? = null, onDismissNotice: () -> Unit = {}, noticeTag: String = "game-notice", trailing: @Composable () -> Unit) {
     val p = ink
     Box(Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -133,24 +133,16 @@ internal fun GameNavBar(modeLabel: String, timeText: String, timeDescription: St
         }
         if (notice != null) Row(
             Modifier.align(Alignment.Center).padding(horizontal = 56.dp).fillMaxWidth().heightIn(min = 48.dp)
-                .clip(RoundedCornerShape(14.dp)).background(p.foreground).testTag("game-notice")
+                .clip(RoundedCornerShape(14.dp)).background(p.foreground)
                 .semantics { liveRegion = LiveRegionMode.Polite },
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(notice, Modifier.weight(1f).padding(start = 12.dp, top = 6.dp, bottom = 6.dp), color = p.canvas, fontSize = 13.sp, lineHeight = 17.sp)
+            Text(notice, Modifier.weight(1f).padding(start = 12.dp, top = 6.dp, bottom = 6.dp).testTag(noticeTag), color = p.canvas, fontSize = 13.sp, lineHeight = 17.sp)
             val close = res(R.string.action_dismiss)
             Box(Modifier.size(44.dp).clickable(role = Role.Button, onClick = onDismissNotice).semantics { contentDescription = close }, contentAlignment = Alignment.Center) {
                 Icon(Glyph.close, null, Modifier.size(20.dp), tint = p.canvas)
             }
         }
-    }
-}
-
-/** Small filled dot for a healthy connection; the dot carries the state for screen readers. */
-@Composable
-internal fun StatusDot(color: Color, description: String, tag: String) {
-    Box(Modifier.size(22.dp).testTag(tag).semantics { contentDescription = description; liveRegion = LiveRegionMode.Polite }, contentAlignment = Alignment.Center) {
-        Box(Modifier.size(8.dp).background(color, CircleShape))
     }
 }
 

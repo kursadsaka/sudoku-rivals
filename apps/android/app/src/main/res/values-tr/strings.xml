@@ -117,7 +117,6 @@
     <string name="live_invite_received">Kodu kontrol et, adını ekle ve katıl.</string>
     <string name="live_server_debug_label">Deneme sunucusu (geliştirme)</string>
     <string name="live_server_apply">Sunucuyu uygula</string>
-    <string name="live_server_fixed">Test sunucusu: %1$s</string>
     <string name="live_not_configured">Canlı oyun sunucusu henüz yapılandırılmadı.</string>
     <string name="live_name_label">Görünen adın</string>
     <string name="live_mode_label">Oyun modu</string>
@@ -135,7 +134,6 @@
     <string name="mode_duel_short">Düello</string>
     <string name="mode_duel_help">90 saniyede doğru hamlelerle puan topla.</string>
     <string name="live_create">Oda kur</string>
-    <string name="live_waiting">Bekleniyor…</string>
     <string name="live_invite_label">Oda kodu veya davet bağlantısı</string>
     <string name="live_join">Katıl</string>
     <string name="conn_connected">Bağlandı</string>
@@ -211,7 +209,6 @@
     <string name="status_lock">Kilit %1$d sn</string>
     <string name="status_time_up">Süre doldu</string>
     <string name="status_time_up_desc">Süre doldu; sunucunun sonucu bekleniyor</string>
-    <string name="status_pending">Onay bekleniyor</string>
     <string name="status_pending_desc">Sunucu onayı bekleniyor</string>
     <string name="reconcile_message">Sunucu tahtası yerel çalışmandan farklı. Yerel not ve geçmişin seçim yapana kadar korunuyor.</string>
     <string name="reconcile_keep_local">Yerel çalışmamı koru</string>

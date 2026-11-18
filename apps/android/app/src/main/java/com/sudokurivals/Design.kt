@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
@@ -62,7 +63,10 @@ internal data class Palette(
     /** Filled surfaces in the brand hue (primary buttons, the selected cell, the solo card). */
     val brand: Color, val onBrand: Color,
     val selected: Color, val related: Color, val same: Color,
-    val error: Color, val errorBackground: Color, val ok: Color, val rival: Color, val rivalSoft: Color, val track: Color,
+    val error: Color, val errorBackground: Color, val ok: Color,
+    /** Reconnecting: neither healthy nor failed. */
+    val warn: Color,
+    val rival: Color, val rivalSoft: Color, val track: Color,
     val dark: Boolean,
 )
 
@@ -70,14 +74,14 @@ private val LightPalette = Palette(
     canvas = Color(0xfff4f1ea), background = Color(0xfffffdf9), foreground = Color(0xff1c1b18), muted = Color(0xff5d584e),
     line = Color(0xffddd6c8), border = Color(0xff8b8476), grid = Color(0xff2a2824), accent = Color(0xff1d4ed8),
     brand = Color(0xff1d4ed8), onBrand = Color.White, selected = Color(0xffdbe6ff), related = Color(0xffeff2fa), same = Color(0xffcddbff),
-    error = Color(0xffb42318), errorBackground = Color(0xfffdecea), ok = Color(0xff15803d), rival = Color(0xffa8500a), rivalSoft = Color(0xfffbe6c4),
+    error = Color(0xffb42318), errorBackground = Color(0xfffdecea), ok = Color(0xff15803d), warn = Color(0xffa15c07), rival = Color(0xffa8500a), rivalSoft = Color(0xfffbe6c4),
     track = Color(0xffe6e0d3), dark = false,
 )
 private val DarkPalette = Palette(
     canvas = Color(0xff121214), background = Color(0xff1c1c20), foreground = Color(0xfff4f2ec), muted = Color(0xffb6b2a8),
     line = Color(0xff34343b), border = Color(0xff8f8b7f), grid = Color(0xffa5a196), accent = Color(0xff93b4ff),
     brand = Color(0xff3b66f0), onBrand = Color.White, selected = Color(0xff27375f), related = Color(0xff22242d), same = Color(0xff2f4273),
-    error = Color(0xffffa59c), errorBackground = Color(0xff3a1d1c), ok = Color(0xff4ade80), rival = Color(0xfff5b453), rivalSoft = Color(0xff3b2c12),
+    error = Color(0xffffa59c), errorBackground = Color(0xff3a1d1c), ok = Color(0xff4ade80), warn = Color(0xfffbbf24), rival = Color(0xfff5b453), rivalSoft = Color(0xff3b2c12),
     track = Color(0xff2e2e35), dark = true,
 )
 
@@ -208,13 +212,19 @@ internal fun Modifier.card(p: Palette, radius: Dp = 22.dp, fill: Color = p.backg
 internal val ButtonShape: Shape = RoundedCornerShape(16.dp)
 
 @Composable
-internal fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+internal fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, pending: String? = null) {
     val p = ink
     Button(
         onClick = onClick, enabled = enabled, shape = ButtonShape, modifier = modifier.heightIn(min = 52.dp),
         colors = ButtonDefaults.buttonColors(containerColor = p.brand, contentColor = p.onBrand, disabledContainerColor = p.brand.copy(alpha = .45f), disabledContentColor = p.onBrand.copy(alpha = .8f)),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
-    ) { Text(text, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, textAlign = TextAlign.Center) }
+    ) {
+        // While the server has not answered, a spinner (named [pending] for TalkBack) takes the title's place at the same size.
+        Box(contentAlignment = Alignment.Center) {
+            Text(text, Modifier.alpha(if (pending != null) 0f else 1f).then(if (pending != null) Modifier.clearAndSetSemantics { } else Modifier), fontWeight = FontWeight.SemiBold, fontSize = 16.sp, textAlign = TextAlign.Center)
+            if (pending != null) PendingIndicator(pending, size = 22.dp, color = p.onBrand)
+        }
+    }
 }
 
 @Composable

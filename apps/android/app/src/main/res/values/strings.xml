@@ -118,7 +118,6 @@
     <string name="live_invite_received">Check the code, add your name and join.</string>
     <string name="live_server_debug_label">Test server (development)</string>
     <string name="live_server_apply">Apply server</string>
-    <string name="live_server_fixed">Test server: %1$s</string>
     <string name="live_not_configured">The live game server isn\'t configured yet.</string>
     <string name="live_name_label">Your display name</string>
     <string name="live_mode_label">Game mode</string>
@@ -136,7 +135,6 @@
     <string name="mode_duel_short">Duel</string>
     <string name="mode_duel_help">Score with correct moves for 90 seconds.</string>
     <string name="live_create">Create room</string>
-    <string name="live_waiting">Waiting…</string>
     <string name="live_invite_label">Room code or invite link</string>
     <string name="live_join">Join</string>
     <string name="conn_connected">Connected</string>
@@ -212,7 +210,6 @@
     <string name="status_lock">Lock %1$d s</string>
     <string name="status_time_up">Time\'s up</string>
     <string name="status_time_up_desc">Time\'s up; waiting for the server\'s result</string>
-    <string name="status_pending">Awaiting confirmation</string>
     <string name="status_pending_desc">Waiting for server confirmation</string>
     <string name="reconcile_message">The server board differs from your local work. Your local notes and history are kept until you choose.</string>
     <string name="reconcile_keep_local">Keep my local work</string>
