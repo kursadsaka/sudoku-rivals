@@ -165,7 +165,7 @@ struct GameNavBar<Time: View, Trailing: View>: View {
             .accessibilityIdentifier("back")
             .frame(width: 48, alignment: .leading)
             Spacer(minLength: 0)
-            // "SOLO · 9×9 · EASY" over a large timer, as on the web.
+            // "SOLO · 9×9 · EASY" over a large timer, as on the web; centred on the screen, not between the slots.
             VStack(spacing: 0) {
                 Text(mode.uppercased(with: L10n.turkish ? Locale(identifier: "tr") : Locale(identifier: "en")))
                     .font(.caption.weight(.semibold)).tracking(0.9).foregroundStyle(Theme.muted)
@@ -176,7 +176,10 @@ struct GameNavBar<Time: View, Trailing: View>: View {
                 time
             }
             Spacer(minLength: 0)
-            trailing.frame(width: 48, height: 48, alignment: .trailing)
+            // Always a real 48-pt slot, even when it is empty (live matches): a frame on EmptyView takes no
+            // space, which pushed the title and timer right of the screen's centre.
+            Color.clear.frame(width: 48, height: 48)
+                .overlay(alignment: .trailing) { trailing }
         }
         .frame(minHeight: 48)
     }

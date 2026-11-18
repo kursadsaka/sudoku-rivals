@@ -33,6 +33,8 @@ enum Theme {
     static let errorBackground = dynamic(0xfdecea, 0x3a1d1c)
     /// Healthy-connection dot.
     static let ok = dynamic(0x15803d, 0x4ade80)
+    /// Reconnecting: neither healthy nor failed.
+    static let warn = dynamic(0xa15c07, 0xfbbf24)
     static let rival = dynamic(0xa8500a, 0xf5b453)
     static let rivalSoft = dynamic(0xfbe6c4, 0x3b2c12)
     static let track = dynamic(0xe6e0d3, 0x2e2e35)

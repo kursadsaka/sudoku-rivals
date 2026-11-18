@@ -28,14 +28,20 @@ struct PressStyle: ButtonStyle {
 struct PrimaryButton: View {
     let title: String
     let id: String
+    /// While the server has not answered: a spinner in place of the title, in the same size.
+    var pending = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Text(title).font(.headline).multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity, minHeight: 52).padding(.horizontal, 16)
+            ZStack {
+                Text(title).font(.headline).multilineTextAlignment(.center).opacity(pending ? 0 : 1).accessibilityHidden(pending)
+                if pending { PendingIndicator(size: 22) }
+            }
+            .frame(maxWidth: .infinity, minHeight: 52).padding(.horizontal, 16)
         }
         .buttonStyle(PressStyle(fill: Theme.brand, foreground: Theme.onBrand, stroke: Theme.brand, shadow: true))
+        .accessibilityLabel(pending ? L10n.t("status.pending") : title)
         .accessibilityIdentifier(id)
     }
 }

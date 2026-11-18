@@ -129,6 +129,8 @@ struct LiveScreen: View {
 /// Storage-failure and error messages; transient, so they sit with the other notices.
 struct LiveNotices: View {
     let live: LiveSession
+    /// False on a game screen, where `LiveToast` shows the message over the title instead.
+    var showsMessage = true
 
     var body: some View {
         if live.storageError {
@@ -147,7 +149,7 @@ struct LiveNotices: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("live-storage-status")
         }
-        if let message = live.message {
+        if showsMessage, let message = live.message {
             Label(message, systemImage: "exclamationmark.circle")
                 .font(.subheadline)
                 .foregroundStyle(Theme.error)
@@ -161,6 +163,82 @@ struct LiveNotices: View {
 }
 
 private func announce(_ text: String) { AccessibilityNotification.Announcement(text).post() }
+
+/// A passing match message (server unreachable, an action that failed) floats over the title and timer, between
+/// Leave and the right edge, so the board, keys and tools never move. Each distinct message shows once for six
+/// seconds or until closed: a retry loop failing the same way does not flash it again, and it returns only after
+/// the message cleared and came back. `LiveScreen` already announces every new message to VoiceOver.
+struct LiveToast: View {
+    let message: String?
+    @State private var shown: String?
+    @State private var last: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        ZStack {
+            if let shown {
+                HStack(spacing: 2) {
+                    Label(shown, systemImage: "exclamationmark.circle").font(.footnote)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("live-message")
+                    Button { withAnimation(.easeOut(duration: 0.15)) { self.shown = nil } } label: {
+                        Image(systemName: "xmark").font(.footnote.weight(.semibold)).frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel(L10n.t("hint.dismiss"))
+                    .accessibilityIdentifier("live-message-dismiss")
+                }
+                .foregroundStyle(Theme.error)
+                .padding(.leading, 12)
+                .frame(minHeight: 48)
+                .background(Theme.errorBackground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.error, lineWidth: 1) }
+                .padding(.horizontal, 56)
+                .accessibilityElement(children: .contain)
+                .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .onAppear { update(message) }
+        .onChange(of: message) { _, now in update(now) }
+        .task(id: shown) {
+            guard shown != nil else { return }
+            try? await Task.sleep(for: .seconds(6))
+            if !Task.isCancelled { withAnimation(.easeOut(duration: 0.2)) { shown = nil } }
+        }
+    }
+
+    private func update(_ now: String?) {
+        guard now != last else { return }
+        last = now
+        withAnimation(.easeOut(duration: 0.2)) { shown = now }
+    }
+}
+
+/// Waiting for the server: a small turning arc in place of a sentence, in the same footprint, so nothing moves.
+/// Under Reduce Motion it does not turn; it only breathes in opacity. VoiceOver reads its name.
+struct PendingIndicator: View {
+    var size: CGFloat = 18
+    var id = "pending-indicator"
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        TimelineView(.animation) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            ZStack {
+                Circle().stroke(lineWidth: size / 7.5).opacity(0.25)
+                Circle().trim(from: 0, to: 0.25)
+                    .stroke(style: StrokeStyle(lineWidth: size / 7.5, lineCap: .round))
+                    .rotationEffect(.degrees(reduceMotion ? 0 : t.truncatingRemainder(dividingBy: 0.9) / 0.9 * 360))
+            }
+            .opacity(reduceMotion ? 0.675 + 0.325 * cos(t * .pi / 1.2) : 1)
+            .frame(width: size, height: size)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L10n.t("status.pending"))
+        .accessibilityAddTraits(.updatesFrequently)
+        .accessibilityIdentifier(id)
+    }
+}
 
 private func modeName(_ mode: String) -> String { L10n.t(mode == "race" ? "live.race" : "live.duel") }
 
@@ -183,22 +261,49 @@ struct ConnectionStatus: View {
         let text = L10n.t("conn.\(key)")
         let healthy = connection == "connected"
         if compact && healthy {
-            Circle().fill(Theme.ok).frame(width: 8, height: 8)
+            ConnectionDot(state: key)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(text)
                 .accessibilityIdentifier("connection-status")
                 .onChange(of: connection) { announce(text) }
         } else {
             HStack(spacing: 6) {
-                Image(systemName: healthy ? "circle.fill" : "circle").font(.system(size: 8)).accessibilityHidden(true)
-                Text(text)
+                ConnectionDot(state: key).accessibilityHidden(true)
+                Text(text).foregroundStyle(healthy ? Theme.muted : ConnectionDot.tint(key))
             }
             .font(.footnote)
-            .foregroundStyle(healthy ? Theme.muted : Theme.error)
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("connection-status")
             .onChange(of: connection) { announce(text) }
         }
+    }
+}
+
+/// The connection dot, the same on every screen. Shape and colour both carry the state, so it never relies on
+/// colour alone: filled green (connected), half-filled amber (reconnecting), hollow red (disconnected or boards
+/// differ), struck-through red (session lost). The text label next to it, or its VoiceOver label, names it.
+struct ConnectionDot: View {
+    let state: String
+
+    static func tint(_ state: String) -> Color {
+        switch state {
+        case "connected": Theme.ok
+        case "reconnecting": Theme.warn
+        default: Theme.error
+        }
+    }
+
+    var body: some View {
+        let symbol = switch state {
+        case "connected": "circle.fill"
+        case "reconnecting": "circle.lefthalf.filled"
+        case "session_lost": "xmark.circle"
+        default: "circle"
+        }
+        Image(systemName: symbol)
+            .font(.system(size: state == "session_lost" ? 10 : 9, weight: .bold))
+            .foregroundStyle(Self.tint(state))
+            .frame(width: 10, height: 10)
     }
 }
 
@@ -220,11 +325,8 @@ struct LiveSetupView: View {
             .pickerStyle(.segmented)
             .accessibilityIdentifier("live-tabs")
 
+            // The pinned match server is configuration, not something players need to read.
             if !live.isConfigured { Text(L10n.t("live.notConfigured")).foregroundStyle(Theme.error) }
-            else if LiveSession.pinsOrigin, let host = live.origin.flatMap({ URL(string: $0)?.host }) {
-                Text(L10n.t("live.stagingServer") + host).font(.footnote).foregroundStyle(Theme.muted)
-                    .accessibilityIdentifier("live-server-fixed")
-            }
 
             if joining {
                 field(L10n.t("live.invite")) {
@@ -241,7 +343,7 @@ struct LiveSetupView: View {
                         .accessibilityIdentifier("room-code")
                 }
                 nameField
-                PrimaryButton(title: L10n.t(busy ? "live.waiting" : "live.join"), id: "room-join") { submitJoin(busy: busy) }
+                PrimaryButton(title: L10n.t("live.join"), id: "room-join", pending: busy) { submitJoin(busy: busy) }
                     .disabled(busy || !live.isConfigured || live.invite.trimmingCharacters(in: .whitespaces).isEmpty)
             } else {
                 nameField
@@ -285,7 +387,7 @@ struct LiveSetupView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("difficulty-help")
                 }
-                PrimaryButton(title: L10n.t(busy ? "live.waiting" : "live.create"), id: "room-create") {
+                PrimaryButton(title: L10n.t("live.create"), id: "room-create", pending: busy) {
                     remember()
                     live.create()
                 }
@@ -474,6 +576,7 @@ struct LiveGameView: View {
                 hud(race: race, content: content, compact: density == .compact)
                 statusRow(race: race, content: content)
             }
+            .overlay(alignment: .top) { LiveToast(message: live.message) }
         } board: {
             if let content {
                 BoardView(content: content) { live.selected = $0 }
@@ -568,8 +671,12 @@ struct LiveGameView: View {
             HStack(spacing: 8) {
                 ConnectionStatus(connection: view.connection, compact: true)
                 if let status, !neutral {
-                    StatusMessage(text: status, identifier: locked ? "input-lock" : "game-status", alert: alert)
-                        .lineLimit(typeSize.isAccessibilitySize ? nil : 1).minimumScaleFactor(0.8)
+                    if status == L10n.t("status.pending") {
+                        PendingIndicator(id: "game-status")
+                    } else {
+                        StatusMessage(text: status, identifier: locked ? "input-lock" : "game-status", alert: alert)
+                            .lineLimit(typeSize.isAccessibilitySize ? nil : 1).minimumScaleFactor(0.8)
+                    }
                 }
                 Spacer(minLength: 0)
             }
@@ -587,7 +694,8 @@ struct LiveGameView: View {
             }
         }
         if let content { controls(race: race, content: content) }
-        LiveNotices(live: live)
+        // Only the storage failure, which needs its Retry, stays in the flow; passing messages float above.
+        LiveNotices(live: live, showsMessage: false)
     }
 
     private func boardContent(race: Bool) -> BoardContent? {
