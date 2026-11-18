@@ -32,6 +32,46 @@ try {
   assert.ok(live.noticeHTML().includes('disconnected'));
   live.transport.storageError=true;
   assert.ok(live.storageNotice().includes('role="alert"'));
+
+  // Connection dot: every state has its own data-state; text appears for anything but a healthy compact dot.
+  const states = {connected:'connected',reconnecting:'reconnecting',disconnected:'disconnected',session_lost:'lost'};
+  for (const [connection,state] of Object.entries(states)) {
+    const html = live.connection({connection});
+    assert.ok(html.includes(`data-state="${state}"`),state);
+    assert.ok(html.includes('class="connection-dot" aria-hidden="true"'),'the dot is decoration; the label is the name');
+    assert.equal(html.includes('is-offline'),connection!=='connected');
+  }
+  assert.ok(live.connection({connection:'connected'},true).includes('<span class="sr-only">connected</span>'));
+
+  // Pending: a named image, never the old sentence.
+  const icon = live.pendingIcon();
+  assert.ok(icon.includes('role="img"') && icon.includes('aria-label="pending"'));
+  assert.ok(!/>\s*pending\s*</.test(icon));
+
+  // In-match passing errors: one appearance per distinct message, expiry, dismissal and recurrence after recovery.
+  const announced = [];
+  const clock = {now:1000};
+  const realNow = Date.now;
+  Date.now = () => clock.now;
+  try {
+    Object.assign(live,{transport:{transportError:'network'},notice:'',announce:text=>announced.push(text)});
+    assert.ok(live.toastHTML().includes('game-toast is-error'));
+    assert.deepEqual(announced,['network']);
+    clock.now += 2000;
+    assert.ok(live.toastHTML().includes('network'),'the same failing retry keeps one toast');
+    assert.equal(announced.length,1,'repeated failures are not announced again');
+    clock.now += 4500;
+    assert.equal(live.toastHTML(),'','expires after six seconds while the error persists');
+    clock.now += 10000;
+    assert.equal(live.toastHTML(),'','still the same failure: stays hidden');
+    live.transport.transportError = null;
+    assert.equal(live.toastHTML(),'','recovered');
+    live.transport.transportError = 'network';
+    assert.ok(live.toastHTML().includes('network'),'a new failure after recovery shows again');
+    assert.equal(announced.length,2);
+    live.toastUntil = 0;
+    assert.equal(live.toastHTML(),'','dismissed');
+  } finally { Date.now = realNow; }
 } finally {
   globalThis.setTimeout=realSet;
   globalThis.clearTimeout=realClear;

@@ -91,10 +91,11 @@ const THEMES = ['system','light','dark'];
 const canVibrate = typeof navigator.vibrate === 'function' && matchMedia('(pointer: coarse)').matches;
 const BUZZ = {tap:8,type:6,toggle:10,select:8,ready:12,error:[18,50,18],success:[12,70,24],attention:[30,60,30]};
 // Board size defaults to 9×9 everywhere until the player picks one; the last pick is remembered.
-let preferences = { language:navigator.language.startsWith('tr') ? 'tr' : 'en', reduceMotion:matchMedia('(prefers-reduced-motion: reduce)').matches, sound:false, haptics:false, theme:'system', soloSize:9, soloDifficulty:'easy', liveSize:9, liveMode:'race', liveDifficulty:'easy', displayName:'' };
+// A fresh profile starts with sound off and, where the device can vibrate, haptics on. A stored choice always wins.
+let preferences = { language:navigator.language.startsWith('tr') ? 'tr' : 'en', reduceMotion:matchMedia('(prefers-reduced-motion: reduce)').matches, sound:false, haptics:canVibrate, theme:'system', soloSize:9, soloDifficulty:'easy', liveSize:9, liveMode:'race', liveDifficulty:'easy', displayName:'' };
 try {
   const stored = JSON.parse(storage.getItem('sudoku-rivals.preferences.v1'));
-  if (stored && ['tr','en'].includes(stored.language) && typeof stored.reduceMotion === 'boolean') preferences = { language:stored.language, reduceMotion:stored.reduceMotion, sound:stored.sound === true, haptics:stored.haptics === true,
+  if (stored && ['tr','en'].includes(stored.language) && typeof stored.reduceMotion === 'boolean') preferences = { language:stored.language, reduceMotion:stored.reduceMotion, sound:stored.sound === true, haptics:typeof stored.haptics === 'boolean' ? stored.haptics : canVibrate,
     theme:THEMES.includes(stored.theme) ? stored.theme : 'system',
     soloSize:[6,9].includes(stored.soloSize) ? stored.soloSize : 9, soloDifficulty:LEVELS.includes(stored.soloDifficulty) ? stored.soloDifficulty : 'easy', liveSize:[6,9].includes(stored.liveSize) ? stored.liveSize : 9,
     liveMode:['race','duel'].includes(stored.liveMode) ? stored.liveMode : 'race', liveDifficulty:LEVELS.includes(stored.liveDifficulty) ? stored.liveDifficulty : 'easy', displayName:typeof stored.displayName === 'string' ? stored.displayName.slice(0,32) : '' };
@@ -122,7 +123,7 @@ let liveSeen = null;
 if (preferences.sound) setSound(true);
 
 function announce(message) { announcer.textContent = message; }
-// One call for both kinds of feedback; each is opt-in and off by default.
+// One call for both kinds of feedback: sound is opt-in; haptics are on by default where the device supports them.
 function cue(name,options) {
   soundCue(name,options);
   if (preferences.haptics && canVibrate && BUZZ[name]) { try { navigator.vibrate(BUZZ[name]); } catch { /* Not worth surfacing. */ } }
