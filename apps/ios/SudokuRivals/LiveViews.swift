@@ -48,7 +48,7 @@ struct LiveScreen: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
-                        LiveNotices(live: live)
+                        LiveNotices(live: live, showsMessage: live.messagePinned, offersReset: live.setupStuck)
                         content
                     }
                     .padding(.horizontal, 20)
@@ -56,6 +56,8 @@ struct LiveScreen: View {
                     .frame(maxWidth: 560)
                     .frame(maxWidth: .infinity)
                 }
+                // Setup, lobby and lost pages: a passing message floats at the top, as in a match; the page keeps its layout.
+                .overlay(alignment: .top) { LiveToast(message: live.messagePinned ? nil : live.message, inset: 16) }
             }
         }
         .toolbar(game != nil && !UIDebug.enabled ? .hidden : .visible, for: .navigationBar)
@@ -126,11 +128,27 @@ struct LiveScreen: View {
     }
 }
 
-/// Storage-failure and error messages; transient, so they sit with the other notices.
+extension LiveSession {
+    /// A room setup, join or leave whose request keeps failing: the form stays locked while the core retries.
+    var setupStuck: Bool {
+        guard let message, message != L10n.t("live.leaving") else { return false }
+        return view.pendingHttp && (view.snapshot == nil || view.voluntarilyLeft)
+    }
+    /// Messages that explain a blocked state whose way out is on the same screen stay in the flow, next to it:
+    /// a protected save, a failed reset, and a stuck setup (offered a new session). Everything else floats.
+    var messagePinned: Bool {
+        protectedSave || message == L10n.t("live.error.resetFailed") || setupStuck
+    }
+}
+
+/// The messages that stay in the flow because they need an action: a failed save (Retry) and, when pinned,
+/// a blocked state's reason (with a new session for a stuck setup). Passing messages float in `LiveToast`.
 struct LiveNotices: View {
     let live: LiveSession
-    /// False on a game screen, where `LiveToast` shows the message over the title instead.
+    /// False where `LiveToast` shows the message instead.
     var showsMessage = true
+    /// A stuck setup: offer to keep the record and start a new session (the same way out as the web).
+    var offersReset = false
 
     var body: some View {
         if live.storageError {
@@ -150,14 +168,23 @@ struct LiveNotices: View {
             .accessibilityIdentifier("live-storage-status")
         }
         if showsMessage, let message = live.message {
-            Label(message, systemImage: "exclamationmark.circle")
-                .font(.subheadline)
-                .foregroundStyle(Theme.error)
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .card(radius: 14, fill: Theme.errorBackground, stroke: Theme.error)
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("live-message")
+            VStack(alignment: .leading, spacing: 6) {
+                Label(message, systemImage: "exclamationmark.circle")
+                    .accessibilityIdentifier("live-message")
+                if offersReset {
+                    Button(L10n.t("lost.reset")) { live.requestReset() }
+                        .font(.subheadline.weight(.semibold)).underline()
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("live-recover")
+                }
+            }
+            .font(.subheadline)
+            .foregroundStyle(Theme.error)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .card(radius: 14, fill: Theme.errorBackground, stroke: Theme.error)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("live-pinned-message")
         }
     }
 }
@@ -170,6 +197,8 @@ private func announce(_ text: String) { AccessibilityNotification.Announcement(t
 /// the message cleared and came back. `LiveScreen` already announces every new message to VoiceOver.
 struct LiveToast: View {
     let message: String?
+    /// Side inset: 56 in a match (clear of Leave and the right slot), the page margin elsewhere.
+    var inset: CGFloat = 56
     @State private var shown: String?
     @State private var last: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -193,7 +222,7 @@ struct LiveToast: View {
                 .frame(minHeight: 48)
                 .background(Theme.errorBackground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.error, lineWidth: 1) }
-                .padding(.horizontal, 56)
+                .padding(.horizontal, inset)
                 .accessibilityElement(children: .contain)
                 .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
             }
@@ -792,7 +821,7 @@ struct LiveResultView: View {
         CenteredPanel(symbol: symbol, symbolTint: tint, symbolFill: fill, eyebrow: roomLine(snapshot),
                       title: L10n.t("result.\(outcome)"), titleId: "result-heading") {
             ConnectionStatus(connection: live.view.connection)
-            LiveNotices(live: live)
+            LiveNotices(live: live, showsMessage: live.messagePinned)
             // An empty seat (friend left) has no score to show; never print a fake 0.
             Group {
                 if snapshot.mode == "duel" {
@@ -835,6 +864,7 @@ struct LiveResultView: View {
             }
             .padding(.top, 8)
         }
+        .overlay(alignment: .top) { LiveToast(message: live.messagePinned ? nil : live.message, inset: 16) }
         .onAppear { announce(L10n.t("result.\(outcome)")) }
     }
 

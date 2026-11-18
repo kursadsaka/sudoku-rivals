@@ -217,6 +217,24 @@ final class ManualClock {
         #expect(fault.calls[0].body.contains(#""guest":""#))
     }
 
+    /// A setup that keeps failing pins its reason (with a new session) in the flow; a protected save pins too.
+    @Test func stuckSetupAndProtectedSavePinTheirMessage() async throws {
+        let fault = FaultTransport()
+        let live = LiveSession(store: tempLiveStore(), origin: "http://127.0.0.1:9", transport: fault.transport)
+        live.open()
+        #expect(!live.setupStuck && !live.messagePinned, "nothing to pin before a request")
+        live.create()
+        try await waitFor { live.view.retryAtMs != nil }
+        #expect(live.view.pendingHttp && live.message == L10n.t("live.error.unreachable"))
+        #expect(live.setupStuck && live.messagePinned, "a failing setup keeps its reason next to its way out")
+
+        let store = tempLiveStore()
+        try FileManager.default.createDirectory(at: store.directory, withIntermediateDirectories: true)
+        try Data("{broken".utf8).write(to: store.url)
+        let protected = LiveSession(store: store, origin: "http://127.0.0.1:9", transport: FaultTransport().transport)
+        #expect(protected.protectedSave && protected.messagePinned && !protected.setupStuck)
+    }
+
     @Test(arguments: [false, true])
     func homeCancelsSetupAndReopenRetriesIdenticalBody(join: Bool) async throws {
         let gate = Gate()
